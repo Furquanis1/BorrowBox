@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — BorrowBox</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --forest:   #0d2b1d;
+            --pine:     #14432e;
+            --emerald:  #1a5c3a;
+            --jade:     #217a4d;
+            --sage:     #3a9e6e;
+            --mint:     #a8e6c8;
+            --foam:     #e4f5ec;
+            --white:    #ffffff;
+            --off:      #f7faf8;
+            --ink:      #0b1a13;
+            --slate:    #3d5247;
+            --mist:     #8ba898;
+            --line:     #d4e6dc;
+
+            --r-lg: 14px;
+            --r-md: 10px;
+            --r-sm: 6px;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--white);
+            color: var(--ink);
+            min-height: 100vh;
+            display: flex;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ───────────── SPLIT LAYOUT ───────────── */
+        .auth-brand {
+            flex: 1;
+            background: var(--forest);
+            position: relative;
+            overflow: hidden;
+            display: none; /* Hidden on mobile */
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 60px;
+            color: white;
+        }
+        @media (min-width: 900px) {
+            .auth-brand { display: flex; }
+        }
+
+        /* Brand Background Graphic */
+        .auth-brand::before {
+            content: '';
+            position: absolute; top: -20%; left: -20%;
+            width: 140%; height: 140%;
+            background: radial-gradient(circle at center, rgba(58,158,110,.2) 0%, transparent 60%);
+            pointer-events: none;
+        }
+
+        .brand-logo {
+            display: inline-flex; align-items: center; gap: 10px;
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.6rem; color: white;
+            text-decoration: none; position: relative; z-index: 2;
+        }
+        .brand-logo-icon {
+            width: 36px; height: 36px; background: var(--emerald);
+            border-radius: 8px; display: grid; place-items: center;
+            color: white; font-size: 1.1rem;
+        }
+
+        .brand-quote {
+            position: relative; z-index: 2;
+            max-width: 480px;
+        }
+        .brand-quote h2 {
+            font-family: 'DM Serif Display', serif;
+            font-size: clamp(2rem, 3vw, 3rem);
+            line-height: 1.1; letter-spacing: -1px;
+            margin-bottom: 20px;
+        }
+        .brand-quote p {
+            font-size: 1.1rem; color: rgba(255,255,255,.6);
+            line-height: 1.6;
+        }
+
+        /* ───────────── FORM SIDE ───────────── */
+        .auth-wrapper {
+            flex: 1;
+            display: flex; align-items: center; justify-content: center;
+            padding: 40px 5%;
+            background: var(--white);
+            position: relative;
+        }
+
+        .auth-container {
+            width: 100%; max-width: 420px;
+            position: relative;
+        }
+
+        /* Mobile Logo (Visible only when left side is hidden) */
+        .mobile-logo {
+            display: flex; align-items: center; gap: 8px;
+            font-family: 'DM Serif Display', serif;
+            font-size: 1.4rem; color: var(--forest);
+            text-decoration: none; margin-bottom: 40px;
+        }
+        @media (min-width: 900px) {
+            .mobile-logo { display: none; }
+        }
+
+        .auth-header { margin-bottom: 32px; }
+        .auth-title {
+            font-family: 'DM Serif Display', serif;
+            font-size: 2.2rem; color: var(--forest);
+            margin-bottom: 8px; line-height: 1.1; letter-spacing: -1px;
+        }
+        .auth-sub { font-size: .95rem; color: var(--mist); }
+
+        /* Form Elements */
+        .input-group { margin-bottom: 20px; }
+        .input-label {
+            display: block; font-size: .85rem; font-weight: 600;
+            color: var(--slate); margin-bottom: 8px;
+        }
+        .form-control {
+            width: 100%; padding: 14px 16px;
+            background: var(--white);
+            border: 1.5px solid var(--line);
+            border-radius: var(--r-md);
+            font-family: inherit; font-size: .95rem; color: var(--ink);
+            transition: all 0.2s;
+        }
+        .form-control::placeholder { color: var(--mist); }
+        .form-control:focus {
+            outline: none; border-color: var(--emerald);
+            box-shadow: 0 0 0 4px var(--foam);
+        }
+
+        .form-options {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 24px; font-size: .85rem;
+        }
+        .form-checkbox {
+            display: flex; align-items: center; gap: 8px; color: var(--slate); cursor: pointer;
+        }
+        .forgot-link {
+            color: var(--emerald); text-decoration: none; font-weight: 600; transition: color .2s;
+        }
+        .forgot-link:hover { color: var(--pine); }
+
+        /* Buttons */
+        .btn-primary {
+            width: 100%; background: var(--emerald); color: white;
+            padding: 14px; font-size: 1rem; font-weight: 600; font-family: inherit;
+            border: none; border-radius: var(--r-md); cursor: pointer;
+            transition: all 0.2s; box-shadow: 0 4px 12px rgba(26,92,58,.2);
+        }
+        .btn-primary:hover {
+            background: var(--pine); transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(26,92,58,.3);
+        }
+
+        /* Divider */
+        .auth-divider {
+            display: flex; align-items: center; text-align: center;
+            margin: 32px 0; color: var(--mist); font-size: .85rem;
+        }
+        .auth-divider::before, .auth-divider::after {
+            content: ''; flex: 1; border-bottom: 1px solid var(--line);
+        }
+        .auth-divider span { padding: 0 16px; }
+
+        .btn-outline {
+            width: 100%; background: white; color: var(--forest);
+            padding: 13px; font-size: .95rem; font-weight: 600; font-family: inherit;
+            border: 1.5px solid var(--line); border-radius: var(--r-md); cursor: pointer;
+            transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-outline:hover { background: var(--off); border-color: #cbd5e1; }
+
+        .auth-footer {
+            margin-top: 32px; text-align: center; font-size: .9rem; color: var(--slate);
+        }
+        .auth-footer button {
+            background: none; border: none; font-family: inherit; font-size: inherit;
+            color: var(--emerald); font-weight: 600; cursor: pointer; padding: 0;
+            margin-left: 4px; text-decoration: underline; text-decoration-color: transparent;
+            transition: text-decoration-color .2s;
+        }
+        .auth-footer button:hover { text-decoration-color: var(--emerald); }
+
+        /* Smooth View Transition */
+        .view {
+            display: none; opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .view.active {
+            display: block; opacity: 1;
+        }
+    </style>
+    <script src="session-manager.js"></script>
+    <script src="api-client.js"></script>
+    <script src="auth-app.js"></script>
+</head>
+<body>
+
+    <!-- LEFT SIDE: Brand Context (Hides on Mobile) -->
+    <div class="auth-brand">
+        <a href="index.html" class="brand-logo">
+            <div class="brand-logo-icon"><i class="bi bi-box-seam-fill"></i></div>
+            BorrowBox
+        </a>
+        <div class="brand-quote">
+            <h2>Your community's shared inventory.</h2>
+            <p>Borrow what you need, lend what you don't. Build a culture of trust and stop buying things you only use once.</p>
+        </div>
+        <div style="color: rgba(255,255,255,.4); font-size: .8rem;">
+            © 2026 BorrowBox.
+        </div>
+    </div>
+
+    <!-- RIGHT SIDE: Authentication Forms -->
+    <div class="auth-wrapper">
+        <div class="auth-container">
+            
+            <a href="index.html" class="mobile-logo">
+                <div class="brand-logo-icon" style="width: 28px; height: 28px; font-size: .9rem;"><i class="bi bi-box-seam-fill"></i></div>
+                BorrowBox
+            </a>
+
+            <!-- VIEW 1: SIGN IN -->
+            <div id="signinView" class="view active">
+                <div class="auth-header">
+                    <h1 class="auth-title">Welcome back</h1>
+                    <p class="auth-sub">Enter your details to access your workspace.</p>
+                </div>
+
+                <form onsubmit="handleSignIn(event)">
+                    <div class="input-group">
+                        <label class="input-label">Email Address</label>
+                        <input type="email" class="form-control" id="signinEmail" placeholder="alex@example.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Password</label>
+                        <input type="password" class="form-control" id="signinPassword" placeholder="••••••••" required>
+                    </div>
+
+                    <div class="form-options">
+                        <label class="form-checkbox">
+                            <input type="checkbox"> Remember me
+                        </label>
+                        <a href="#" class="forgot-link">Forgot password?</a>
+                    </div>
+
+                    <button type="submit" class="btn-primary">Sign In</button>
+                </form>
+
+                <div class="auth-divider"><span>or continue with</span></div>
+
+                <button class="btn-outline">
+                    <i class="bi bi-google"></i> Google
+                </button>
+
+                <div class="auth-footer">
+                    Don't have an account? <button type="button" onclick="toggleView('signupView')">Create an account</button>
+                </div>
+            </div>
+
+            <!-- VIEW 2: CREATE ACCOUNT -->
+            <div id="signupView" class="view">
+                <div class="auth-header">
+                    <h1 class="auth-title">Create an account</h1>
+                    <p class="auth-sub">Start sharing with your community today.</p>
+                </div>
+
+                <form onsubmit="handleSignUp(event)">
+                    <div class="input-group">
+                        <label class="input-label">Full Name</label>
+                        <input type="text" class="form-control" id="signupName" placeholder="Alex Johnson" required>
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Email Address</label>
+                        <input type="email" class="form-control" id="signupEmail" placeholder="alex@example.com" required>
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Password</label>
+                        <input type="password" class="form-control" id="signupPassword" placeholder="Create a strong password" required>
+                    </div>
+
+                    <button type="submit" class="btn-primary" style="margin-top: 10px;">Create Account</button>
+                </form>
+
+                <div class="auth-divider"><span>or continue with</span></div>
+
+                <button class="btn-outline">
+                    <i class="bi bi-google"></i> Google
+                </button>
+
+                <div class="auth-footer">
+                    Already have an account? <button type="button" onclick="toggleView('signinView')">Sign in</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+</html>
