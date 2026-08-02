@@ -25,3 +25,12 @@ frontend/node_modules/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local documentation (do not commit)
+API_CLIENT.md
+CHECKLIST.md
+DEPLOYMENT.md
+DEV_NOTES.md
+FINAL_REVIEW.md
+PROJECT_DOCUMENTATION.md
+PROJECT_STATUS.md
