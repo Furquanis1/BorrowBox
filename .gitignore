@@ -1,10 +1,15 @@
 .github/java-upgrade/
 .vscode/
 
-# Local-only project notes and documentation
-**/*.md
-!README.md
-!**/README.md
+# Build artifacts - never commit these
+backend/target/
+frontend/dist/
+frontend/node_modules/
+
+# Environment secrets
+.env
+*.env
+.env.*
 
 # Logs and local capture files
 *-logs.txt
@@ -16,3 +21,7 @@
 # Temporary files
 *.tmp
 *.temp
+
+# OS files
+.DS_Store
+Thumbs.db
