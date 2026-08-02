@@ -1,18 +1,88 @@
-import React, { useState } from 'react'
+import React from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import LandingPage from './pages/LandingPage'
-import Workspace from './components/Workspace'
+import SignInPage from './pages/SignInPage'
+import SignUpPage from './pages/SignUpPage'
+import DashboardLayout from './pages/DashboardLayout'
+import Header from './components/Header'
+import Footer from './components/Footer'
+
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        fontFamily: 'DM Sans, sans-serif',
+        color: 'var(--forest)',
+        fontWeight: 600
+      }}>
+        Loading Workspace...
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/signin" replace />
+  }
+
+  return children
+}
+
+function PublicRoute({ children }) {
+  const { user } = useAuth()
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return children
+}
 
 export default function App() {
-  const [mode, setMode] = useState('landing')
-
   return (
-    <>
-      {mode === 'landing' && (
-        <LandingPage onEnter={() => setMode('workspace')} />
-      )}
-      {mode === 'workspace' && (
-        <Workspace onBackToLanding={() => setMode('landing')} />
-      )}
-    </>
+    <AuthProvider>
+      <Router>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Header />
+          <main style={{ flex: '1 0 auto' }}>
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route
+                path="/signin"
+                element={
+                  <PublicRoute>
+                    <SignInPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/signup"
+                element={
+                  <PublicRoute>
+                    <SignUpPage />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+          <Footer />
+        </div>
+      </Router>
+    </AuthProvider>
   )
 }
