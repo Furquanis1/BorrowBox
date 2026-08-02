@@ -59,7 +59,7 @@ public class ItemControllerTest {
 
     @Test
     void createItemReturnsCreated() throws Exception {
-        ItemCreateRequest req = new ItemCreateRequest("Book", "A good book", null);
+        ItemCreateRequest req = new ItemCreateRequest("Book", "A good book");
         Item saved = new Item("Book", "A good book");
         saved.setId(1L);
 
@@ -85,7 +85,7 @@ public class ItemControllerTest {
 
     @Test
     void updateItemReturnsOk() throws Exception {
-        ItemCreateRequest req = new ItemCreateRequest("Updated Book", "Updated description", null);
+        ItemCreateRequest req = new ItemCreateRequest("Updated Book", "Updated description");
         Item updated = new Item("Updated Book", "Updated description");
         updated.setId(3L);
 
@@ -130,7 +130,7 @@ public class ItemControllerTest {
 
     @Test
     void createItemWithBlankTitleReturns400() throws Exception {
-        ItemCreateRequest invalidReq = new ItemCreateRequest("", "desc", null);
+        ItemCreateRequest invalidReq = new ItemCreateRequest("", "desc");
 
         mockMvc.perform(post("/api/items")
                 .contentType(MediaType.APPLICATION_JSON)

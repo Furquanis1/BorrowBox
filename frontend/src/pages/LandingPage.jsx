@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
-export default function LandingPage({ onEnter }) {
+export default function LandingPage() {
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const handleEnter = () => {
+    if (user) {
+      navigate('/dashboard')
+    } else {
+      navigate('/signin')
+    }
+  }
   const [stats, setStats] = useState({
     items: null,
     loans: null,
@@ -54,7 +66,7 @@ export default function LandingPage({ onEnter }) {
           <div className="landing-logo">
             <h1>BorrowBox</h1>
           </div>
-          <button className="landing-cta-btn" onClick={onEnter}>
+          <button className="landing-cta-btn" onClick={handleEnter}>
             Open App
           </button>
         </div>
@@ -67,7 +79,7 @@ export default function LandingPage({ onEnter }) {
           <p className="landing-subheading">
             Track items, manage borrow requests, and keep everyone on the same page.
           </p>
-          <button className="landing-primary-btn" onClick={onEnter}>
+          <button className="landing-primary-btn" onClick={handleEnter}>
             Start Now
           </button>
         </div>
@@ -131,7 +143,7 @@ export default function LandingPage({ onEnter }) {
       <section className="landing-footer-cta">
         <div className="landing-section-content">
           <h3>Ready to get started?</h3>
-          <button className="landing-primary-btn" onClick={onEnter}>
+          <button className="landing-primary-btn" onClick={handleEnter}>
             Enter Workspace
           </button>
         </div>
