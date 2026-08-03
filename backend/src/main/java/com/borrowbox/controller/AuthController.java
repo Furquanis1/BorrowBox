@@ -11,6 +11,8 @@ import com.borrowbox.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -35,7 +37,18 @@ public class AuthController {
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody UserCreateRequest request) {
         User createdUser = userService.createUser(request);
         String token = jwtService.generateToken(createdUser);
-        return ResponseEntity.status(HttpStatus.CREATED).body(new AuthResponse(token, createdUser));
+        
+        ResponseCookie cookie = ResponseCookie.from("jwt", token)
+                .httpOnly(true)
+                .secure(false) // Set to true in prod/HTTPS
+                .path("/")
+                .maxAge(jwtService.getExpirationMs() / 1000)
+                .sameSite("Lax")
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(new AuthResponse(token, createdUser));
     }
 
     @PostMapping("/login")
@@ -52,6 +65,32 @@ public class AuthController {
         }
 
         String token = jwtService.generateToken(user);
-        return ResponseEntity.ok(new AuthResponse(token, user));
+        
+        ResponseCookie cookie = ResponseCookie.from("jwt", token)
+                .httpOnly(true)
+                .secure(false) // Set to true in prod/HTTPS
+                .path("/")
+                .maxAge(jwtService.getExpirationMs() / 1000)
+                .sameSite("Lax")
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .body(new AuthResponse(token, user));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout() {
+        ResponseCookie cookie = ResponseCookie.from("jwt", "")
+                .httpOnly(true)
+                .secure(false)
+                .path("/")
+                .maxAge(0)
+                .sameSite("Lax")
+                .build();
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .build();
     }
 }

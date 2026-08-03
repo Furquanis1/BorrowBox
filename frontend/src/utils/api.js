@@ -1,6 +1,41 @@
 const API_BASE = '/api';
 
 export const api = {
+  // Auth
+  login: (email, password) =>
+    fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    }).then(async r => {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || err.message || 'Login failed');
+      }
+      return r.json();
+    }),
+
+  register: (fullName, email, password) =>
+    fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fullName, email, password })
+    }).then(async r => {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || err.message || 'Registration failed');
+      }
+      return r.json();
+    }),
+
+  logout: () =>
+    fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST'
+    }).then(r => {
+      if (!r.ok) throw new Error('Logout failed');
+      return true;
+    }),
+
   // Users
   createUser: (fullName, email) =>
     fetch(`${API_BASE}/users`, {

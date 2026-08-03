@@ -32,14 +32,15 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signUp = async (fullName, email) => {
+  const signUp = async (fullName, email, password) => {
     setLoading(true)
     try {
-      const newUser = await api.createUser(fullName, email)
-      setUser(newUser)
-      localStorage.setItem('currentUser', JSON.stringify(newUser))
+      const response = await api.register(fullName, email, password)
+      const registeredUser = response.user
+      setUser(registeredUser)
+      localStorage.setItem('currentUser', JSON.stringify(registeredUser))
       await loadGroups()
-      return newUser
+      return registeredUser
     } catch (err) {
       console.error('Sign up failed:', err)
       throw err
@@ -48,14 +49,15 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signIn = async (userId) => {
+  const signIn = async (email, password) => {
     setLoading(true)
     try {
-      const foundUser = await api.getUser(userId)
-      setUser(foundUser)
-      localStorage.setItem('currentUser', JSON.stringify(foundUser))
+      const response = await api.login(email, password)
+      const loggedInUser = response.user
+      setUser(loggedInUser)
+      localStorage.setItem('currentUser', JSON.stringify(loggedInUser))
       await loadGroups()
-      return foundUser
+      return loggedInUser
     } catch (err) {
       console.error('Sign in failed:', err)
       throw err
@@ -64,7 +66,12 @@ export function AuthProvider({ children }) {
     }
   }
 
-  const signOut = () => {
+  const signOut = async () => {
+    try {
+      await api.logout()
+    } catch (err) {
+      console.error('Sign out on server failed, clearing local state anyway', err)
+    }
     setUser(null)
     setActiveGroup(null)
     localStorage.removeItem('currentUser')
