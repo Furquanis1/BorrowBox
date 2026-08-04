@@ -7,16 +7,31 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [groups, setGroups] = useState([])
   const [activeGroup, setActiveGroup] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true) // start true — checking cookie
 
+  /**
+   * On mount, try to restore the session:
+   *  1. Call GET /api/auth/me  (cookie is sent automatically).
+   *  2. If the server confirms, use the returned user.
+   *  3. If it fails (401 / network), clear any stale localStorage.
+   */
   useEffect(() => {
-    const savedUser = localStorage.getItem('currentUser')
-    const savedGroupId = localStorage.getItem('activeGroupId')
-    if (savedUser) {
-      setUser(JSON.parse(savedUser))
-      loadGroups()
-      if (savedGroupId) setActiveGroup(savedGroupId)
-    }
+    api.me()
+      .then(data => {
+        const u = data?.user ?? data
+        setUser(u)
+        localStorage.setItem('currentUser', JSON.stringify(u))
+        loadGroups()
+        const savedGroupId = localStorage.getItem('activeGroupId')
+        if (savedGroupId) setActiveGroup(savedGroupId)
+      })
+      .catch(() => {
+        // Cookie expired or missing — clear stale local cache
+        setUser(null)
+        localStorage.removeItem('currentUser')
+        localStorage.removeItem('activeGroupId')
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const loadGroups = async () => {

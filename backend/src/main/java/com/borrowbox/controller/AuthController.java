@@ -13,7 +13,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.HttpHeaders;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -77,6 +81,33 @@ public class AuthController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
                 .body(new AuthResponse(token, user));
+    }
+
+    /**
+     * Returns the currently authenticated user from the JWT cookie.
+     * The JwtAuthenticationFilter already validates the cookie and sets the
+     * SecurityContext; we just read the principal here.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<?> me() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated()
+                || auth.getPrincipal().equals("anonymousUser")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        // The filter sets a Spring Security UserDetails as principal
+        String email;
+        Object principal = auth.getPrincipal();
+        if (principal instanceof UserDetails ud) {
+            email = ud.getUsername(); // we store email as username
+        } else {
+            email = principal.toString();
+        }
+
+        User user = userService.findByEmail(email);
+        return ResponseEntity.ok(new AuthResponse(null, user));
     }
 
     @PostMapping("/logout")
