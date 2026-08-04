@@ -1,72 +1,84 @@
+/**
+ * Centralised API client for BorrowBox.
+ *
+ * Every request is sent with `credentials: 'include'` so that the
+ * browser attaches the HttpOnly `jwt` cookie automatically.
+ */
 const API_BASE = '/api';
 
+/**
+ * Thin wrapper around fetch that:
+ *  1. Includes cookies (`credentials: 'include'`).
+ *  2. Sets `Content-Type: application/json` for mutating verbs.
+ *  3. Surfaces server error messages.
+ */
+async function request(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    credentials: 'include',
+    headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...options.headers,
+    },
+  });
+
+  // DELETE endpoints often return 204 No Content
+  if (res.status === 204) return null;
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || body.message || res.statusText);
+  }
+
+  // Some endpoints may return empty body (e.g. logout)
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
 export const api = {
-  // Auth
+  // ─── Auth ────────────────────────────────────────────────
   login: (email, password) =>
-    fetch(`${API_BASE}/auth/login`, {
+    request('/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    }).then(async r => {
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.error || err.message || 'Login failed');
-      }
-      return r.json();
+      body: JSON.stringify({ email, password }),
     }),
 
   register: (fullName, email, password) =>
-    fetch(`${API_BASE}/auth/register`, {
+    request('/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, email, password })
-    }).then(async r => {
-      if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        throw new Error(err.error || err.message || 'Registration failed');
-      }
-      return r.json();
+      body: JSON.stringify({ fullName, email, password }),
     }),
 
   logout: () =>
-    fetch(`${API_BASE}/auth/logout`, {
-      method: 'POST'
-    }).then(r => {
-      if (!r.ok) throw new Error('Logout failed');
-      return true;
+    request('/auth/logout', { method: 'POST' }),
+
+  /** Verify current cookie session — returns user info or throws. */
+  me: () => request('/auth/me'),
+
+  // ─── Users ───────────────────────────────────────────────
+  createUser: (fullName, email) =>
+    request('/users', {
+      method: 'POST',
+      body: JSON.stringify({ fullName, email }),
     }),
 
-  // Users
-  createUser: (fullName, email) =>
-    fetch(`${API_BASE}/users`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, email })
-    }).then(r => r.json()),
+  getUsers: () => request('/users'),
 
-  getUsers: () =>
-    fetch(`${API_BASE}/users`).then(r => r.json()),
+  getUser: (id) => request(`/users/${id}`),
 
-  getUser: (id) =>
-    fetch(`${API_BASE}/users/${id}`).then(r => r.json()),
+  // ─── Groups ──────────────────────────────────────────────
+  getGroups: () => request('/groups'),
 
-  // Groups
-  getGroups: () =>
-    fetch(`${API_BASE}/groups`).then(r => r.json()),
-
-  getGroup: (id) =>
-    fetch(`${API_BASE}/groups/${id}`).then(r => r.json()),
+  getGroup: (id) => request(`/groups/${id}`),
 
   createGroup: (name, description) =>
-    fetch(`${API_BASE}/groups`, {
+    request('/groups', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, description })
-    }).then(r => r.json()),
+      body: JSON.stringify({ name, description }),
+    }),
 
-  // Items
-  getItems: () =>
-    fetch(`${API_BASE}/items`).then(r => r.json()),
+  // ─── Items ───────────────────────────────────────────────
+  getItems: () => request('/items'),
 
   searchItems: (query = '', status = '', categoryId = null, page = 0, size = 20) => {
     const params = new URLSearchParams();
@@ -75,55 +87,46 @@ export const api = {
     if (categoryId) params.append('categoryId', categoryId);
     params.append('page', page);
     params.append('size', size);
-    return fetch(`${API_BASE}/items/search?${params}`).then(r => r.json());
+    return request(`/items/search?${params}`);
   },
 
-  getItem: (id) =>
-    fetch(`${API_BASE}/items/${id}`).then(r => r.json()),
+  getItem: (id) => request(`/items/${id}`),
 
   createItem: (title, description = null) =>
-    fetch(`${API_BASE}/items`, {
+    request('/items', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description })
-    }).then(r => r.json()),
+      body: JSON.stringify({ title, description }),
+    }),
 
   updateItem: (id, title, description) =>
-    fetch(`${API_BASE}/items/${id}`, {
+    request(`/items/${id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description })
-    }).then(r => r.json()),
+      body: JSON.stringify({ title, description }),
+    }),
 
-  deleteItem: (id) =>
-    fetch(`${API_BASE}/items/${id}`, { method: 'DELETE' }).then(r => r.json()),
+  deleteItem: (id) => request(`/items/${id}`, { method: 'DELETE' }),
 
-  archiveItem: (id) =>
-    fetch(`${API_BASE}/items/${id}/archive`, { method: 'POST' }).then(r => r.json()),
+  archiveItem: (id) => request(`/items/${id}/archive`, { method: 'POST' }),
 
-  // Borrow Requests
-  getBorrowRequests: () =>
-    fetch(`${API_BASE}/borrow-requests`).then(r => r.json()),
+  // ─── Borrow Requests ────────────────────────────────────
+  getBorrowRequests: () => request('/borrow-requests'),
 
-  getBorrowRequest: (id) =>
-    fetch(`${API_BASE}/borrow-requests/${id}`).then(r => r.json()),
+  getBorrowRequest: (id) => request(`/borrow-requests/${id}`),
 
   createBorrowRequest: (itemId, requestedByUserId, message = '') =>
-    fetch(`${API_BASE}/borrow-requests`, {
+    request('/borrow-requests', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ itemId, requestedByUserId, message })
-    }).then(r => r.json()),
+      body: JSON.stringify({ itemId, requestedByUserId, message }),
+    }),
 
   approveBorrowRequest: (id) =>
-    fetch(`${API_BASE}/borrow-requests/${id}/approve`, { method: 'POST' }).then(r => r.json()),
+    request(`/borrow-requests/${id}/approve`, { method: 'POST' }),
 
   rejectBorrowRequest: (id) =>
-    fetch(`${API_BASE}/borrow-requests/${id}`, { method: 'DELETE' }).then(r => r.json()),
+    request(`/borrow-requests/${id}`, { method: 'DELETE' }),
 
-  // Borrow Records
-  getBorrowRecords: () =>
-    fetch(`${API_BASE}/borrow-records`).then(r => r.json()),
+  // ─── Borrow Records ─────────────────────────────────────
+  getBorrowRecords: () => request('/borrow-records'),
 
   searchBorrowRecords: (active = null, overdue = null, page = 0, size = 20) => {
     const params = new URLSearchParams();
@@ -131,22 +134,20 @@ export const api = {
     if (overdue !== null) params.append('overdue', overdue);
     params.append('page', page);
     params.append('size', size);
-    return fetch(`${API_BASE}/borrow-records/search?${params}`).then(r => r.json());
+    return request(`/borrow-records/search?${params}`);
   },
 
-  getBorrowRecord: (id) =>
-    fetch(`${API_BASE}/borrow-records/${id}`).then(r => r.json()),
+  getBorrowRecord: (id) => request(`/borrow-records/${id}`),
 
   createBorrowRecord: (borrowRequestId, itemId, borrowedByUserId, borrowedAt, dueAt) =>
-    fetch(`${API_BASE}/borrow-records`, {
+    request('/borrow-records', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ borrowRequestId, itemId, borrowedByUserId, borrowedAt, dueAt })
-    }).then(r => r.json()),
+      body: JSON.stringify({ borrowRequestId, itemId, borrowedByUserId, borrowedAt, dueAt }),
+    }),
 
   returnBorrowRecord: (id) =>
-    fetch(`${API_BASE}/borrow-records/${id}/return`, { method: 'POST' }).then(r => r.json()),
+    request(`/borrow-records/${id}/return`, { method: 'POST' }),
 
   deleteBorrowRecord: (id) =>
-    fetch(`${API_BASE}/borrow-records/${id}`, { method: 'DELETE' }).then(r => r.json())
+    request(`/borrow-records/${id}`, { method: 'DELETE' }),
 };
