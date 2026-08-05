@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
+import { useApp } from '../../contexts/AppContext'
 
 export default function InventoryManager({ userId }) {
+  const { showToast, triggerRefresh, refreshTrigger } = useApp()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -10,7 +12,7 @@ export default function InventoryManager({ userId }) {
 
   useEffect(() => {
     loadItems()
-  }, [userId])
+  }, [userId, refreshTrigger])
 
   const loadItems = async () => {
     setLoading(true)
@@ -36,6 +38,8 @@ export default function InventoryManager({ userId }) {
       setFormData({ title: '', description: '' })
       setShowCreateForm(false)
       setError('')
+      showToast(`Item "${newItem.title}" added to inventory!`)
+      triggerRefresh()
     } catch (err) {
       setError(err.message || 'Failed to create item')
     }
@@ -44,9 +48,11 @@ export default function InventoryManager({ userId }) {
   const handleArchiveItem = async (itemId) => {
     try {
       await api.archiveItem(itemId)
+      showToast('Item archived successfully')
       loadItems()
+      triggerRefresh()
     } catch (err) {
-      console.error('Failed to archive item:', err)
+      showToast(err.message || 'Failed to archive item', 'error')
     }
   }
 

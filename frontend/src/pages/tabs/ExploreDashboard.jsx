@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
+import { useAuth } from '../../contexts/AuthContext'
+import { useApp } from '../../contexts/AppContext'
+import ItemList from '../../components/ItemList'
 
 export default function ExploreDashboard({ groupId }) {
+  const { user } = useAuth()
+  const { refreshTrigger } = useApp()
   const [items, setItems] = useState([])
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -10,7 +15,7 @@ export default function ExploreDashboard({ groupId }) {
 
   useEffect(() => {
     loadItems()
-  }, [groupId, searchQuery, statusFilter, page])
+  }, [groupId, searchQuery, statusFilter, page, refreshTrigger])
 
   const loadItems = async () => {
     setLoading(true)
@@ -51,35 +56,12 @@ export default function ExploreDashboard({ groupId }) {
         </select>
       </div>
 
-      {loading ? (
-        <div className="loading">Loading items...</div>
-      ) : items.length === 0 ? (
-        <div className="empty-state">
-          <p>No items found. Be the first to share something!</p>
-        </div>
-      ) : (
-        <div className="items-grid">
-          {items.map(item => (
-            <div key={item.id} className="item-card">
-              <div className="item-header">
-                <h3 className="item-title">{item.title}</h3>
-                <span className={`item-status status-${item.status?.toLowerCase()}`}>
-                  {item.status || 'AVAILABLE'}
-                </span>
-              </div>
-              <p className="item-description">{item.description || 'No description'}</p>
-              <div className="item-footer">
-                <small className="item-meta">
-                  {item.owner?.fullName || 'Unknown owner'}
-                </small>
-                <button className="btn btn-sm btn-primary" disabled={item.status === 'BORROWED'}>
-                  Request
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <ItemList
+        items={items}
+        loading={loading}
+        currentUserId={user?.id}
+        emptyMessage="No items found. Be the first to share something in your community!"
+      />
     </div>
   )
 }

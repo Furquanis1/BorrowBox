@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
+import { useApp } from '../../contexts/AppContext'
 
 export default function RequestInbox() {
+  const { showToast, triggerRefresh, refreshTrigger } = useApp()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('PENDING')
 
   useEffect(() => {
     loadRequests()
-  }, [filterStatus])
+  }, [filterStatus, refreshTrigger])
 
   const loadRequests = async () => {
     setLoading(true)
@@ -28,18 +30,22 @@ export default function RequestInbox() {
   const handleApprove = async (requestId) => {
     try {
       await api.approveBorrowRequest(requestId)
+      showToast(`Borrow request #${requestId} approved!`)
+      triggerRefresh()
       loadRequests()
     } catch (err) {
-      console.error('Failed to approve request:', err)
+      showToast(err.message || 'Failed to approve request', 'error')
     }
   }
 
   const handleReject = async (requestId) => {
     try {
       await api.rejectBorrowRequest(requestId)
+      showToast(`Borrow request #${requestId} rejected`)
+      triggerRefresh()
       loadRequests()
     } catch (err) {
-      console.error('Failed to reject request:', err)
+      showToast(err.message || 'Failed to reject request', 'error')
     }
   }
 

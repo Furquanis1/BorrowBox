@@ -1,12 +1,15 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AppProvider } from './contexts/AppContext'
 import LandingPage from './pages/LandingPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
 import DashboardLayout from './pages/DashboardLayout'
 import Header from './components/Header'
 import Footer from './components/Footer'
+import Toast from './components/Toast'
+import BorrowRequestModal from './components/BorrowRequestModal'
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
@@ -47,42 +50,46 @@ function PublicRoute({ children }) {
 export default function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Header />
-          <main style={{ flex: '1 0 auto' }}>
-            <Routes>
-              <Route path="/" element={<LandingPage />} />
-              <Route
-                path="/signin"
-                element={
-                  <PublicRoute>
-                    <SignInPage />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/signup"
-                element={
-                  <PublicRoute>
-                    <SignUpPage />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <DashboardLayout />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-          <Footer />
-        </div>
-      </Router>
+      <AppProvider>
+        <Router>
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+            <Header />
+            <main style={{ flex: '1 0 auto' }}>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route
+                  path="/signin"
+                  element={
+                    <PublicRoute>
+                      <SignInPage />
+                    </PublicRoute>
+                  }
+                />
+                <Route
+                  path="/signup"
+                  element={
+                    <PublicRoute>
+                      <SignUpPage />
+                    </PublicRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </main>
+            <Footer />
+            <Toast />
+            <BorrowRequestModal />
+          </div>
+        </Router>
+      </AppProvider>
     </AuthProvider>
   )
 }
