@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
+import { useApp } from '../../contexts/AppContext'
 
 export default function ActiveLoans({ userId }) {
+  const { showToast, triggerRefresh, refreshTrigger } = useApp()
   const [loans, setLoans] = useState([])
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState('active')
 
   useEffect(() => {
     loadLoans()
-  }, [filterType])
+  }, [filterType, refreshTrigger])
 
   const loadLoans = async () => {
     setLoading(true)
@@ -30,9 +32,11 @@ export default function ActiveLoans({ userId }) {
   const handleReturn = async (loanId) => {
     try {
       await api.returnBorrowRecord(loanId)
+      showToast(`Loan #${loanId} marked as returned!`)
+      triggerRefresh()
       loadLoans()
     } catch (err) {
-      console.error('Failed to return item:', err)
+      showToast(err.message || 'Failed to return item', 'error')
     }
   }
 
