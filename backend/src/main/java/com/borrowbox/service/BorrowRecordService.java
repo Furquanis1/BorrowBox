@@ -121,6 +121,7 @@ public class BorrowRecordService {
 
         record.setReturned(true);
         record.setReturnedAt(LocalDateTime.now());
+        // Item is RETURNED; a future workflow step can reset it to AVAILABLE
         record.getItem().setStatus(ItemStatus.RETURNED);
         record.getBorrowRequest().setStatus(BorrowRequestStatus.COMPLETED);
         itemRepository.save(Objects.requireNonNull(record.getItem()));

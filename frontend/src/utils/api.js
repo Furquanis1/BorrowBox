@@ -123,7 +123,14 @@ export const api = {
     request(`/borrow-requests/${id}/approve`, { method: 'POST' }),
 
   rejectBorrowRequest: (id) =>
-    request(`/borrow-requests/${id}`, { method: 'DELETE' }),
+    request(`/borrow-requests/${id}/reject`, { method: 'POST' }),
+
+  /** Approve + auto-create BorrowRecord in one call. dueAt is ISO-8601 string. */
+  confirmBorrowRequest: (id, dueAt) =>
+    request(`/borrow-requests/${id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ dueAt }),
+    }),
 
   // ─── Borrow Records ─────────────────────────────────────
   getBorrowRecords: () => request('/borrow-records'),

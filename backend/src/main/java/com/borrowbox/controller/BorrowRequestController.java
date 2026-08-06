@@ -1,6 +1,8 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.BorrowRequestCreateRequest;
+import com.borrowbox.dto.BorrowRequestConfirmRequest;
+import com.borrowbox.entity.BorrowRecord;
 import com.borrowbox.entity.BorrowRequest;
 import com.borrowbox.service.BorrowRequestService;
 import jakarta.validation.Valid;
@@ -56,5 +58,22 @@ public class BorrowRequestController {
     @PostMapping("/{id}/approve")
     public ResponseEntity<BorrowRequest> approveBorrowRequest(@PathVariable Long id) {
         return ResponseEntity.ok(borrowRequestService.approveBorrowRequest(id));
+    }
+
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<BorrowRequest> rejectBorrowRequest(@PathVariable Long id) {
+        return ResponseEntity.ok(borrowRequestService.rejectBorrowRequest(id));
+    }
+
+    /**
+     * Confirms a borrow request: approves it and immediately creates a BorrowRecord.
+     * This single call completes the entire approval workflow.
+     */
+    @PostMapping("/{id}/confirm")
+    public ResponseEntity<BorrowRecord> confirmBorrowRequest(
+            @PathVariable Long id,
+            @Valid @RequestBody BorrowRequestConfirmRequest request) {
+        BorrowRecord record = borrowRequestService.confirmBorrowRequest(id, request.dueAt());
+        return ResponseEntity.status(HttpStatus.CREATED).body(record);
     }
 }
