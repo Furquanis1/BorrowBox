@@ -7,6 +7,7 @@ import com.borrowbox.entity.Item;
 import com.borrowbox.entity.ItemStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
+import com.borrowbox.repository.BorrowRecordRepository;
 import com.borrowbox.repository.BorrowRequestRepository;
 import com.borrowbox.repository.ItemRepository;
 import com.borrowbox.repository.UserRepository;
@@ -35,6 +36,13 @@ class BorrowRequestServiceTest {
 
     @Mock
     private UserRepository userRepository;
+
+    /**
+     * Required by the BorrowRequestService constructor added in Day 7
+     * for the confirmBorrowRequest method.
+     */
+    @Mock
+    private BorrowRecordRepository borrowRecordRepository;
 
     @InjectMocks
     private BorrowRequestService borrowRequestService;
@@ -83,7 +91,8 @@ class BorrowRequestServiceTest {
     void approveBorrowRequestUpdatesStatus() {
         Item item = new Item("Book", "desc");
         item.setId(1L);
-        item.setStatus(ItemStatus.AVAILABLE);
+        // Item must be REQUESTED — the state set by createBorrowRequest before approve is called
+        item.setStatus(ItemStatus.REQUESTED);
         User user = testUser("Test User", "user@test.com");
         user.setId(2L);
         BorrowRequest request = new BorrowRequest(item, user, "message");
