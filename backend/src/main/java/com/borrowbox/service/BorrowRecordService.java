@@ -121,7 +121,8 @@ public class BorrowRecordService {
 
         record.setReturned(true);
         record.setReturnedAt(LocalDateTime.now());
-        record.getItem().setStatus(ItemStatus.RETURNED);
+        // Restore item to AVAILABLE so it can be borrowed again
+        record.getItem().setStatus(ItemStatus.AVAILABLE);
         record.getBorrowRequest().setStatus(BorrowRequestStatus.COMPLETED);
         itemRepository.save(Objects.requireNonNull(record.getItem()));
         borrowRequestRepository.save(Objects.requireNonNull(record.getBorrowRequest()));

@@ -2,11 +2,22 @@ import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
 import { useApp } from '../../contexts/AppContext'
 
+/**
+ * RequestInbox — shows borrow requests and lets item owners confirm or reject them.
+ *
+ * Confirm (formerly "Approve") uses POST /confirm, which atomically approves the
+ * request and creates a BorrowRecord with the chosen due-date.
+ * Reject uses POST /reject which sets status to REJECTED and restores item to AVAILABLE.
+ */
 export default function RequestInbox() {
   const { showToast, triggerRefresh, refreshTrigger } = useApp()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(false)
   const [filterStatus, setFilterStatus] = useState('PENDING')
+  // Per-request due-date state  { [requestId]: isoString }
+  const [dueDates, setDueDates] = useState({})
+  // Track which request is currently being actioned
+  const [actioningId, setActioningId] = useState(null)
 
   useEffect(() => {
     loadRequests()
@@ -27,26 +38,46 @@ export default function RequestInbox() {
     }
   }
 
-  const handleApprove = async (requestId) => {
+  const handleConfirm = async (requestId) => {
+    const dueAt = dueDates[requestId]
+    if (!dueAt) {
+      showToast('Please select a due date before confirming', 'error')
+      return
+    }
+    setActioningId(requestId)
     try {
-      await api.approveBorrowRequest(requestId)
-      showToast(`Borrow request #${requestId} approved!`)
+      // dueAt from <input type="date"> is yyyy-MM-dd; backend needs ISO-8601 datetime
+      const dueAtIso = new Date(dueAt).toISOString().replace('Z', '')
+      await api.confirmBorrowRequest(requestId, dueAtIso)
+      showToast(`Request #${requestId} confirmed — item handed off!`)
       triggerRefresh()
       loadRequests()
     } catch (err) {
-      showToast(err.message || 'Failed to approve request', 'error')
+      showToast(err.message || 'Failed to confirm request', 'error')
+    } finally {
+      setActioningId(null)
     }
   }
 
   const handleReject = async (requestId) => {
+    setActioningId(requestId)
     try {
       await api.rejectBorrowRequest(requestId)
-      showToast(`Borrow request #${requestId} rejected`)
+      showToast(`Request #${requestId} rejected`)
       triggerRefresh()
       loadRequests()
     } catch (err) {
       showToast(err.message || 'Failed to reject request', 'error')
+    } finally {
+      setActioningId(null)
     }
+  }
+
+  // Default due date: 14 days from today
+  const defaultDueDate = () => {
+    const d = new Date()
+    d.setDate(d.getDate() + 14)
+    return d.toISOString().split('T')[0]
   }
 
   return (
@@ -80,7 +111,7 @@ export default function RequestInbox() {
                   {request.status}
                 </span>
               </div>
-              
+
               <div className="request-body">
                 <p><strong>Requested by:</strong> User #{request.requestedByUserId}</p>
                 <p><strong>Item:</strong> Item #{request.itemId}</p>
@@ -91,24 +122,49 @@ export default function RequestInbox() {
                   </div>
                 )}
                 <small className="request-date">
-                  {new Date(request.createdAt).toLocaleString()}
+                  Submitted: {new Date(request.createdAt).toLocaleString()}
                 </small>
               </div>
 
               {request.status === 'PENDING' && (
-                <div className="request-actions">
-                  <button 
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleApprove(request.id)}
-                  >
-                    ✓ Approve
-                  </button>
-                  <button 
-                    className="btn btn-outline btn-sm"
-                    onClick={() => handleReject(request.id)}
-                  >
-                    ✕ Reject
-                  </button>
+                <div className="request-actions" style={{ flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      Due date:
+                    </label>
+                    <input
+                      type="date"
+                      className="search-input"
+                      style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem' }}
+                      defaultValue={defaultDueDate()}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) =>
+                        setDueDates(prev => ({ ...prev, [request.id]: e.target.value }))
+                      }
+                      onFocus={(e) => {
+                        // Pre-populate if not already set
+                        if (!dueDates[request.id]) {
+                          setDueDates(prev => ({ ...prev, [request.id]: e.target.value || defaultDueDate() }))
+                        }
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleConfirm(request.id)}
+                      disabled={actioningId === request.id}
+                    >
+                      {actioningId === request.id ? '...' : '✓ Confirm Handoff'}
+                    </button>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      onClick={() => handleReject(request.id)}
+                      disabled={actioningId === request.id}
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
