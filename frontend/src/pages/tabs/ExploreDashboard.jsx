@@ -31,8 +31,11 @@ export default function ExploreDashboard({ groupId }) {
         setTotalElements(result.length)
       } else {
         setItems(result.content || [])
-        setTotalPages(result.totalPages || 1)
-        setTotalElements(result.totalElements || 0)
+        // Support both nested result.page metadata (Spring Boot 3.3+) and flat result.totalPages/totalElements
+        const pages = result.page?.totalPages ?? result.totalPages ?? 1
+        const elements = result.page?.totalElements ?? result.totalElements ?? (result.content?.length || 0)
+        setTotalPages(pages)
+        setTotalElements(elements)
       }
     } catch (err) {
       console.error('Failed to load items:', err)
