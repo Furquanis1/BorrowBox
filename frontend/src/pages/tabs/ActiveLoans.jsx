@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../utils/api'
 import { useApp } from '../../contexts/AppContext'
+import Pagination from '../../components/Pagination'
 
 export default function ActiveLoans({ userId }) {
   const { showToast, triggerRefresh, refreshTrigger } = useApp()
   const [loans, setLoans] = useState([])
   const [loading, setLoading] = useState(false)
   const [filterType, setFilterType] = useState('active')
+  const [page, setPage] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalElements, setTotalElements] = useState(0)
+  const pageSize = 10
 
   useEffect(() => {
     loadLoans()
-  }, [filterType, refreshTrigger])
+  }, [filterType, page, refreshTrigger])
 
   const loadLoans = async () => {
     setLoading(true)
@@ -18,12 +23,23 @@ export default function ActiveLoans({ userId }) {
       const result = await api.searchBorrowRecords(
         filterType === 'active' ? true : null,
         filterType === 'overdue' ? true : null,
-        0,
-        50
+        page,
+        pageSize
       )
-      setLoans(Array.isArray(result) ? result : result.content || [])
+      if (Array.isArray(result)) {
+        setLoans(result)
+        setTotalPages(1)
+        setTotalElements(result.length)
+      } else {
+        setLoans(result.content || [])
+        setTotalPages(result.totalPages || 1)
+        setTotalElements(result.totalElements || 0)
+      }
     } catch (err) {
       console.error('Failed to load loans:', err)
+      setLoans([])
+      setTotalPages(1)
+      setTotalElements(0)
     } finally {
       setLoading(false)
     }
@@ -49,19 +65,28 @@ export default function ActiveLoans({ userId }) {
       <div className="filters-row">
         <button 
           className={`filter-btn ${filterType === 'active' ? 'active' : ''}`}
-          onClick={() => setFilterType('active')}
+          onClick={() => {
+            setFilterType('active')
+            setPage(0)
+          }}
         >
           Active Loans
         </button>
         <button 
           className={`filter-btn ${filterType === 'overdue' ? 'active' : ''}`}
-          onClick={() => setFilterType('overdue')}
+          onClick={() => {
+            setFilterType('overdue')
+            setPage(0)
+          }}
         >
           Overdue
         </button>
         <button 
           className={`filter-btn ${filterType === 'all' ? 'active' : ''}`}
-          onClick={() => setFilterType('all')}
+          onClick={() => {
+            setFilterType('all')
+            setPage(0)
+          }}
         >
           All Loans
         </button>
@@ -132,6 +157,16 @@ export default function ActiveLoans({ userId }) {
             </div>
           ))}
         </div>
+      )}
+
+      {!loading && totalElements > 0 && (
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalElements={totalElements}
+          pageSize={pageSize}
+          onPageChange={(newPage) => setPage(newPage)}
+        />
       )}
     </div>
   )
