@@ -31,7 +31,14 @@ public class BorrowRecordController {
     }
 
     @GetMapping
-    public ResponseEntity<List<BorrowRecord>> getAllBorrowRecords() {
+    public ResponseEntity<?> getAllBorrowRecords(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            Pageable pageable
+    ) {
+        if (page != null || size != null) {
+            return ResponseEntity.ok(borrowRecordService.getAllBorrowRecords(pageable));
+        }
         return ResponseEntity.ok(borrowRecordService.getAllBorrowRecords());
     }
 
