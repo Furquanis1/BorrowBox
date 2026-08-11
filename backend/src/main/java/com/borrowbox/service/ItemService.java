@@ -39,6 +39,10 @@ public class ItemService {
         return itemRepository.findAll();
     }
 
+    public Page<Item> getAllItems(Pageable pageable) {
+        return itemRepository.findAll(pageable);
+    }
+
     public Page<Item> searchItems(String q, ItemStatus status, Long categoryId, Long groupId, Long ownerId, Pageable pageable) {
         return itemRepository.findAll(ItemSpecifications.build(q, status, categoryId, groupId, ownerId), pageable);
     }

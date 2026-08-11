@@ -13,6 +13,8 @@ import com.borrowbox.repository.BorrowRecordRepository;
 import com.borrowbox.repository.BorrowRequestRepository;
 import com.borrowbox.repository.ItemRepository;
 import com.borrowbox.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -43,6 +45,10 @@ public class BorrowRequestService {
 
     public List<BorrowRequest> getAllBorrowRequests() {
         return borrowRequestRepository.findAll();
+    }
+
+    public Page<BorrowRequest> getAllBorrowRequests(Pageable pageable) {
+        return borrowRequestRepository.findAll(pageable);
     }
 
     /**

@@ -32,7 +32,14 @@ public class ItemController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Item>> getAllItems() {
+    public ResponseEntity<?> getAllItems(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            Pageable pageable
+    ) {
+        if (page != null || size != null) {
+            return ResponseEntity.ok(itemService.getAllItems(pageable));
+        }
         return ResponseEntity.ok(itemService.getAllItems());
     }
 

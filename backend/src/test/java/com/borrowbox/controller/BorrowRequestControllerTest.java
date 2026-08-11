@@ -19,7 +19,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import org.springframework.data.domain.PageImpl;
 import java.util.Collections;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -57,6 +59,24 @@ class BorrowRequestControllerTest {
         mockMvc.perform(get("/api/borrow-requests"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray());
+    }
+
+    @Test
+    void getAllBorrowRequestsWithPaginationReturnsPage() throws Exception {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        User user = testUser("User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest request = new BorrowRequest(item, user, "please");
+        request.setId(40L);
+        PageImpl<BorrowRequest> page = new PageImpl<>(List.of(request));
+
+        Mockito.when(borrowRequestService.getAllBorrowRequests(any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/borrow-requests").param("page", "0").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.content[0].id").value(40));
     }
 
     @Test

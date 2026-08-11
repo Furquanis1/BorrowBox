@@ -46,6 +46,10 @@ public class BorrowRecordService {
         return borrowRecordRepository.findAll();
     }
 
+    public Page<BorrowRecord> getAllBorrowRecords(Pageable pageable) {
+        return borrowRecordRepository.findAll(pageable);
+    }
+
     public BorrowRecord createBorrowRecord(BorrowRecordCreateRequest request) {
         BorrowRequest borrowRequest = borrowRequestRepository.findById(Objects.requireNonNull(request.borrowRequestId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Borrow request not found with id: " + request.borrowRequestId()));

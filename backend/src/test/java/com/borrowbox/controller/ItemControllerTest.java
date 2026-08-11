@@ -58,6 +58,20 @@ public class ItemControllerTest {
     }
 
     @Test
+    void getAllItemsWithPaginationReturnsPage() throws Exception {
+        Item item = new Item("Paginated Book", "Desc");
+        item.setId(20L);
+        PageImpl<Item> page = new PageImpl<>(List.of(item));
+
+        Mockito.when(itemService.getAllItems(any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/items").param("page", "0").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.content[0].id").value(20));
+    }
+
+    @Test
     void createItemReturnsCreated() throws Exception {
         ItemCreateRequest req = new ItemCreateRequest("Book", "A good book");
         Item saved = new Item("Book", "A good book");

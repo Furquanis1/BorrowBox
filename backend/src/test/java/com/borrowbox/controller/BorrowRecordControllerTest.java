@@ -65,6 +65,26 @@ class BorrowRecordControllerTest {
     }
 
     @Test
+    void getAllBorrowRecordsWithPaginationReturnsPage() throws Exception {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        User user = testUser("User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest borrowRequest = new BorrowRequest(item, user, "please");
+        borrowRequest.setId(3L);
+        BorrowRecord record = new BorrowRecord(borrowRequest, item, user, LocalDateTime.now(), LocalDateTime.now().plusDays(7));
+        record.setId(30L);
+        PageImpl<BorrowRecord> page = new PageImpl<>(List.of(record));
+
+        Mockito.when(borrowRecordService.getAllBorrowRecords(any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/borrow-records").param("page", "0").param("size", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.content[0].id").value(30));
+    }
+
+    @Test
     void createBorrowRecordReturnsCreated() throws Exception {
         LocalDateTime borrowedAt = LocalDateTime.now();
         LocalDateTime dueAt = borrowedAt.plusDays(7);
