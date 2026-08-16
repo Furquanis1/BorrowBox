@@ -144,6 +144,74 @@ class BorrowRecordServiceTest {
         assertThat(item.getStatus()).isEqualTo(ItemStatus.OVERDUE);
     }
 
+    @Test
+    void returnBorrowedItemRejectsAlreadyReturnedRecord() {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        item.setStatus(ItemStatus.RETURNED);
+        User user = testUser("Test User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest request = new BorrowRequest(item, user, "message");
+        request.setId(3L);
+        BorrowRecord record = new BorrowRecord(request, item, user, LocalDateTime.now().minusDays(5), LocalDateTime.now().plusDays(2));
+        record.setId(4L);
+        record.setReturned(true);
+
+        when(borrowRecordRepository.findById(4L)).thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> borrowRecordService.returnBorrowedItem(4L))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("already returned");
+    }
+
+    @Test
+    void createBorrowRecordRejectsDueDateBeforeBorrowDate() {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        item.setStatus(ItemStatus.APPROVED);
+        User user = testUser("Test User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest request = new BorrowRequest(item, user, "message");
+        request.setId(3L);
+        request.setStatus(BorrowRequestStatus.APPROVED);
+
+        when(borrowRequestRepository.findById(3L)).thenReturn(Optional.of(request));
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(item));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+
+        // dueAt is BEFORE borrowedAt
+        LocalDateTime borrowedAt = LocalDateTime.now();
+        LocalDateTime dueAt = borrowedAt.minusDays(1);
+        BorrowRecordCreateRequest createRequest = new BorrowRecordCreateRequest(3L, 1L, 2L, borrowedAt, dueAt);
+
+        assertThatThrownBy(() -> borrowRecordService.createBorrowRecord(createRequest))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Due date must be after borrowed date");
+    }
+
+    @Test
+    void createBorrowRecordRejectsArchivedItem() {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        item.setStatus(ItemStatus.APPROVED);
+        item.setArchived(true);
+        User user = testUser("Test User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest request = new BorrowRequest(item, user, "message");
+        request.setId(3L);
+        request.setStatus(BorrowRequestStatus.APPROVED);
+
+        when(borrowRequestRepository.findById(3L)).thenReturn(Optional.of(request));
+        when(itemRepository.findById(1L)).thenReturn(Optional.of(item));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(user));
+
+        BorrowRecordCreateRequest createRequest = new BorrowRecordCreateRequest(3L, 1L, 2L, LocalDateTime.now(), LocalDateTime.now().plusDays(7));
+
+        assertThatThrownBy(() -> borrowRecordService.createBorrowRecord(createRequest))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("archived");
+    }
+
     private User testUser(String fullName, String email) {
         User user = new User(fullName, email);
         user.setPasswordHash("test-password");

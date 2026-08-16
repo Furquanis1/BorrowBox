@@ -1,11 +1,16 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.BorrowRequestCreateRequest;
+import com.borrowbox.dto.BorrowRequestConfirmRequest;
+import com.borrowbox.entity.BorrowRecord;
 import com.borrowbox.entity.BorrowRequest;
 import com.borrowbox.entity.BorrowRequestStatus;
 import com.borrowbox.entity.Item;
+import com.borrowbox.entity.ItemStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.ResourceNotFoundException;
+
+import java.time.LocalDateTime;
 import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.BorrowRequestService;
 import com.borrowbox.service.JwtService;
@@ -156,6 +161,47 @@ class BorrowRequestControllerTest {
         mockMvc.perform(post("/api/borrow-requests/7/approve"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"));
+    }
+
+    @Test
+    void rejectBorrowRequestReturnsOk() throws Exception {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        User user = testUser("User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest rejected = new BorrowRequest(item, user, "please");
+        rejected.setId(8L);
+        rejected.setStatus(BorrowRequestStatus.REJECTED);
+
+        Mockito.when(borrowRequestService.rejectBorrowRequest(eq(8L))).thenReturn(rejected);
+
+        mockMvc.perform(post("/api/borrow-requests/8/reject"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+    }
+
+    @Test
+    void confirmBorrowRequestReturnsCreated() throws Exception {
+        Item item = new Item("Book", "desc");
+        item.setId(1L);
+        item.setStatus(ItemStatus.BORROWED);
+        User user = testUser("User", "user@test.com");
+        user.setId(2L);
+        BorrowRequest request = new BorrowRequest(item, user, "please");
+        request.setId(9L);
+        request.setStatus(BorrowRequestStatus.COMPLETED);
+        LocalDateTime dueAt = LocalDateTime.now().plusDays(14);
+        BorrowRecord record = new BorrowRecord(request, item, user, LocalDateTime.now(), dueAt);
+        record.setId(10L);
+
+        Mockito.when(borrowRequestService.confirmBorrowRequest(eq(9L), any(LocalDateTime.class))).thenReturn(record);
+
+        BorrowRequestConfirmRequest body = new BorrowRequestConfirmRequest(dueAt);
+        mockMvc.perform(post("/api/borrow-requests/9/confirm")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(10));
     }
 
     @Test
