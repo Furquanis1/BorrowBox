@@ -14,7 +14,7 @@ public final class BorrowRecordSpecifications {
     }
 
     public static Specification<BorrowRecord> borrowedByIdEquals(Long borrowedByUserId) {
-        return (root, query, cb) -> borrowedByUserId == null ? null : cb.equal(root.get("borrowedByUser").get("id"), borrowedByUserId);
+        return (root, query, cb) -> borrowedByUserId == null ? null : cb.equal(root.get("borrowedBy").get("id"), borrowedByUserId);
     }
 
     public static Specification<BorrowRecord> returnedFalse() {
