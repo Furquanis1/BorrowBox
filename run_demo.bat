@@ -34,12 +34,12 @@ echo [OK]    Docker is available and running.
 REM ── Pre-flight: Compose ─────────────────────────────────
 docker compose version >nul 2>&1
 if %errorlevel% equ 0 (
-    echo [OK]    Docker Compose (plugin) detected.
+    echo [OK]    Docker Compose ^(plugin^) detected.
     set "COMPOSE_CMD=docker compose"
 ) else (
     where docker-compose >nul 2>&1
     if %errorlevel% equ 0 (
-        echo [OK]    docker-compose (standalone) detected.
+        echo [OK]    docker-compose ^(standalone^) detected.
         set "COMPOSE_CMD=docker-compose"
     ) else (
         echo [ERROR] Docker Compose is not installed.
