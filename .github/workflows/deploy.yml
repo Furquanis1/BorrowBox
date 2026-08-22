@@ -1,0 +1,74 @@
+name: Deploy Application
+
+on:
+  workflow_run:
+    workflows: ["Build and Test"]
+    branches: [main, master]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Deployment target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  deploy-railway:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Railway Credentials
+        id: check-creds
+        run: |
+          if [ -n "${{ secrets.RAILWAY_API_TOKEN }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "::notice::RAILWAY_API_TOKEN secret not set. Skipping Railway deployment."
+          fi
+
+      - name: Install Railway CLI
+        if: steps.check-creds.outputs.configured == 'true'
+        run: npm install -g @railway/cli
+
+      - name: Deploy Services to Railway
+        if: steps.check-creds.outputs.configured == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          echo "Deploying application services to Railway..."
+          railway up --detach
+
+  deploy-render:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Render Deploy Hook
+        id: check-hook
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "::notice::RENDER_DEPLOY_HOOK_URL secret not set. Skipping Render deployment."
+          fi
+
+      - name: Trigger Render Deployment
+        if: steps.check-hook.outputs.configured == 'true'
+        run: |
+          echo "Triggering deployment via Render webhook..."
+          curl -s -f -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          echo "Render deployment triggered successfully."
