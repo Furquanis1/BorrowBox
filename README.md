@@ -12,6 +12,12 @@
 
 ---
 
+## 📸 Preview
+
+![BorrowBox Dashboard Dark Mode](docs/assets/borrowbox-dashboard-dark.jpg)
+
+---
+
 ## 🌐 Live Demo
 
 > 🔗 Coming soon — will be deployed to Railway.
