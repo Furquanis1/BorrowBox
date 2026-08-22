@@ -2,6 +2,8 @@
 
 > A full-stack platform for sharing and tracking physical items within groups and workspaces.
 
+[![Build and Test](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml/badge.svg)](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml)
+
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-brightgreen?logo=springboot)
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
@@ -37,7 +39,7 @@ BorrowBox helps communities manage shared physical assets — think university e
 | Frontend | React 18.2, Vite 5 |
 | API Docs | Springdoc OpenAPI / Swagger UI |
 | DevOps | Docker, Docker Compose, Nginx |
-| CI/CD | GitHub Actions *(coming soon)* |
+| CI/CD | GitHub Actions ([build.yml](.github/workflows/build.yml), [deploy.yml](.github/workflows/deploy.yml)) |
 
 ---
 
