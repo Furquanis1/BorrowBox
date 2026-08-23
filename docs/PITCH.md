@@ -46,7 +46,7 @@ BorrowBox delivers a centralized, self-service web application with structured l
 
 ## 🧪 Testing, Quality & CI/CD
 - **Backend Test Suite:** 93 automated tests across unit, service, controller (MockMvc), and repository integration tests against MySQL.
-- **End-to-End Testing:** Cypress test suite (20 tests) verifying complete user journeys: landing page, authentication, protected navigation, and dashboard operations.
+- **End-to-End Testing:** Cypress test suite (19 tests) verifying complete user journeys: landing page, authentication, protected navigation, and dashboard operations.
 - **CI/CD Automation:** GitHub Actions workflows executing Maven tests with a live MySQL service container, frontend production builds, Docker Buildx packaging, and headless Cypress testing.
 
 ---
