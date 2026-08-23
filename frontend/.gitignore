@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .env
+
+# Cypress runtime artifacts
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
