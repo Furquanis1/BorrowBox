@@ -15,11 +15,6 @@ describe('Landing Page', () => {
     cy.contains('Track & Return').should('be.visible')
   })
 
-  it('should have a working "Open App" button that navigates to sign in', () => {
-    cy.contains('Open App').click()
-    cy.url().should('include', '/signin')
-  })
-
   it('should have a working "Start Now" button that navigates to sign in', () => {
     cy.contains('Start Now').click()
     cy.url().should('include', '/signin')

@@ -7,7 +7,7 @@ describe('Dashboard', () => {
 
   before(() => {
     // Register a fresh user via the API for dashboard tests
-    cy.request('POST', '/api/auth/signup', {
+    cy.request('POST', '/api/auth/register', {
       fullName: testUser.fullName,
       email: testUser.email,
       password: testUser.password,
@@ -16,10 +16,13 @@ describe('Dashboard', () => {
 
   beforeEach(() => {
     // Sign in via UI before each test
+    cy.clearCookies()
+    cy.clearLocalStorage()
     cy.visit('/signin')
+    cy.get('input[type="email"]', { timeout: 15000 }).should('be.visible')
     cy.get('input[type="email"]').type(testUser.email)
     cy.get('input[type="password"]').type(testUser.password)
-    cy.contains('Sign In').click()
+    cy.get('form.auth-form button[type="submit"]').click()
     cy.url().should('include', '/dashboard', { timeout: 15000 })
   })
 

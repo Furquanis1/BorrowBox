@@ -33,7 +33,7 @@ describe('Authentication Flow', () => {
       cy.get('input[type="text"]').type(testUser.fullName)
       cy.get('input[type="email"]').type(testUser.email)
       cy.get('input[type="password"]').type(testUser.password)
-      cy.contains('Create Account').click()
+      cy.get('form.auth-form button[type="submit"]').click()
 
       // Should redirect to dashboard after successful registration
       cy.url().should('include', '/dashboard', { timeout: 15000 })
@@ -54,12 +54,18 @@ describe('Authentication Flow', () => {
     })
 
     it('should show error for invalid credentials', () => {
+      cy.intercept('POST', '**/api/auth/login').as('login')
+
       cy.get('input[type="email"]').type('nonexistent@example.com')
       cy.get('input[type="password"]').type('WrongPassword123!')
-      cy.contains('Sign In').click()
+      cy.get('form.auth-form button[type="submit"]').click()
 
-      // Should show an error message and stay on sign in page
-      cy.get('.error-message').should('be.visible')
+      cy.wait('@login').then((interception) => {
+        expect(interception.response.statusCode).to.eq(401)
+        expect(interception.response.body.error).to.eq('Invalid email or password')
+      })
+
+      cy.contains('Invalid email or password').should('be.visible')
       cy.url().should('include', '/signin')
     })
 
@@ -71,7 +77,7 @@ describe('Authentication Flow', () => {
     it('should sign in with valid credentials and redirect to dashboard', () => {
       cy.get('input[type="email"]').type(testUser.email)
       cy.get('input[type="password"]').type(testUser.password)
-      cy.contains('Sign In').click()
+      cy.get('form.auth-form button[type="submit"]').click()
 
       cy.url().should('include', '/dashboard', { timeout: 15000 })
       cy.contains(testUser.fullName).should('be.visible')
