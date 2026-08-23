@@ -33,6 +33,8 @@ BorrowBox helps communities manage shared physical assets — think university e
 3. **Approve or reject** borrow requests.
 4. **Track active loans** and get visibility on overdue items.
 
+📄 **Project Pitch & Overview:** See the one-page project pitch in [Markdown](docs/PITCH.md) or download the [Pitch PDF](docs/assets/borrowbox-project-pitch.pdf).
+
 ---
 
 ## 🛠️ Tech Stack

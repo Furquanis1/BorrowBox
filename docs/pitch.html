@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BorrowBox — Project Pitch</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 12mm 14mm 12mm 14mm;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      background: #ffffff;
+      line-height: 1.35;
+      font-size: 8.8pt;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .page {
+      max-width: 100%;
+      height: 100%;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #059669;
+      padding-bottom: 7px;
+      margin-bottom: 9px;
+    }
+    .brand-title {
+      font-size: 19pt;
+      font-weight: 800;
+      color: #064e3b;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-tagline {
+      font-size: 9.2pt;
+      font-weight: 600;
+      color: #059669;
+      margin-top: 1px;
+    }
+    .header-badges {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      max-width: 340px;
+    }
+    .badge {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      font-size: 6.8pt;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .badge-primary {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      color: #065f46;
+    }
+    .value-prop {
+      background: #f8fafc;
+      border-left: 3.5px solid #059669;
+      padding: 6px 10px;
+      font-size: 8.6pt;
+      color: #334155;
+      margin-bottom: 9px;
+      border-radius: 0 4px 4px 0;
+    }
+    .value-prop strong {
+      color: #064e3b;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-bottom: 9px;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .card-title {
+      font-size: 9.5pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 3px;
+    }
+    .card-title .icon {
+      font-size: 10pt;
+    }
+    ul.bullet-list {
+      list-style-type: none;
+      padding-left: 0;
+    }
+    ul.bullet-list li {
+      position: relative;
+      padding-left: 12px;
+      margin-bottom: 4px;
+      font-size: 8pt;
+      color: #334155;
+      line-height: 1.3;
+    }
+    ul.bullet-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #059669;
+      font-weight: bold;
+      font-size: 10pt;
+      top: -1px;
+    }
+    ul.bullet-list li strong {
+      color: #0f172a;
+    }
+    .feature-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 3px;
+      font-size: 7.8pt;
+    }
+    .feature-table th, .feature-table td {
+      padding: 4px 7px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .feature-table th {
+      background: #f8fafc;
+      font-weight: 700;
+      color: #475569;
+      font-size: 7.2pt;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .feature-table td:first-child {
+      font-weight: 600;
+      color: #065f46;
+      width: 24%;
+      white-space: nowrap;
+    }
+    .feature-table td:last-child {
+      color: #334155;
+    }
+    .arch-box {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+      font-size: 6.8pt;
+      text-align: center;
+      margin-bottom: 6px;
+      letter-spacing: 0.1px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+    }
+    .arch-box span.arrow {
+      color: #38bdf8;
+      font-size: 6.5pt;
+    }
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 5px;
+      margin-top: 4px;
+    }
+    .tech-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 7.2pt;
+    }
+    .tech-item-title {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 7.5pt;
+      margin-bottom: 1px;
+    }
+    .tech-item-desc {
+      color: #64748b;
+      line-height: 1.2;
+    }
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 5px;
+      padding: 6px 8px;
+      margin-bottom: 9px;
+      text-align: center;
+    }
+    .metric-val {
+      font-size: 11.5pt;
+      font-weight: 800;
+      color: #065f46;
+    }
+    .metric-lbl {
+      font-size: 6.8pt;
+      font-weight: 600;
+      color: #047857;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .footer-vision {
+      background: #faf5ff;
+      border: 1px solid #e9d5ff;
+      border-radius: 5px;
+      padding: 6px 10px;
+    }
+    .footer-vision-title {
+      font-size: 8.2pt;
+      font-weight: 700;
+      color: #6b21a8;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .vision-tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .vision-tag {
+      background: #ffffff;
+      border: 1px solid #d8b4fe;
+      color: #7e22ce;
+      font-size: 7pt;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <div class="brand-title">📦 BorrowBox</div>
+        <div class="brand-tagline">Full-Stack Asset Sharing & Equipment Lending Platform</div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-primary">Java 21</span>
+        <span class="badge badge-primary">Spring Boot 3.5</span>
+        <span class="badge badge-primary">React 18</span>
+        <span class="badge badge-primary">MySQL 8.0</span>
+        <span class="badge">Docker Compose</span>
+        <span class="badge">Cypress E2E</span>
+        <span class="badge">GitHub Actions</span>
+      </div>
+    </header>
+
+    <div class="value-prop">
+      <strong>Value Proposition:</strong> BorrowBox replaces disorganized spreadsheets and informal messaging with a secure, auditable, and automated physical asset sharing workflow for university labs, makerspaces, and shared organizations.
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title"><span class="icon">🎯</span> Problem</div>
+        <ul class="bullet-list">
+          <li><strong>Lost & Unreturned Items:</strong> Informal lending via chat leads to misplaced gear, broken accountability, and lost inventory.</li>
+          <li><strong>Zero Real-Time Visibility:</strong> Members cannot see what items are currently available, who has them, or when they are due.</li>
+          <li><strong>Spreadsheet Bottlenecks:</strong> Manual logs lack access controls, audit trails, and automated overdue tracking.</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span class="icon">💡</span> Solution</div>
+        <ul class="bullet-list">
+          <li><strong>Live Searchable Catalog:</strong> Real-time status indicators (<code>AVAILABLE</code>, <code>BORROWED</code>, <code>ARCHIVED</code>) with multi-field search.</li>
+          <li><strong>Structured Request Workflow:</strong> Borrowers submit requests; owners review, approve, reject, or confirm loans with due dates.</li>
+          <li><strong>Automated Lifecycle:</strong> Atomic state transitions, overdue calculation, historical logs, and one-click return reconciliation.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 9px;">
+      <div class="card-title"><span class="icon">🚀</span> Core Features Implemented</div>
+      <table class="feature-table">
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>Capabilities & Implementation Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Authentication</td>
+            <td>BCrypt password hashing, stateless HttpOnly JWT cookies (XSS-safe), global exception handling, and React protected route guards.</td>
+          </tr>
+          <tr>
+            <td>Inventory Catalog</td>
+            <td>Full item CRUD, category assignment, dynamic multi-attribute search using Spring Data JPA Specifications, and item archiving.</td>
+          </tr>
+          <tr>
+            <td>Borrow Requests</td>
+            <td>Request submission with custom notes, owner inbox, approve/reject endpoints, and atomic loan confirmation with binding return dates.</td>
+          </tr>
+          <tr>
+            <td>Loan Tracking</td>
+            <td>Active loan monitoring, automated overdue status detection, borrower loan history, and one-click return processing.</td>
+          </tr>
+          <tr>
+            <td>User Interface</td>
+            <td>Clean tabbed dashboard (Explore, My Inventory, Requests, Loans), real-time stats overview, and server-side pagination.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-bottom: 9px;">
+      <div class="card-title"><span class="icon">🏗️</span> Architecture & Tech Stack</div>
+      <div class="arch-box">
+        <span>[ React 18 SPA (Vite + Nginx) ]</span>
+        <span class="arrow">──(HttpOnly JWT / REST API)──►</span>
+        <span>[ Spring Boot 3.5 API (Java 21) ]</span>
+        <span class="arrow">──(JPA / Hibernate)──►</span>
+        <span>[ MySQL 8.0 ]</span>
+      </div>
+      <div class="tech-grid">
+        <div class="tech-item">
+          <div class="tech-item-title">Backend API</div>
+          <div class="tech-item-desc">Spring Boot 3.5, Java 21, Spring Security, JPA Specification, Maven</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-item-title">Frontend SPA</div>
+          <div class="tech-item-desc">React 18, Vite 5, React Router 7, Custom CSS Design System</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-item-title">Database & Auth</div>
+          <div class="tech-item-desc">MySQL 8.0, HikariCP pool, HttpOnly JWT cookies, BCrypt</div>
+        </div>
+        <div class="tech-item">
+          <div class="tech-item-title">DevOps & CI/CD</div>
+          <div class="tech-item-desc">Docker multi-stage, Nginx, Compose, GitHub Actions CI/CD</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="metrics-bar">
+      <div>
+        <div class="metric-val">93</div>
+        <div class="metric-lbl">Backend Tests</div>
+      </div>
+      <div>
+        <div class="metric-val">19</div>
+        <div class="metric-lbl">Cypress E2E Tests</div>
+      </div>
+      <div>
+        <div class="metric-val">100%</div>
+        <div class="metric-lbl">Dockerized Stack</div>
+      </div>
+      <div>
+        <div class="metric-val">CI/CD</div>
+        <div class="metric-lbl">Automated Pipelines</div>
+      </div>
+    </div>
+
+    <div class="footer-vision">
+      <div class="footer-vision-title"><span>🔮</span> Future Roadmap (Planned Enhancements)</div>
+      <div class="vision-tags">
+        <span class="vision-tag">Multi-Tenant Workspaces & Role Hierarchies</span>
+        <span class="vision-tag">Automated Email & Webhook Overdue Alerts</span>
+        <span class="vision-tag">Mobile QR / Barcode Quick-Checkin</span>
+        <span class="vision-tag">S3 Cloud Item Photo Storage</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
