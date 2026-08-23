@@ -7,7 +7,8 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [groups, setGroups] = useState([])
   const [activeGroup, setActiveGroup] = useState(null)
-  const [loading, setLoading] = useState(true) // start true — checking cookie
+  const [loading, setLoading] = useState(false)
+  const [initializingAuth, setInitializingAuth] = useState(true) // start true — checking cookie
 
   /**
    * On mount, try to restore the session:
@@ -31,7 +32,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('currentUser')
         localStorage.removeItem('activeGroupId')
       })
-      .finally(() => setLoading(false))
+      .finally(() => setInitializingAuth(false))
   }, [])
 
   const loadGroups = async () => {
@@ -104,6 +105,7 @@ export function AuthProvider({ children }) {
       groups,
       activeGroup,
       loading,
+      initializingAuth,
       signUp,
       signIn,
       signOut,

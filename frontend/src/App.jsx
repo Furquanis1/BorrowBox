@@ -12,9 +12,9 @@ import Toast from './components/Toast'
 import BorrowRequestModal from './components/BorrowRequestModal'
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, initializingAuth } = useAuth()
 
-  if (loading) {
+  if (initializingAuth) {
     return (
       <div style={{
         display: 'flex',
@@ -38,7 +38,23 @@ function ProtectedRoute({ children }) {
 }
 
 function PublicRoute({ children }) {
-  const { user } = useAuth()
+  const { user, initializingAuth } = useAuth()
+
+  if (initializingAuth) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        fontFamily: 'DM Sans, sans-serif',
+        color: 'var(--forest)',
+        fontWeight: 600
+      }}>
+        Loading...
+      </div>
+    )
+  }
 
   if (user) {
     return <Navigate to="/dashboard" replace />

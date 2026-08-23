@@ -60,17 +60,6 @@ export default function LandingPage() {
 
   return (
     <div className="landing-page">
-      {/* Navbar */}
-      <nav className="landing-navbar">
-        <div className="landing-navbar-content">
-          <div className="landing-logo">
-            <h1>BorrowBox</h1>
-          </div>
-          <button className="landing-cta-btn" onClick={handleEnter}>
-            Open App
-          </button>
-        </div>
-      </nav>
 
       {/* Hero Section */}
       <section className="landing-hero">

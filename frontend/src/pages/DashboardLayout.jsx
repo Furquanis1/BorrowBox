@@ -11,8 +11,8 @@ export default function DashboardLayout() {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('explore')
 
-  const handleSignOut = () => {
-    signOut()
+  const handleSignOut = async () => {
+    await signOut()
     navigate('/')
   }
 
