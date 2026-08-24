@@ -92,6 +92,7 @@ export function AuthProvider({ children }) {
     setActiveGroup(null)
     localStorage.removeItem('currentUser')
     localStorage.removeItem('activeGroupId')
+    localStorage.removeItem('activeTab')
   }
 
   const switchGroup = (groupId) => {
