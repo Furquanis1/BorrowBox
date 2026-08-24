@@ -28,13 +28,30 @@ public final class ItemSpecifications {
         return (root, query, cb) -> ownerId == null ? null : cb.equal(root.get("owner").get("id"), ownerId);
     }
 
+    public static Specification<Item> notArchived() {
+        return (root, query, cb) -> cb.isFalse(root.get("archived"));
+    }
+
     public static Specification<Item> build(String q, ItemStatus status, Long categoryId, Long groupId, Long ownerId) {
-        Specification<Item> specification = (root, query, cb) -> null;
-        specification = specification.and(titleContains(q));
-        specification = specification.and(hasStatus(status));
-        specification = specification.and(hasCategoryId(categoryId));
-        specification = specification.and(hasGroupId(groupId));
-        specification = specification.and(hasOwnerId(ownerId));
-        return specification;
+        Specification<Item> spec = Specification.where(null);
+        if (q != null && !q.isBlank()) {
+            spec = spec.and(titleContains(q));
+        }
+        if (status != null) {
+            spec = spec.and(hasStatus(status));
+        } else if (ownerId == null) {
+            // General explore search without status filter returns non-archived items
+            spec = spec.and(notArchived());
+        }
+        if (categoryId != null) {
+            spec = spec.and(hasCategoryId(categoryId));
+        }
+        if (groupId != null) {
+            spec = spec.and(hasGroupId(groupId));
+        }
+        if (ownerId != null) {
+            spec = spec.and(hasOwnerId(ownerId));
+        }
+        return spec;
     }
 }

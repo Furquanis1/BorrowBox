@@ -17,8 +17,15 @@ export default function InventoryManager({ userId }) {
   const loadItems = async () => {
     setLoading(true)
     try {
-      const allItems = await api.getItems()
-      setItems(Array.isArray(allItems) ? allItems : [])
+      let userItems = []
+      if (userId) {
+        const result = await api.getUserItems(userId)
+        userItems = Array.isArray(result) ? result : (result?.content || [])
+      } else {
+        const allItems = await api.getItems()
+        userItems = Array.isArray(allItems) ? allItems : (allItems?.content || [])
+      }
+      setItems(userItems)
     } catch (err) {
       console.error('Failed to load items:', err)
     } finally {

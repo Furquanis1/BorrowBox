@@ -32,4 +32,41 @@ public class ItemRepositoryIntegrationTest {
         assertThat(loaded.getDescription()).isEqualTo("Integration test item");
         assertThat(loaded.getStatus()).isEqualTo(ItemStatus.AVAILABLE);
     }
+
+    @Test
+    void searchWithNoStatusReturnsAllNonArchivedItems() {
+        Item availableItem = itemRepository.save(new Item("Active Item", "Available desc"));
+        
+        Item borrowedItem = new Item("Borrowed Item", "Borrowed desc");
+        borrowedItem.setStatus(ItemStatus.BORROWED);
+        itemRepository.save(borrowedItem);
+
+        Item archivedItem = new Item("Archived Item", "Archived desc");
+        archivedItem.setArchived(true);
+        archivedItem.setStatus(ItemStatus.ARCHIVED);
+        itemRepository.save(archivedItem);
+
+        var spec = com.borrowbox.spec.ItemSpecifications.build(null, null, null, null, null);
+        var results = itemRepository.findAll(spec);
+
+        assertThat(results).extracting(Item::getTitle)
+                .contains(availableItem.getTitle(), borrowedItem.getTitle())
+                .doesNotContain(archivedItem.getTitle());
+    }
+
+    @Test
+    void searchWithAvailableStatusReturnsOnlyAvailable() {
+        Item availableItem = itemRepository.save(new Item("Drill", "Cordless drill"));
+        
+        Item borrowedItem = new Item("Ladder", "Step ladder");
+        borrowedItem.setStatus(ItemStatus.BORROWED);
+        itemRepository.save(borrowedItem);
+
+        var spec = com.borrowbox.spec.ItemSpecifications.build(null, ItemStatus.AVAILABLE, null, null, null);
+        var results = itemRepository.findAll(spec);
+
+        assertThat(results).extracting(Item::getTitle)
+                .contains(availableItem.getTitle())
+                .doesNotContain(borrowedItem.getTitle());
+    }
 }
