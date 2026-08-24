@@ -9,9 +9,17 @@ import ActiveLoans from './tabs/ActiveLoans'
 export default function DashboardLayout() {
   const { user, groups, activeGroup, switchGroup, signOut } = useAuth()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('explore')
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'explore'
+  })
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    localStorage.setItem('activeTab', tab)
+  }
 
   const handleSignOut = async () => {
+    localStorage.removeItem('activeTab')
     await signOut()
     navigate('/')
   }
@@ -60,7 +68,7 @@ export default function DashboardLayout() {
               aria-selected={activeTab === 'explore'}
               aria-controls="panel-explore"
               className={`nav-item ${activeTab === 'explore' ? 'active' : ''}`}
-              onClick={() => setActiveTab('explore')}
+              onClick={() => handleTabChange('explore')}
             >
               📊 Explore
             </button>
@@ -70,7 +78,7 @@ export default function DashboardLayout() {
               aria-selected={activeTab === 'inventory'}
               aria-controls="panel-inventory"
               className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-              onClick={() => setActiveTab('inventory')}
+              onClick={() => handleTabChange('inventory')}
             >
               📦 Inventory
             </button>
@@ -80,7 +88,7 @@ export default function DashboardLayout() {
               aria-selected={activeTab === 'requests'}
               aria-controls="panel-requests"
               className={`nav-item ${activeTab === 'requests' ? 'active' : ''}`}
-              onClick={() => setActiveTab('requests')}
+              onClick={() => handleTabChange('requests')}
             >
               ✉️ Requests
             </button>
@@ -90,7 +98,7 @@ export default function DashboardLayout() {
               aria-selected={activeTab === 'loans'}
               aria-controls="panel-loans"
               className={`nav-item ${activeTab === 'loans' ? 'active' : ''}`}
-              onClick={() => setActiveTab('loans')}
+              onClick={() => handleTabChange('loans')}
             >
               📋 Loans
             </button>

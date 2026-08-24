@@ -58,11 +58,24 @@ describe('Dashboard', () => {
     cy.contains('Active Loans').should('be.visible')
   })
 
-  it('should sign out and redirect to landing page', () => {
+  it('should preserve Inventory tab selection on page reload', () => {
+    cy.contains('Inventory').click()
+    cy.contains('My Inventory').should('be.visible')
+    cy.reload()
+    cy.contains('My Inventory', { timeout: 15000 }).should('be.visible')
+  })
+
+  it('should sign out and redirect to landing page and clear tab state', () => {
+    cy.contains('Inventory').click()
+    cy.contains('My Inventory').should('be.visible')
     cy.contains('Sign Out').click()
 
     cy.location('pathname', { timeout: 15000 }).should((pathname) => {
       expect(['/','/signin']).to.include(pathname)
+    })
+
+    cy.window().then((win) => {
+      expect(win.localStorage.getItem('activeTab')).to.be.null
     })
 
     cy.log(`Current URL: ${window.location.href}`)

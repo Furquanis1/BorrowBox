@@ -1,6 +1,7 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.ItemCreateRequest;
+import com.borrowbox.entity.Group;
 import com.borrowbox.entity.Item;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.repository.UserRepository;
@@ -182,5 +183,26 @@ public class ItemControllerTest {
         mockMvc.perform(get("/api/items/search").param("categoryId", "5").param("page", "0").param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(11));
+    }
+
+    @Test
+    void searchItemsWithGroupRelationshipSerializesSuccessfully() throws Exception {
+        Item item = new Item("Community Drill", "Drill for group members");
+        item.setId(12L);
+        Group group = new Group("Woodworking Community", "Local woodworking group");
+        group.setId(101L);
+        item.setGroup(group);
+        PageImpl<Item> page = new PageImpl<>(List.of(item));
+
+        Mockito.when(itemService.searchItems(
+                Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+                .thenReturn(page);
+
+        mockMvc.perform(get("/api/items/search").param("page", "0").param("size", "12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(12))
+                .andExpect(jsonPath("$.content[0].group.id").value(101))
+                .andExpect(jsonPath("$.content[0].group.name").value("Woodworking Community"))
+                .andExpect(jsonPath("$.content[0].group.users").doesNotExist());
     }
 }

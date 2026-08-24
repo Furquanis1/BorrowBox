@@ -80,14 +80,20 @@ export const api = {
   // ─── Items ───────────────────────────────────────────────
   getItems: () => request('/items'),
 
-  searchItems: (query = '', status = '', categoryId = null, page = 0, size = 20) => {
+  searchItems: (query = '', status = '', categoryId = null, page = 0, size = 20, groupId = null, ownerId = null) => {
     const params = new URLSearchParams();
     if (query) params.append('q', query);
     if (status) params.append('status', status);
     if (categoryId) params.append('categoryId', categoryId);
+    if (groupId) params.append('groupId', groupId);
+    if (ownerId) params.append('ownerId', ownerId);
     params.append('page', page);
     params.append('size', size);
     return request(`/items/search?${params}`);
+  },
+
+  getUserItems: (userId) => {
+    return request(`/items/search?ownerId=${userId}&size=100`);
   },
 
   getItem: (id) => request(`/items/${id}`),
