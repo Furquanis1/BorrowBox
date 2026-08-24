@@ -62,34 +62,43 @@ export default function InventoryManager({ userId }) {
         <button 
           className="btn btn-primary"
           onClick={() => setShowCreateForm(!showCreateForm)}
+          aria-expanded={showCreateForm}
+          aria-controls="create-item-card"
         >
           {showCreateForm ? '✕ Cancel' : '+ Add Item'}
         </button>
       </div>
 
       {showCreateForm && (
-        <div className="create-form-card">
+        <div id="create-item-card" className="create-form-card">
           <h3>Add New Item</h3>
-          <form onSubmit={handleCreateItem}>
+          <form onSubmit={handleCreateItem} aria-label="Add New Item Form">
             <div className="form-group">
-              <label>Item Title</label>
+              <label htmlFor="item-title">Item Title</label>
               <input
+                id="item-title"
                 type="text"
                 placeholder="e.g., Cordless Drill"
                 value={formData.title}
                 onChange={(e) => setFormData({...formData, title: e.target.value})}
+                required
               />
             </div>
             <div className="form-group">
-              <label>Description</label>
+              <label htmlFor="item-description">Description</label>
               <textarea
+                id="item-description"
                 placeholder="Tell others about this item..."
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 rows="3"
               />
             </div>
-            {error && <div className="error-message">{error}</div>}
+            {error && (
+              <div className="error-message" role="alert" aria-live="polite">
+                {error}
+              </div>
+            )}
             <button type="submit" className="btn btn-primary">Create Item</button>
           </form>
         </div>
@@ -103,13 +112,13 @@ export default function InventoryManager({ userId }) {
         </div>
       ) : (
         <div className="items-table">
-          <table>
+          <table aria-label="Your Inventory Items">
             <thead>
               <tr>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
+                <th scope="col">Title</th>
+                <th scope="col">Status</th>
+                <th scope="col">Created</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -131,6 +140,7 @@ export default function InventoryManager({ userId }) {
                       className="btn btn-sm btn-outline"
                       onClick={() => handleArchiveItem(item.id)}
                       disabled={item.archived}
+                      aria-label={`Archive ${item.title}`}
                     >
                       {item.archived ? 'Archived' : 'Archive'}
                     </button>

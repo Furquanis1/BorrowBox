@@ -18,9 +18,9 @@ export default function Header() {
   }
 
   return (
-    <nav className="nav">
-      <Link to="/" className="nav-logo">
-        <span className="nav-logo-icon">📦</span>
+    <nav className="nav" aria-label="Main Navigation">
+      <Link to="/" className="nav-logo" aria-label="BorrowBox Home">
+        <span className="nav-logo-icon" aria-hidden="true">📦</span>
         <strong>BorrowBox</strong>
       </Link>
       

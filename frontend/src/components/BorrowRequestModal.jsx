@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useApp } from '../contexts/AppContext'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../utils/api'
@@ -8,6 +8,27 @@ export default function BorrowRequestModal() {
   const { user } = useAuth()
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const textareaRef = useRef(null)
+
+  useEffect(() => {
+    if (!borrowModalItem) return
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closeBorrowModal()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    // Focus the textarea when modal opens
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [borrowModalItem, closeBorrowModal])
 
   if (!borrowModalItem) return null
 
@@ -48,6 +69,9 @@ export default function BorrowRequestModal() {
       onClick={closeBorrowModal}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="borrow-modal-title"
         style={{
           backgroundColor: '#ffffff',
           borderRadius: '16px',
@@ -60,11 +84,12 @@ export default function BorrowRequestModal() {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>
+          <h3 id="borrow-modal-title" style={{ margin: 0, fontSize: '1.25rem', color: '#111827' }}>
             Request to Borrow
           </h3>
           <button
             onClick={closeBorrowModal}
+            aria-label="Close dialog"
             style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#6B7280' }}
           >
             ✕
@@ -83,10 +108,15 @@ export default function BorrowRequestModal() {
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+            <label
+              htmlFor="borrow-message"
+              style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '6px' }}
+            >
               Message for Owner (optional)
             </label>
             <textarea
+              id="borrow-message"
+              ref={textareaRef}
               rows="3"
               placeholder="Hi, I'd like to borrow this for a couple of days..."
               value={message}

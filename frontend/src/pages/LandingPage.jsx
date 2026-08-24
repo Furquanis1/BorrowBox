@@ -62,9 +62,11 @@ export default function LandingPage() {
     <div className="landing-page">
 
       {/* Hero Section */}
-      <section className="landing-hero">
+      <section className="landing-hero" aria-labelledby="hero-heading">
         <div className="landing-hero-content">
-          <h2>Manage Borrowing & Lending Simply</h2>
+          <h1 id="hero-heading" style={{ fontSize: 'clamp(2.5rem, 5vw, 4rem)', fontWeight: 800, color: 'var(--forest)', letterSpacing: '-1.5px', marginBottom: '16px', lineHeight: 1.15 }}>
+            Manage Borrowing &amp; Lending Simply
+          </h1>
           <p className="landing-subheading">
             Track items, manage borrow requests, and keep everyone on the same page.
           </p>
@@ -75,31 +77,31 @@ export default function LandingPage() {
       </section>
 
       {/* Stats Section */}
-      <section className="landing-stats">
+      <section className="landing-stats" aria-labelledby="stats-heading">
         <div className="landing-stats-content">
-          <h3>What's in BorrowBox</h3>
-          <div className="stats-grid">
+          <h2 id="stats-heading">What's in BorrowBox</h2>
+          <div className="stats-grid" role="region" aria-label="Community Statistics">
             <div className="stat-card">
-              <div className="stat-number">
+              <div className="stat-number" aria-live="polite">
                 {stats.loading ? '—' : stats.error ? '?' : stats.items}
               </div>
               <div className="stat-label">Items Available</div>
             </div>
             <div className="stat-card">
-              <div className="stat-number">
+              <div className="stat-number" aria-live="polite">
                 {stats.loading ? '—' : stats.error ? '?' : stats.loans}
               </div>
               <div className="stat-label">Active Loans</div>
             </div>
             <div className="stat-card">
-              <div className="stat-number">
+              <div className="stat-number" aria-live="polite">
                 {stats.loading ? '—' : stats.error ? '?' : stats.requests}
               </div>
               <div className="stat-label">Pending Requests</div>
             </div>
           </div>
           {stats.error && (
-            <div className="stat-error">{stats.error}</div>
+            <div className="stat-error" role="alert">{stats.error}</div>
           )}
         </div>
       </section>

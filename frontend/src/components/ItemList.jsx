@@ -30,7 +30,10 @@ export default function ItemList({ items = [], loading = false, currentUserId = 
           <div key={item.id} className="item-card">
             <div className="item-header">
               <h3 className="item-title">{item.title}</h3>
-              <span className={`item-status status-${(item.status || 'AVAILABLE').toLowerCase()}`}>
+              <span
+                className={`item-status status-${(item.status || 'AVAILABLE').toLowerCase()}`}
+                aria-label={`Status: ${item.status || 'AVAILABLE'}`}
+              >
                 {item.status || 'AVAILABLE'}
               </span>
             </div>
@@ -41,7 +44,7 @@ export default function ItemList({ items = [], loading = false, currentUserId = 
 
             <div className="item-footer">
               <small className="item-meta">
-                👤 {item.owner?.fullName || (isOwner ? 'You' : `User #${item.ownerId || 'Unknown'}`)}
+                <span aria-hidden="true">👤 </span>{item.owner?.fullName || (isOwner ? 'You' : `User #${item.ownerId || 'Unknown'}`)}
               </small>
 
               {!isOwner && (
@@ -49,13 +52,14 @@ export default function ItemList({ items = [], loading = false, currentUserId = 
                   className="btn btn-sm btn-primary"
                   disabled={!isAvailable}
                   onClick={() => openBorrowModal(item)}
+                  aria-label={isAvailable ? `Request to borrow ${item.title}` : `${item.title} is currently borrowed`}
                 >
                   {isAvailable ? 'Request' : 'Borrowed'}
                 </button>
               )}
 
               {isOwner && (
-                <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600 }} aria-label="You are the owner of this item">
                   Your Item
                 </span>
               )}
