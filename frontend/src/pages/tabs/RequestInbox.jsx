@@ -82,9 +82,10 @@ export default function RequestInbox() {
 
   return (
     <div className="request-inbox">
-      <div className="filters-row">
+      <div className="filters-row" role="search" aria-label="Request filters">
         <select
           className="filter-select"
+          aria-label="Filter requests by status"
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
@@ -129,12 +130,17 @@ export default function RequestInbox() {
               {request.status === 'PENDING' && (
                 <div className="request-actions" style={{ flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <label style={{ fontSize: '0.8rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    <label
+                      htmlFor={`due-date-${request.id}`}
+                      style={{ fontSize: '0.8rem', color: 'var(--slate)', whiteSpace: 'nowrap', fontWeight: 500 }}
+                    >
                       Due date:
                     </label>
                     <input
+                      id={`due-date-${request.id}`}
                       type="date"
                       className="search-input"
+                      aria-label={`Due date for request #${request.id}`}
                       style={{ flex: 1, padding: '6px 10px', fontSize: '0.85rem' }}
                       defaultValue={defaultDueDate()}
                       min={new Date().toISOString().split('T')[0]}
@@ -154,6 +160,7 @@ export default function RequestInbox() {
                       className="btn btn-primary btn-sm"
                       onClick={() => handleConfirm(request.id)}
                       disabled={actioningId === request.id}
+                      aria-label={`Confirm request #${request.id}`}
                     >
                       {actioningId === request.id ? '...' : '✓ Confirm Handoff'}
                     </button>
@@ -161,6 +168,7 @@ export default function RequestInbox() {
                       className="btn btn-outline btn-sm"
                       onClick={() => handleReject(request.id)}
                       disabled={actioningId === request.id}
+                      aria-label={`Reject request #${request.id}`}
                     >
                       ✕ Reject
                     </button>

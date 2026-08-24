@@ -10,6 +10,8 @@ export default function Toast() {
 
   return (
     <div
+      role="alert"
+      aria-live="polite"
       style={{
         position: 'fixed',
         bottom: '24px',
@@ -28,10 +30,11 @@ export default function Toast() {
         animation: 'slideIn 0.25s ease-out'
       }}
     >
-      <span>{isSuccess ? '✓' : '⚠️'}</span>
+      <span aria-hidden="true">{isSuccess ? '✓' : '⚠️'}</span>
       <span>{toast.message}</span>
       <button
         onClick={hideToast}
+        aria-label="Close notification"
         style={{
           background: 'none',
           border: 'none',

@@ -49,11 +49,12 @@ export default function ExploreDashboard({ groupId }) {
 
   return (
     <div className="explore-dashboard">
-      <div className="filters-row">
+      <div className="filters-row" role="search" aria-label="Explore filters">
         <input
           type="text"
           placeholder="Search items..."
           className="search-input"
+          aria-label="Search items"
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value)
@@ -62,6 +63,7 @@ export default function ExploreDashboard({ groupId }) {
         />
         <select
           className="filter-select"
+          aria-label="Filter by item status"
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value)

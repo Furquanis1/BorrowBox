@@ -27,30 +27,43 @@ export default function SignInPage() {
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Sign in to your account to continue</p>
         
-        <form onSubmit={handleSignIn} className="auth-form">
+        <form onSubmit={handleSignIn} className="auth-form" aria-label="Sign In Form">
           <div className="form-group">
-            <label>Email Address</label>
+            <label htmlFor="signin-email">Email Address</label>
             <input
+              id="signin-email"
               type="email"
               placeholder="alex@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
 
           <div className="form-group">
-            <label>Password</label>
+            <label htmlFor="signin-password">Password</label>
             <input
+              id="signin-password"
               type="password"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
           </div>
 
-          {error && <div className="error-message" style={{ color: '#b91c1c', marginTop: '8px', fontSize: '0.875rem' }}>{error}</div>}
+          {error && (
+            <div
+              className="error-message"
+              role="alert"
+              aria-live="polite"
+              style={{ color: '#b91c1c', marginTop: '8px', fontSize: '0.875rem' }}
+            >
+              {error}
+            </div>
+          )}
 
           <button type="submit" className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: '16px' }} disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}

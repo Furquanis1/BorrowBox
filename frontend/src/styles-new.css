@@ -16,7 +16,7 @@
   --off: #f7faf8;
   --ink: #0b1a13;
   --slate: #3d5247;
-  --mist: #8ba898;
+  --mist: #526e60;
   --line: #d4e6dc;
   --r-xl: 20px;
   --r-lg: 14px;
@@ -33,6 +33,21 @@ body {
   background: var(--white);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Accessibility: Universal Focus Visible Styles */
+:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 2px;
 }
 
 /* ===== LANDING PAGE ===== */
@@ -853,21 +868,23 @@ body {
 .form-group select:focus {
   outline: none;
   border-color: var(--emerald);
+  box-shadow: 0 0 0 3px rgba(26, 92, 58, 0.2);
 }
 
 .error-message {
   background: #fee;
-  color: #c33;
+  color: #b91c1c;
   padding: 12px 14px;
   border-radius: var(--r-md);
   font-size: 0.9rem;
   margin-bottom: 16px;
-  border: 1px solid #fdd;
+  border: 1px solid #fca5a5;
+  font-weight: 500;
 }
 
 .auth-footer {
   text-align: center;
-  color: var(--mist);
+  color: var(--slate);
   font-size: 0.9rem;
 }
 
@@ -910,7 +927,7 @@ body {
 
 .sidebar-user {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .sidebar-section {
@@ -922,7 +939,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.7);
   margin-bottom: 12px;
 }
 
@@ -937,8 +954,8 @@ body {
   align-items: center;
   gap: 12px;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
   padding: 12px;
   border-radius: var(--r-md);
   cursor: pointer;
@@ -947,8 +964,9 @@ body {
 }
 
 .group-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: white;
 }
 
 .group-item.active {
@@ -976,7 +994,7 @@ body {
 
 .group-meta {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.7);
 }
 
 .nav-item {
@@ -1083,6 +1101,7 @@ body {
 .filter-select:focus {
   outline: none;
   border-color: var(--emerald);
+  box-shadow: 0 0 0 3px rgba(26, 92, 58, 0.2);
 }
 
 .items-grid {

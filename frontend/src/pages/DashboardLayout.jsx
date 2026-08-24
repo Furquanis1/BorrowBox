@@ -25,7 +25,7 @@ export default function DashboardLayout() {
   return (
     <div className="dashboard">
       {/* SIDEBAR */}
-      <aside className="dashboard-sidebar">
+      <aside className="dashboard-sidebar" aria-label="Sidebar Navigation">
         <div className="sidebar-header">
           <div className="sidebar-logo">📦 BorrowBox</div>
           <p className="sidebar-user">{user.fullName}</p>
@@ -33,14 +33,15 @@ export default function DashboardLayout() {
 
         <div className="sidebar-section">
           <h4 className="sidebar-section-title">Communities</h4>
-          <div className="group-list">
+          <div className="group-list" role="group" aria-label="Communities">
             {groups.map(group => (
               <button
                 key={group.id}
                 className={`group-item ${activeGroup === group.id ? 'active' : ''}`}
                 onClick={() => switchGroup(group.id)}
+                aria-pressed={activeGroup === group.id}
               >
-                <span className="group-icon">👥</span>
+                <span className="group-icon" aria-hidden="true">👥</span>
                 <div className="group-info">
                   <div className="group-name">{group.name}</div>
                   <div className="group-meta">{group.users?.length || 0} members</div>
@@ -50,33 +51,51 @@ export default function DashboardLayout() {
           </div>
         </div>
 
-        <div className="sidebar-section">
+        <nav className="sidebar-section" aria-label="Dashboard Navigation">
           <h4 className="sidebar-section-title">Navigation</h4>
-          <button
-            className={`nav-item ${activeTab === 'explore' ? 'active' : ''}`}
-            onClick={() => setActiveTab('explore')}
-          >
-            📊 Explore
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
-            onClick={() => setActiveTab('inventory')}
-          >
-            📦 Inventory
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'requests' ? 'active' : ''}`}
-            onClick={() => setActiveTab('requests')}
-          >
-            ✉️ Requests
-          </button>
-          <button
-            className={`nav-item ${activeTab === 'loans' ? 'active' : ''}`}
-            onClick={() => setActiveTab('loans')}
-          >
-            📋 Loans
-          </button>
-        </div>
+          <div role="tablist" aria-orientation="vertical">
+            <button
+              id="tab-explore"
+              role="tab"
+              aria-selected={activeTab === 'explore'}
+              aria-controls="panel-explore"
+              className={`nav-item ${activeTab === 'explore' ? 'active' : ''}`}
+              onClick={() => setActiveTab('explore')}
+            >
+              📊 Explore
+            </button>
+            <button
+              id="tab-inventory"
+              role="tab"
+              aria-selected={activeTab === 'inventory'}
+              aria-controls="panel-inventory"
+              className={`nav-item ${activeTab === 'inventory' ? 'active' : ''}`}
+              onClick={() => setActiveTab('inventory')}
+            >
+              📦 Inventory
+            </button>
+            <button
+              id="tab-requests"
+              role="tab"
+              aria-selected={activeTab === 'requests'}
+              aria-controls="panel-requests"
+              className={`nav-item ${activeTab === 'requests' ? 'active' : ''}`}
+              onClick={() => setActiveTab('requests')}
+            >
+              ✉️ Requests
+            </button>
+            <button
+              id="tab-loans"
+              role="tab"
+              aria-selected={activeTab === 'loans'}
+              aria-controls="panel-loans"
+              className={`nav-item ${activeTab === 'loans' ? 'active' : ''}`}
+              onClick={() => setActiveTab('loans')}
+            >
+              📋 Loans
+            </button>
+          </div>
+        </nav>
 
         <div className="sidebar-footer">
           <button className="btn btn-ghost" style={{width:'100%'}} onClick={handleSignOut}>
@@ -103,7 +122,12 @@ export default function DashboardLayout() {
         </div>
 
         {/* TAB CONTENT */}
-        <div className="dashboard-content">
+        <div
+          className="dashboard-content"
+          role="tabpanel"
+          id={`panel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+        >
           {activeTab === 'explore' && <ExploreDashboard groupId={activeGroup} />}
           {activeTab === 'inventory' && <InventoryManager userId={user.id} />}
           {activeTab === 'requests' && <RequestInbox />}

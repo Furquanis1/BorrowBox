@@ -65,9 +65,10 @@ export default function ActiveLoans({ userId }) {
 
   return (
     <div className="active-loans">
-      <div className="filters-row">
+      <div className="filters-row" role="group" aria-label="Loan status filters">
         <button 
           className={`filter-btn ${filterType === 'active' ? 'active' : ''}`}
+          aria-pressed={filterType === 'active'}
           onClick={() => {
             setFilterType('active')
             setPage(0)
@@ -77,6 +78,7 @@ export default function ActiveLoans({ userId }) {
         </button>
         <button 
           className={`filter-btn ${filterType === 'overdue' ? 'active' : ''}`}
+          aria-pressed={filterType === 'overdue'}
           onClick={() => {
             setFilterType('overdue')
             setPage(0)
@@ -86,6 +88,7 @@ export default function ActiveLoans({ userId }) {
         </button>
         <button 
           className={`filter-btn ${filterType === 'all' ? 'active' : ''}`}
+          aria-pressed={filterType === 'all'}
           onClick={() => {
             setFilterType('all')
             setPage(0)
@@ -152,6 +155,7 @@ export default function ActiveLoans({ userId }) {
                   <button 
                     className="btn btn-primary btn-sm"
                     onClick={() => handleReturn(loan.id)}
+                    aria-label={`Mark loan #${loan.id} as returned`}
                   >
                     ✓ Mark as Returned
                   </button>

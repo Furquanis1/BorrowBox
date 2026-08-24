@@ -68,8 +68,9 @@ export default function Pagination({
   const endItem = Math.min((currentPage + 1) * pageSize, totalElements || 0)
 
   return (
-    <div
+    <nav
       className="pagination-container"
+      aria-label="Pagination Navigation"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -81,7 +82,7 @@ export default function Pagination({
         borderTop: '1px solid #E5E7EB'
       }}
     >
-      <div style={{ fontSize: '0.875rem', color: '#6B7280' }}>
+      <div style={{ fontSize: '0.875rem', color: '#526e60' }}>
         {totalElements !== null ? (
           totalElements > 0 ? (
             <span>
@@ -103,6 +104,7 @@ export default function Pagination({
           className="btn btn-outline btn-sm"
           onClick={handlePrev}
           disabled={currentPage <= 0}
+          aria-label="Previous page"
           style={{ cursor: currentPage <= 0 ? 'not-allowed' : 'pointer', opacity: currentPage <= 0 ? 0.5 : 1 }}
         >
           &laquo; Previous
@@ -113,6 +115,7 @@ export default function Pagination({
             return (
               <span
                 key={`${pageItem}-${index}`}
+                aria-hidden="true"
                 style={{ padding: '0 4px', color: '#9CA3AF', fontSize: '0.875rem' }}
               >
                 &hellip;
@@ -127,6 +130,8 @@ export default function Pagination({
               type="button"
               className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline'}`}
               onClick={() => onPageChange(pageItem)}
+              aria-label={`Page ${pageItem + 1}`}
+              aria-current={isActive ? 'page' : undefined}
               style={{
                 minWidth: '34px',
                 padding: '4px 8px',
@@ -143,6 +148,7 @@ export default function Pagination({
           className="btn btn-outline btn-sm"
           onClick={handleNext}
           disabled={currentPage >= totalPages - 1}
+          aria-label="Next page"
           style={{
             cursor: currentPage >= totalPages - 1 ? 'not-allowed' : 'pointer',
             opacity: currentPage >= totalPages - 1 ? 0.5 : 1
@@ -151,6 +157,6 @@ export default function Pagination({
           Next &raquo;
         </button>
       </div>
-    </div>
+    </nav>
   )
 }
