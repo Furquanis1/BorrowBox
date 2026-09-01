@@ -1,6 +1,7 @@
 package com.borrowbox.integration;
 
 import com.borrowbox.entity.User;
+import com.borrowbox.entity.UserStatus;
 import com.borrowbox.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,7 @@ public class UserRepositoryIntegrationTest {
         User loaded = userRepository.findById(saved.getId()).orElseThrow();
         assertThat(loaded.getFullName()).isEqualTo("Test User");
         assertThat(loaded.getEmail()).isEqualTo("test.user@example.com");
+        assertThat(loaded.getStatus()).isEqualTo(UserStatus.ACTIVE);
     }
 
     private User testUser(String fullName, String email) {
