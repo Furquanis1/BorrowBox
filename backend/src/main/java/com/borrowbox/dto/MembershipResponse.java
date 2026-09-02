@@ -18,6 +18,7 @@ public record MembershipResponse(
         MembershipVerificationMethod verificationMethod,
         LocalDateTime verifiedAt,
         LocalDateTime joinedAt,
+        Long verifiedBy,
         Map<String, Object> contextMetadata
 ) {
 }

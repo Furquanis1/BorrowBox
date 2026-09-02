@@ -134,7 +134,7 @@ public class CommunityServiceTest {
         when(membershipService.isActiveMember(100L, 2L)).thenReturn(true);
         MembershipResponse member = new MembershipResponse(
                 1L, 100L, 2L, "Ahmed", "CSE", MembershipRole.MEMBER,
-                MembershipStatus.ACTIVE, null, null, null, java.util.Map.of());
+                MembershipStatus.ACTIVE, null, null, null, null, java.util.Map.of());
         when(membershipService.listForCommunity(2L)).thenReturn(java.util.List.of(member));
 
         List<MembershipResponse> members = communityService.listMembers(2L, creator);
@@ -151,7 +151,7 @@ public class CommunityServiceTest {
         when(membershipService.isActiveMember(100L, 3L)).thenReturn(true);
         MembershipResponse manager = new MembershipResponse(
                 1L, 100L, 3L, "Ahmed", "Office", MembershipRole.MANAGER,
-                MembershipStatus.ACTIVE, null, null, null, java.util.Map.of());
+                MembershipStatus.ACTIVE, null, null, null, 100L, java.util.Map.of());
         when(membershipService.listForCommunity(3L)).thenReturn(java.util.List.of(manager));
 
         List<MembershipResponse> members = communityService.listMembers(3L, creator);

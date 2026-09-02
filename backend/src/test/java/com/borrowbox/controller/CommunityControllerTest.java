@@ -120,7 +120,7 @@ public class CommunityControllerTest {
     void activeMemberCanReadCommunityMembers() throws Exception {
         MembershipResponse member = new MembershipResponse(
                 1L, 100L, 1L, "Ahmed", "CSE",
-                MembershipRole.MANAGER, MembershipStatus.ACTIVE, null, null, null, Map.of());
+                MembershipRole.MANAGER, MembershipStatus.ACTIVE, null, null, null, 100L, Map.of());
         Mockito.when(communityService.listMembers(eq(1L), eq(currentUser)))
                 .thenReturn(List.of(member));
 
@@ -137,5 +137,57 @@ public class CommunityControllerTest {
 
         mockMvc.perform(get("/api/communities/1/members"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void joinCommunityReturnsMembership() throws Exception {
+        MembershipResponse resp = new MembershipResponse(
+                1L, 100L, 1L, "Ahmed", "CSE",
+                MembershipRole.MEMBER, MembershipStatus.PENDING,
+                com.borrowbox.entity.MembershipVerificationMethod.MANAGER_APPROVAL, null, null, null, Map.of());
+        Mockito.when(membershipService.joinCommunity(eq(currentUser), eq(1L), any()))
+                .thenReturn(resp);
+
+        mockMvc.perform(post("/api/communities/1/join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.role").value("MEMBER"));
+    }
+
+    @Test
+    void leaveCommunityReturnsMembership() throws Exception {
+        MembershipResponse resp = new MembershipResponse(
+                1L, 100L, 1L, "Ahmed", "CSE",
+                MembershipRole.MEMBER, MembershipStatus.LEFT, null, null, null, null, Map.of());
+        Mockito.when(membershipService.leave(eq(100L), eq(1L))).thenReturn(resp);
+
+        mockMvc.perform(post("/api/communities/1/leave"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("LEFT"));
+    }
+
+    @Test
+    void pendingMembersRequiresManager() throws Exception {
+        Mockito.when(membershipService.listPendingForCommunity(eq(100L), eq(1L)))
+                .thenThrow(new UnauthorizedException("Only an active manager can view pending memberships"));
+
+        mockMvc.perform(get("/api/communities/1/members/pending"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void pendingMembersReturnsList() throws Exception {
+        MembershipResponse pending = new MembershipResponse(
+                1L, 100L, 1L, "Ahmed", "CSE",
+                MembershipRole.MEMBER, MembershipStatus.PENDING,
+                com.borrowbox.entity.MembershipVerificationMethod.MANAGER_APPROVAL, null, null, null, Map.of());
+        Mockito.when(membershipService.listPendingForCommunity(eq(100L), eq(1L)))
+                .thenReturn(List.of(pending));
+
+        mockMvc.perform(get("/api/communities/1/members/pending"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("PENDING"));
     }
 }
