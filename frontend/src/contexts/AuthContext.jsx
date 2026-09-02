@@ -5,8 +5,8 @@ export const AuthContext = createContext()
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [groups, setGroups] = useState([])
-  const [activeGroup, setActiveGroup] = useState(null)
+  const [communities, setCommunities] = useState([])
+  const [activeCommunity, setActiveCommunity] = useState(null)
   const [loading, setLoading] = useState(false)
   const [initializingAuth, setInitializingAuth] = useState(true) // start true — checking cookie
 
@@ -22,29 +22,29 @@ export function AuthProvider({ children }) {
         const u = data?.user ?? data
         setUser(u)
         localStorage.setItem('currentUser', JSON.stringify(u))
-        loadGroups()
-        const savedGroupId = localStorage.getItem('activeGroupId')
-        if (savedGroupId) setActiveGroup(savedGroupId)
+        loadCommunities()
+        const savedCommunityId = localStorage.getItem('activeCommunityId')
+        if (savedCommunityId) setActiveCommunity(savedCommunityId)
       })
       .catch(() => {
         // Cookie expired or missing — clear stale local cache
         setUser(null)
         localStorage.removeItem('currentUser')
-        localStorage.removeItem('activeGroupId')
+        localStorage.removeItem('activeCommunityId')
       })
       .finally(() => setInitializingAuth(false))
   }, [])
 
-  const loadGroups = async () => {
+  const loadCommunities = async () => {
     try {
-      const groupsList = await api.getGroups()
-      setGroups(groupsList)
-      if (groupsList.length > 0 && !activeGroup) {
-        setActiveGroup(groupsList[0].id)
-        localStorage.setItem('activeGroupId', groupsList[0].id)
+      const communitiesList = await api.getCommunities()
+      setCommunities(communitiesList)
+      if (communitiesList.length > 0 && !activeCommunity) {
+        setActiveCommunity(communitiesList[0].id)
+        localStorage.setItem('activeCommunityId', communitiesList[0].id)
       }
     } catch (err) {
-      console.error('Failed to load groups:', err)
+      console.error('Failed to load communities:', err)
     }
   }
 
@@ -55,7 +55,7 @@ export function AuthProvider({ children }) {
       const registeredUser = response.user
       setUser(registeredUser)
       localStorage.setItem('currentUser', JSON.stringify(registeredUser))
-      await loadGroups()
+      await loadCommunities()
       return registeredUser
     } catch (err) {
       console.error('Sign up failed:', err)
@@ -72,7 +72,7 @@ export function AuthProvider({ children }) {
       const loggedInUser = response.user
       setUser(loggedInUser)
       localStorage.setItem('currentUser', JSON.stringify(loggedInUser))
-      await loadGroups()
+      await loadCommunities()
       return loggedInUser
     } catch (err) {
       console.error('Sign in failed:', err)
@@ -89,29 +89,29 @@ export function AuthProvider({ children }) {
       console.error('Sign out on server failed, clearing local state anyway', err)
     }
     setUser(null)
-    setActiveGroup(null)
+    setActiveCommunity(null)
     localStorage.removeItem('currentUser')
-    localStorage.removeItem('activeGroupId')
+    localStorage.removeItem('activeCommunityId')
     localStorage.removeItem('activeTab')
   }
 
-  const switchGroup = (groupId) => {
-    setActiveGroup(groupId)
-    localStorage.setItem('activeGroupId', groupId)
+  const switchCommunity = (communityId) => {
+    setActiveCommunity(communityId)
+    localStorage.setItem('activeCommunityId', communityId)
   }
 
   return (
     <AuthContext.Provider value={{
       user,
-      groups,
-      activeGroup,
+      communities,
+      activeCommunity,
       loading,
       initializingAuth,
       signUp,
       signIn,
       signOut,
-      switchGroup,
-      loadGroups
+      switchCommunity,
+      loadCommunities
     }}>
       {children}
     </AuthContext.Provider>
