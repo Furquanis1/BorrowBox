@@ -1,9 +1,11 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.CommunityCreateRequest;
+import com.borrowbox.dto.CommunityJoinRequest;
 import com.borrowbox.dto.CommunityResponse;
 import com.borrowbox.dto.MembershipResponse;
 import com.borrowbox.service.CommunityService;
+import com.borrowbox.service.MembershipService;
 import com.borrowbox.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -25,10 +27,14 @@ import java.util.List;
 public class CommunityController {
 
     private final CommunityService communityService;
+    private final MembershipService membershipService;
     private final UserService userService;
 
-    public CommunityController(CommunityService communityService, UserService userService) {
+    public CommunityController(CommunityService communityService,
+                               MembershipService membershipService,
+                               UserService userService) {
         this.communityService = communityService;
+        this.membershipService = membershipService;
         this.userService = userService;
     }
 
@@ -52,6 +58,24 @@ public class CommunityController {
     @GetMapping("/{id}/members")
     public ResponseEntity<List<MembershipResponse>> getMembers(@PathVariable Long id) {
         return ResponseEntity.ok(communityService.listMembers(id, currentUser()));
+    }
+
+    @PostMapping("/{id}/join")
+    public ResponseEntity<MembershipResponse> joinCommunity(
+            @PathVariable Long id,
+            @RequestBody(required = false) CommunityJoinRequest request) {
+        CommunityJoinRequest body = request != null ? request : new CommunityJoinRequest(null, null, null);
+        return ResponseEntity.ok(membershipService.joinCommunity(currentUser(), id, body));
+    }
+
+    @PostMapping("/{id}/leave")
+    public ResponseEntity<MembershipResponse> leaveCommunity(@PathVariable Long id) {
+        return ResponseEntity.ok(membershipService.leave(currentUser().getId(), id));
+    }
+
+    @GetMapping("/{id}/members/pending")
+    public ResponseEntity<List<MembershipResponse>> getPendingMembers(@PathVariable Long id) {
+        return ResponseEntity.ok(membershipService.listPendingForCommunity(currentUser().getId(), id));
     }
 
     private com.borrowbox.entity.User currentUser() {
