@@ -9,7 +9,6 @@ import DashboardLayout from './pages/DashboardLayout'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import Toast from './components/Toast'
-import BorrowRequestModal from './components/BorrowRequestModal'
 
 function ProtectedRoute({ children }) {
   const { user, initializingAuth } = useAuth()
@@ -102,7 +101,6 @@ export default function App() {
             </main>
             <Footer />
             <Toast />
-            <BorrowRequestModal />
           </div>
         </Router>
       </AppProvider>

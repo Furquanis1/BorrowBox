@@ -7,7 +7,7 @@ import RequestInbox from './tabs/RequestInbox'
 import ActiveLoans from './tabs/ActiveLoans'
 
 export default function DashboardLayout() {
-  const { user, groups, activeGroup, switchGroup, signOut } = useAuth()
+  const { user, communities, activeCommunity, switchCommunity, signOut } = useAuth()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('activeTab') || 'explore'
@@ -28,7 +28,7 @@ export default function DashboardLayout() {
     return <div>Loading...</div>
   }
 
-  const currentGroup = groups.find(g => g.id == activeGroup)
+  const currentCommunity = communities.find(c => c.id == activeCommunity)
 
   return (
     <div className="dashboard">
@@ -41,22 +41,26 @@ export default function DashboardLayout() {
 
         <div className="sidebar-section">
           <h4 className="sidebar-section-title">Communities</h4>
-          <div className="group-list" role="group" aria-label="Communities">
-            {groups.map(group => (
-              <button
-                key={group.id}
-                className={`group-item ${activeGroup === group.id ? 'active' : ''}`}
-                onClick={() => switchGroup(group.id)}
-                aria-pressed={activeGroup === group.id}
-              >
-                <span className="group-icon" aria-hidden="true">👥</span>
-                <div className="group-info">
-                  <div className="group-name">{group.name}</div>
-                  <div className="group-meta">{group.users?.length || 0} members</div>
-                </div>
-              </button>
-            ))}
-          </div>
+          {communities.length === 0 ? (
+            <p className="group-empty">No communities yet.</p>
+          ) : (
+            <div className="group-list" role="group" aria-label="Communities">
+              {communities.map(community => (
+                <button
+                  key={community.id}
+                  className={`group-item ${activeCommunity === community.id ? 'active' : ''}`}
+                  onClick={() => switchCommunity(community.id)}
+                  aria-pressed={activeCommunity === community.id}
+                >
+                  <span className="group-icon" aria-hidden="true">👥</span>
+                  <div className="group-info">
+                    <div className="group-name">{community.name}</div>
+                    <div className="group-meta">{community.membershipCount || 0} members</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <nav className="sidebar-section" aria-label="Dashboard Navigation">
@@ -123,8 +127,8 @@ export default function DashboardLayout() {
               {activeTab === 'requests' && 'Borrow Requests'}
               {activeTab === 'loans' && 'Active Loans'}
             </h1>
-            {currentGroup && (
-              <p className="topbar-subtitle">in <strong>{currentGroup.name}</strong></p>
+            {currentCommunity && (
+              <p className="topbar-subtitle">in <strong>{currentCommunity.name}</strong></p>
             )}
           </div>
         </div>
@@ -136,7 +140,7 @@ export default function DashboardLayout() {
           id={`panel-${activeTab}`}
           aria-labelledby={`tab-${activeTab}`}
         >
-          {activeTab === 'explore' && <ExploreDashboard groupId={activeGroup} />}
+          {activeTab === 'explore' && <ExploreDashboard communityId={activeCommunity} />}
           {activeTab === 'inventory' && <InventoryManager userId={user.id} />}
           {activeTab === 'requests' && <RequestInbox />}
           {activeTab === 'loans' && <ActiveLoans userId={user.id} />}
