@@ -63,3 +63,20 @@ CREATE TABLE IF NOT EXISTS categories (
     PRIMARY KEY (id),
     CONSTRAINT uk_categories_name UNIQUE (name)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS community_rules (
+    id           BIGINT       NOT NULL AUTO_INCREMENT,
+    community_id BIGINT       NOT NULL,
+    rule_type    VARCHAR(40)  NOT NULL,
+    value        JSON         DEFAULT NULL,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    created_by   BIGINT       NOT NULL,
+    updated_by   BIGINT       NOT NULL,
+    created_at   DATETIME(6)  NOT NULL,
+    updated_at   DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_community_rules_community  FOREIGN KEY (community_id) REFERENCES communities (id),
+    CONSTRAINT fk_community_rules_created_by FOREIGN KEY (created_by) REFERENCES users (id),
+    CONSTRAINT fk_community_rules_updated_by FOREIGN KEY (updated_by) REFERENCES users (id),
+    INDEX idx_community_rules_community_type (community_id, rule_type)
+) ENGINE=InnoDB;
