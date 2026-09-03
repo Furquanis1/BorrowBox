@@ -1,7 +1,8 @@
--- BorrowBox V2.1.1 schema baseline (Community + Membership)
+-- BorrowBox V2.1.4 schema baseline (Community + Membership + Rules + Assets)
 -- Fresh V2 database. V1 tables are not carried forward.
--- Matches exactly the entities mapped by the V2.1.1 application:
---   users, communities, memberships, categories
+-- Matches exactly the entities mapped by the V2.1.4 application:
+--   users, communities, memberships, categories, community_rules,
+--   assets, asset_units
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -79,4 +80,32 @@ CREATE TABLE IF NOT EXISTS community_rules (
     CONSTRAINT fk_community_rules_created_by FOREIGN KEY (created_by) REFERENCES users (id),
     CONSTRAINT fk_community_rules_updated_by FOREIGN KEY (updated_by) REFERENCES users (id),
     INDEX idx_community_rules_community_type (community_id, rule_type)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS assets (
+    id          BIGINT        NOT NULL AUTO_INCREMENT,
+    owner_id    BIGINT        NOT NULL,
+    title       VARCHAR(255)  NOT NULL,
+    description VARCHAR(1000) DEFAULT NULL,
+    category_id BIGINT        DEFAULT NULL,
+    status      VARCHAR(30)   NOT NULL DEFAULT 'ACTIVE',
+    created_at  DATETIME(6)   NOT NULL,
+    updated_at  DATETIME(6)   NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_assets_owner     FOREIGN KEY (owner_id) REFERENCES users (id),
+    CONSTRAINT fk_assets_category  FOREIGN KEY (category_id) REFERENCES categories (id),
+    INDEX idx_assets_owner_status (owner_id, status)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS asset_units (
+    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    asset_id        BIGINT       NOT NULL,
+    unit_identifier VARCHAR(255) DEFAULT NULL,
+    status          VARCHAR(30)  NOT NULL DEFAULT 'AVAILABLE',
+    `condition`     VARCHAR(255) DEFAULT NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_asset_units_asset FOREIGN KEY (asset_id) REFERENCES assets (id),
+    INDEX idx_asset_units_asset_status (asset_id, status)
 ) ENGINE=InnoDB;
