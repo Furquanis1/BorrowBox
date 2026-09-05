@@ -1,12 +1,10 @@
 import React, { createContext, useState, useEffect } from 'react'
-import { api } from '../utils/api'
+import { authService } from '../services'
 
 export const AuthContext = createContext()
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
-  const [communities, setCommunities] = useState([])
-  const [activeCommunity, setActiveCommunity] = useState(null)
   const [loading, setLoading] = useState(false)
   const [initializingAuth, setInitializingAuth] = useState(true) // start true — checking cookie
 
@@ -17,14 +15,11 @@ export function AuthProvider({ children }) {
    *  3. If it fails (401 / network), clear any stale localStorage.
    */
   useEffect(() => {
-    api.me()
+    authService.me()
       .then(data => {
         const u = data?.user ?? data
         setUser(u)
         localStorage.setItem('currentUser', JSON.stringify(u))
-        loadCommunities()
-        const savedCommunityId = localStorage.getItem('activeCommunityId')
-        if (savedCommunityId) setActiveCommunity(savedCommunityId)
       })
       .catch(() => {
         // Cookie expired or missing — clear stale local cache
@@ -35,27 +30,13 @@ export function AuthProvider({ children }) {
       .finally(() => setInitializingAuth(false))
   }, [])
 
-  const loadCommunities = async () => {
-    try {
-      const communitiesList = await api.getCommunities()
-      setCommunities(communitiesList)
-      if (communitiesList.length > 0 && !activeCommunity) {
-        setActiveCommunity(communitiesList[0].id)
-        localStorage.setItem('activeCommunityId', communitiesList[0].id)
-      }
-    } catch (err) {
-      console.error('Failed to load communities:', err)
-    }
-  }
-
   const signUp = async (fullName, email, password) => {
     setLoading(true)
     try {
-      const response = await api.register(fullName, email, password)
+      const response = await authService.register(fullName, email, password)
       const registeredUser = response.user
       setUser(registeredUser)
       localStorage.setItem('currentUser', JSON.stringify(registeredUser))
-      await loadCommunities()
       return registeredUser
     } catch (err) {
       console.error('Sign up failed:', err)
@@ -68,11 +49,10 @@ export function AuthProvider({ children }) {
   const signIn = async (email, password) => {
     setLoading(true)
     try {
-      const response = await api.login(email, password)
+      const response = await authService.login(email, password)
       const loggedInUser = response.user
       setUser(loggedInUser)
       localStorage.setItem('currentUser', JSON.stringify(loggedInUser))
-      await loadCommunities()
       return loggedInUser
     } catch (err) {
       console.error('Sign in failed:', err)
@@ -84,34 +64,23 @@ export function AuthProvider({ children }) {
 
   const signOut = async () => {
     try {
-      await api.logout()
+      await authService.logout()
     } catch (err) {
       console.error('Sign out on server failed, clearing local state anyway', err)
     }
     setUser(null)
-    setActiveCommunity(null)
     localStorage.removeItem('currentUser')
     localStorage.removeItem('activeCommunityId')
-    localStorage.removeItem('activeTab')
-  }
-
-  const switchCommunity = (communityId) => {
-    setActiveCommunity(communityId)
-    localStorage.setItem('activeCommunityId', communityId)
   }
 
   return (
     <AuthContext.Provider value={{
       user,
-      communities,
-      activeCommunity,
       loading,
       initializingAuth,
       signUp,
       signIn,
-      signOut,
-      switchCommunity,
-      loadCommunities
+      signOut
     }}>
       {children}
     </AuthContext.Provider>
