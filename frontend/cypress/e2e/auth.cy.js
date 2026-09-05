@@ -91,5 +91,19 @@ describe('Authentication Flow', () => {
       cy.visit('/dashboard')
       cy.url().should('include', '/signin')
     })
+
+    it('should redirect unauthenticated users from nested dashboard routes to sign in', () => {
+      cy.clearCookies()
+      cy.visit('/dashboard/inventory')
+      cy.url().should('include', '/signin')
+    })
+  })
+
+  describe('Skip Link', () => {
+    it('should move focus to main content on the sign-in page', () => {
+      cy.visit('/signin')
+      cy.get('.skip-link').trigger('click', { force: true })
+      cy.get('#main-content').should('have.focus')
+    })
   })
 })

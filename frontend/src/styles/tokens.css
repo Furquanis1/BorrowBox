@@ -1,0 +1,85 @@
+/* =========================================================
+   BorrowBox Design Tokens
+   Phase 3 — visual foundation (restrained teal, warm calm)
+   ========================================================= */
+
+:root {
+  /* Typography */
+  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'DM Serif Display', Georgia, serif;
+
+  /* Surfaces */
+  --bg: #f7f8f7;
+  --surface: #ffffff;
+  --surface-2: #eef2f0;
+  --surface-3: #e6eae7;
+
+  /* Ink / text */
+  --ink-strong: #101a15;
+  --ink: #19241e;
+  --ink-muted: #5c6b64;
+  --ink-faint: #8b9891;
+  --ink-inverse: #ffffff;
+
+  /* Lines */
+  --line: #e2e7e3;
+  --line-strong: #c7d0ca;
+
+  /* Teal (primary) */
+  --teal-700: #0e4f43;
+  --teal-600: #0e6a5b;
+  --teal-500: #147a68;
+  --teal-100: #e0f0ec;
+  --teal-50: #f0f7f5;
+
+  /* Amber (attention / pending) */
+  --amber-800: #7a4a10;
+  --amber-600: #b45309;
+  --amber-100: #fdf2de;
+  --amber-border: #eed7ae;
+
+  /* Status */
+  --success: #1e7f4d;
+  --success-bg: #e7f6ec;
+  --success-border: #c0e2ca;
+  --danger: #b3342d;
+  --danger-bg: #fbecea;
+  --danger-border: #ecc5c0;
+  --info: #25698c;
+  --info-bg: #e8f3fa;
+  --info-border: #c4e0ee;
+
+  /* Radius */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* Elevation (soft, no heavy gradients) */
+  --shadow-sm: 0 1px 2px rgba(16, 26, 21, 0.05);
+  --shadow-md: 0 6px 18px rgba(16, 26, 21, 0.08);
+  --shadow-lg: 0 16px 40px rgba(16, 26, 21, 0.12);
+  --shadow-teal: 0 4px 14px rgba(20, 122, 104, 0.24);
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 40px;
+  --sp-9: 48px;
+
+  /* Motion */
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Layout */
+  --header-h: 68px;
+  --sidebar-w: 272px;
+  --content-max: 1200px;
+}
