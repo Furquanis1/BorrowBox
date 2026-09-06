@@ -6,6 +6,9 @@ import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.User;
+import com.borrowbox.repository.AssetRepository;
+import com.borrowbox.repository.AssetUnitRepository;
+import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
 import com.borrowbox.repository.UserRepository;
@@ -40,6 +43,15 @@ public class SeedInitializerTest {
     @Autowired
     private MembershipRepository membershipRepository;
 
+    @Autowired
+    private AssetRepository assetRepository;
+
+    @Autowired
+    private AssetUnitRepository assetUnitRepository;
+
+    @Autowired
+    private CommunityListingRepository communityListingRepository;
+
     @Test
     void seedIsIdempotent() {
         seedDataInitializer.seed();
@@ -47,15 +59,23 @@ public class SeedInitializerTest {
         long usersAfterFirst = userRepository.count();
         long communitiesAfterFirst = communityRepository.count();
         long membershipsAfterFirst = membershipRepository.count();
+        long assetsAfterFirst = assetRepository.count();
+        long unitsAfterFirst = assetUnitRepository.count();
+        long listingsAfterFirst = communityListingRepository.count();
 
         assertThat(usersAfterFirst).isGreaterThan(0);
         assertThat(membershipsAfterFirst).isGreaterThan(0);
+        assertThat(assetsAfterFirst).isGreaterThan(0);
+        assertThat(listingsAfterFirst).isGreaterThan(0);
 
         seedDataInitializer.seed();
 
         assertThat(userRepository.count()).isEqualTo(usersAfterFirst);
         assertThat(communityRepository.count()).isEqualTo(communitiesAfterFirst);
         assertThat(membershipRepository.count()).isEqualTo(membershipsAfterFirst);
+        assertThat(assetRepository.count()).isEqualTo(assetsAfterFirst);
+        assertThat(assetUnitRepository.count()).isEqualTo(unitsAfterFirst);
+        assertThat(communityListingRepository.count()).isEqualTo(listingsAfterFirst);
     }
 
     @Test
@@ -64,6 +84,9 @@ public class SeedInitializerTest {
 
         assertThat(userRepository.count()).isGreaterThanOrEqualTo(5);
         assertThat(communityRepository.count()).isGreaterThanOrEqualTo(3);
+        assertThat(assetRepository.count()).isGreaterThanOrEqualTo(5);
+        assertThat(assetUnitRepository.count()).isGreaterThanOrEqualTo(6);
+        assertThat(communityListingRepository.count()).isGreaterThanOrEqualTo(7);
     }
 
     @Test
