@@ -109,3 +109,18 @@ CREATE TABLE IF NOT EXISTS asset_units (
     CONSTRAINT fk_asset_units_asset FOREIGN KEY (asset_id) REFERENCES assets (id),
     INDEX idx_asset_units_asset_status (asset_id, status)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS community_listings (
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    asset_id       BIGINT       NOT NULL,
+    community_id   BIGINT       NOT NULL,
+    listing_status VARCHAR(30)  NOT NULL DEFAULT 'LISTED',
+    listed_at      DATETIME(6)  NOT NULL,
+    updated_at     DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_community_listings_asset      FOREIGN KEY (asset_id) REFERENCES assets (id),
+    CONSTRAINT fk_community_listings_community  FOREIGN KEY (community_id) REFERENCES communities (id),
+    CONSTRAINT uq_asset_community UNIQUE (asset_id, community_id),
+    INDEX idx_community_listings_community_status (community_id, listing_status),
+    INDEX idx_community_listings_asset_status (asset_id, listing_status)
+) ENGINE=InnoDB;
