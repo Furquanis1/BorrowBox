@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react'
-import { useCommunityRoute } from '../../hooks/useCommunityRoute'
+import { useParams } from 'react-router-dom'
+import { useCommunity } from '../../contexts/CommunityContext'
 import { useAsync } from '../../hooks/useAsync'
 import { listingService } from '../../services'
 import EmptyState from '../../components/ui/EmptyState'
@@ -8,7 +9,9 @@ import Button from '../../components/ui/Button'
 import ListingRowList from '../../components/dashboard/ListingRowList'
 
 export default function ExplorePage() {
-  const { community } = useCommunityRoute()
+  const { communityId } = useParams()
+  const { communities } = useCommunity()
+  const community = communities.find((c) => String(c.id) === String(communityId)) || null
 
   const fetchListings = useCallback(() => {
     if (!community) return Promise.resolve([])
