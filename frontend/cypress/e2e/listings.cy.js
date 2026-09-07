@@ -29,11 +29,11 @@ describe('Community Listings (V2.1.5)', () => {
     cy.get('input[type="email"]').type(ahmed.email)
     cy.get('input[type="password"]').type(ahmed.password)
     cy.get('form.auth-form button[type="submit"]').click()
-    cy.url().should('include', '/dashboard/explore', { timeout: 15000 })
+    cy.url().should('include', '/communities/', { timeout: 15000 })
   })
 
   it('lists an owned asset in a community and surfaces it in Explore', () => {
-    cy.get('.dashboard-sidebar').contains('a', 'Inventory').click()
+    cy.get('.userbar-nav').contains('a', 'Inventory').click()
     cy.contains('.asset-row', assetTitle).should('be.visible')
     cy.contains('.asset-row', assetTitle).should('contain', 'Not listed')
     cy.contains('.asset-row', assetTitle).contains('button', 'List in community').click()
@@ -49,15 +49,17 @@ describe('Community Listings (V2.1.5)', () => {
     cy.get('.listing-drawer').should('not.exist')
     cy.contains('.asset-row', assetTitle).should('contain', 'Listed in 1 community')
 
-    cy.get('.dashboard-sidebar').contains('a', 'Explore').click()
+    // Enter CSE (rail -> Home), then open its Explore page.
     cy.contains('.group-item', 'CSE Department').click()
-    cy.contains('.explore-listing-card', assetTitle).should('be.visible')
-    cy.contains('.explore-listing-card', assetTitle).should('contain', '2 available')
-    cy.contains('.explore-listing-card', assetTitle).should('contain', '0 borrowed')
+    cy.url().should('include', '/communities/')
+    cy.get('.community-tabs').contains('a', 'Explore').click()
+    cy.contains('.explore-listing-row', assetTitle).should('be.visible')
+    cy.contains('.explore-listing-row', assetTitle).should('contain', '2 available')
+    cy.contains('.explore-listing-row', assetTitle).should('contain', '0 borrowed')
   })
 
   it('supports soft unlist and re-listing', () => {
-    cy.get('.dashboard-sidebar').contains('a', 'Inventory').click()
+    cy.get('.userbar-nav').contains('a', 'Inventory').click()
     cy.contains('.asset-row', assetTitle).contains('button', 'List in community').click()
 
     cy.get('.listing-drawer').should('be.visible')
@@ -69,20 +71,20 @@ describe('Community Listings (V2.1.5)', () => {
     cy.get('.listing-drawer .icon-button').click()
     cy.contains('.asset-row', assetTitle).should('contain', 'Not listed')
 
-    cy.get('.dashboard-sidebar').contains('a', 'Explore').click()
     cy.contains('.group-item', 'CSE Department').click()
-    cy.contains('.explore-listing-card', assetTitle).should('not.exist')
+    cy.get('.community-tabs').contains('a', 'Explore').click()
+    cy.contains('.explore-listing-row', assetTitle).should('not.exist')
 
-    cy.get('.dashboard-sidebar').contains('a', 'Inventory').click()
+    cy.get('.userbar-nav').contains('a', 'Inventory').click()
     cy.contains('.asset-row', assetTitle).contains('button', 'List in community').click()
     cy.contains('.listing-community-row', 'CSE Department').contains('button', 'List').click()
     cy.get('.toast-success').should('be.visible')
     cy.get('.listing-drawer .icon-button').click()
     cy.contains('.asset-row', assetTitle).should('contain', 'Listed in 1 community')
 
-    cy.get('.dashboard-sidebar').contains('a', 'Explore').click()
     cy.contains('.group-item', 'CSE Department').click()
-    cy.contains('.explore-listing-card', assetTitle).should('be.visible')
+    cy.get('.community-tabs').contains('a', 'Explore').click()
+    cy.contains('.explore-listing-row', assetTitle).should('be.visible')
   })
 
   it('rejects a duplicate listing with 400 from the API', () => {
@@ -176,28 +178,47 @@ describe('Shared inventory availability is server authoritative', () => {
     cy.get('input[type="email"]').type(ahmed.email)
     cy.get('input[type="password"]').type(ahmed.password)
     cy.get('form.auth-form button[type="submit"]').click()
-    cy.url().should('include', '/dashboard/explore', { timeout: 15000 })
+    cy.url().should('include', '/communities/', { timeout: 15000 })
   })
 
-  it('shows identical Football availability across its shared communities', () => {
-    const readCardText = (communityName) => {
-      cy.contains('.group-item', communityName).click()
-      const card = cy.contains('.explore-listing-card', 'Football')
-      card.should('be.visible')
-      return card.invoke('text').then((t) => t.trim())
-    }
+  it('shows identical Football availability in every community where it is listed', () => {
+    // Resolve Ahmed's communities and keep only those where Football is
+    // actually listed today, so the assertion is robust to seed data changes.
+    cy.request('GET', '/api/communities').then((res) => {
+      const candidates = []
+      const checks = res.body.map((c) =>
+        cy.request(`/api/communities/${c.id}/listings`).then((lr) => {
+          if (lr.body.some((l) => l.title === 'Football')) candidates.push({ id: c.id, name: c.name })
+        }),
+      )
+      cy.wrap(checks).then(() => {
+        cy.wrap(candidates).should('not.be.empty')
 
-    const captures = {}
-    ;['CSE Department', 'Hostel Block B', 'Engineering Office'].forEach((name) => {
-      readCardText(name).then((text) => {
-        captures[name] = text
+        const readCardText = (community, index) => {
+          // Enter the community via the rail (-> Home), then open its Explore page.
+          cy.contains('.group-item', community.name).click()
+          cy.url().should('include', `/communities/${community.id}`)
+          cy.get('.community-tabs').contains('a', 'Explore').click()
+          const card = cy.contains('.explore-listing-row', 'Football')
+          card.should('be.visible')
+          return card.invoke('text').then((t) => t.trim())
+        }
+
+        const captures = {}
+        cy.wrap(candidates).each((community, index) => {
+          readCardText(community, index).then((text) => {
+            captures[community.name] = text
+          })
+        })
+        cy.then(() => {
+          const values = Object.values(captures)
+          const names = Object.keys(captures)
+          expect(values, 'communities with a Football card').to.not.be.empty
+          values.slice(1).forEach((value, i) => {
+            expect(value, `availability in ${names[i + 1]} matches ${names[0]}`).to.equal(values[0])
+          })
+        })
       })
-    })
-
-    cy.then(() => {
-      const cse = captures['CSE Department']
-      expect(captures['Hostel Block B']).to.equal(cse)
-      expect(captures['Engineering Office']).to.equal(cse)
     })
   })
 })
