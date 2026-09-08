@@ -25,7 +25,7 @@ export function AuthProvider({ children }) {
         // Cookie expired or missing — clear stale local cache
         setUser(null)
         localStorage.removeItem('currentUser')
-        localStorage.removeItem('activeCommunityId')
+        localStorage.removeItem('lastCommunityId')
       })
       .finally(() => setInitializingAuth(false))
   }, [])
@@ -70,7 +70,7 @@ export function AuthProvider({ children }) {
     }
     setUser(null)
     localStorage.removeItem('currentUser')
-    localStorage.removeItem('activeCommunityId')
+    localStorage.removeItem('lastCommunityId')
   }
 
   return (

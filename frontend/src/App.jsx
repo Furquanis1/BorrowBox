@@ -5,15 +5,21 @@ import { CommunityProvider } from './contexts/CommunityContext'
 import { AppProvider } from './contexts/AppContext'
 import PublicLayout from './components/layout/PublicLayout'
 import AppShell from './components/layout/AppShell'
+import CommunityPageLayout from './components/layout/CommunityPageLayout'
+import LandingRedirect from './components/routing/LandingRedirect'
+import CommunityRouteGuard from './components/routing/CommunityRouteGuard'
 import LandingPage from './pages/LandingPage'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignUpPage'
+import CommunityHomePage from './pages/dashboard/CommunityHomePage'
 import ExplorePage from './pages/dashboard/ExplorePage'
 import InventoryPage from './pages/dashboard/InventoryPage'
 import RequestsPage from './pages/dashboard/RequestsPage'
 import LoansPage from './pages/dashboard/LoansPage'
 import MembersPage from './pages/dashboard/MembersPage'
 import RulesPage from './pages/dashboard/RulesPage'
+import ProfilePage from './pages/dashboard/ProfilePage'
+import SettingsPage from './pages/dashboard/SettingsPage'
 import Toast from './components/ui/Toast'
 
 function ProtectedRoute({ children }) {
@@ -96,6 +102,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
 
+              {/* Legacy /dashboard/* compatibility redirect shims */}
               <Route
                 path="/dashboard"
                 element={
@@ -104,13 +111,55 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Navigate to="/dashboard/explore" replace />} />
-                <Route path="explore" element={<ExplorePage />} />
+                <Route index element={<LandingRedirect />} />
+                <Route path="explore" element={<LandingRedirect segment="explore" />} />
+                <Route path="members" element={<LandingRedirect segment="members" />} />
+                <Route path="rules" element={<LandingRedirect segment="rules" />} />
+                <Route path="inventory" element={<Navigate to="/me/inventory" replace />} />
+                <Route path="requests" element={<Navigate to="/me/requests" replace />} />
+                <Route path="loans" element={<Navigate to="/me/loans" replace />} />
+              </Route>
+
+              {/* Community Space — URL :communityId is the sole source of truth */}
+              <Route
+                path="/communities"
+                element={
+                  <ProtectedRoute>
+                    <AppShell />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<LandingRedirect />} />
+                <Route
+                  path=":communityId"
+                  element={
+                    <CommunityRouteGuard>
+                      <CommunityPageLayout />
+                    </CommunityRouteGuard>
+                  }
+                >
+                  <Route index element={<CommunityHomePage />} />
+                  <Route path="explore" element={<ExplorePage />} />
+                  <Route path="members" element={<MembersPage />} />
+                  <Route path="rules" element={<RulesPage />} />
+                </Route>
+              </Route>
+
+              {/* My Space — independent of any community context */}
+              <Route
+                path="/me"
+                element={
+                  <ProtectedRoute>
+                    <AppShell />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Navigate to="/me/inventory" replace />} />
                 <Route path="inventory" element={<InventoryPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="loans" element={<LoansPage />} />
-                <Route path="members" element={<MembersPage />} />
-                <Route path="rules" element={<RulesPage />} />
+                <Route path="profile" element={<ProfilePage />} />
+                <Route path="settings" element={<SettingsPage />} />
               </Route>
             </Routes>
             <Toast />
