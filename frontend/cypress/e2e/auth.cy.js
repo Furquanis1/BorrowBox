@@ -29,15 +29,17 @@ describe('Authentication Flow', () => {
       cy.url().should('include', '/signin')
     })
 
-    it('should register a new user and redirect to dashboard', () => {
+    it('should register a new user and land in My Space (zero-community fallback)', () => {
       cy.get('input[type="text"]').type(testUser.fullName)
       cy.get('input[type="email"]').type(testUser.email)
       cy.get('input[type="password"]').type(testUser.password)
       cy.get('form.auth-form button[type="submit"]').click()
 
-      // Should redirect to dashboard after successful registration
-      cy.url().should('include', '/dashboard', { timeout: 15000 })
+      // A fresh user has no communities, so the post-login landing falls back
+      // to My Space (/me/inventory) instead of a community page.
+      cy.url().should('include', '/me/inventory', { timeout: 15000 })
       cy.contains(testUser.fullName).should('be.visible')
+      cy.get('.group-empty').should('contain', 'No communities yet.').and('be.visible')
     })
   })
 
@@ -74,27 +76,32 @@ describe('Authentication Flow', () => {
       cy.url().should('include', '/signup')
     })
 
-    it('should sign in with valid credentials and redirect to dashboard', () => {
+    it('should sign in with valid credentials and land in My Space', () => {
       cy.get('input[type="email"]').type(testUser.email)
       cy.get('input[type="password"]').type(testUser.password)
       cy.get('form.auth-form button[type="submit"]').click()
 
-      cy.url().should('include', '/dashboard', { timeout: 15000 })
+      cy.url().should('include', '/me/inventory', { timeout: 15000 })
       cy.contains(testUser.fullName).should('be.visible')
     })
   })
 
   describe('Protected Routes', () => {
-    it('should redirect unauthenticated users from dashboard to sign in', () => {
-      // Clear cookies to ensure no session
+    it('should redirect unauthenticated users from /dashboard to sign in', () => {
       cy.clearCookies()
       cy.visit('/dashboard')
       cy.url().should('include', '/signin')
     })
 
-    it('should redirect unauthenticated users from nested dashboard routes to sign in', () => {
+    it('should redirect unauthenticated users from a community route to sign in', () => {
       cy.clearCookies()
-      cy.visit('/dashboard/inventory')
+      cy.visit('/communities/1/explore')
+      cy.url().should('include', '/signin')
+    })
+
+    it('should redirect unauthenticated users from a My Space route to sign in', () => {
+      cy.clearCookies()
+      cy.visit('/me/inventory')
       cy.url().should('include', '/signin')
     })
   })
