@@ -1,11 +1,7 @@
 package com.borrowbox.integration;
 
 import com.borrowbox.config.SeedDataInitializer;
-import com.borrowbox.entity.Community;
-import com.borrowbox.entity.Membership;
-import com.borrowbox.entity.MembershipRole;
-import com.borrowbox.entity.MembershipStatus;
-import com.borrowbox.entity.User;
+import com.borrowbox.entity.*;
 import com.borrowbox.repository.AssetRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
@@ -19,49 +15,40 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the deterministic seed for Users + Communities + Memberships is
- * idempotent: running the seed initializer twice must not duplicate rows.
+ * Verifies the deterministic V2.1 seed is idempotent and produces the
+ * canonical fixture values documented in BORROWBOX_V2_1_SEED_DATA_AND_INITIALIZATION.ipynb.
  */
 @SpringBootTest
 @ActiveProfiles("test")
 @Transactional
 public class SeedInitializerTest {
 
-    @Autowired
-    private SeedDataInitializer seedDataInitializer;
+    @Autowired private SeedDataInitializer seedDataInitializer;
+    @Autowired private UserRepository userRepository;
+    @Autowired private CommunityRepository communityRepository;
+    @Autowired private MembershipRepository membershipRepository;
+    @Autowired private AssetRepository assetRepository;
+    @Autowired private AssetUnitRepository assetUnitRepository;
+    @Autowired private CommunityListingRepository communityListingRepository;
 
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private CommunityRepository communityRepository;
-
-    @Autowired
-    private MembershipRepository membershipRepository;
-
-    @Autowired
-    private AssetRepository assetRepository;
-
-    @Autowired
-    private AssetUnitRepository assetUnitRepository;
-
-    @Autowired
-    private CommunityListingRepository communityListingRepository;
+    // ── Idempotency ──────────────────────────────────────────────────
 
     @Test
     void seedIsIdempotent() {
         seedDataInitializer.seed();
 
-        long usersAfterFirst = userRepository.count();
+        long usersAfterFirst       = userRepository.count();
         long communitiesAfterFirst = communityRepository.count();
         long membershipsAfterFirst = membershipRepository.count();
-        long assetsAfterFirst = assetRepository.count();
-        long unitsAfterFirst = assetUnitRepository.count();
-        long listingsAfterFirst = communityListingRepository.count();
+        long assetsAfterFirst      = assetRepository.count();
+        long unitsAfterFirst       = assetUnitRepository.count();
+        long listingsAfterFirst    = communityListingRepository.count();
 
         assertThat(usersAfterFirst).isGreaterThan(0);
         assertThat(membershipsAfterFirst).isGreaterThan(0);
@@ -78,6 +65,8 @@ public class SeedInitializerTest {
         assertThat(communityListingRepository.count()).isEqualTo(listingsAfterFirst);
     }
 
+    // ── Row-count baseline ────────────────────────────────────────────
+
     @Test
     void seedBaselineIsDeterministic() {
         seedDataInitializer.seed();
@@ -88,6 +77,8 @@ public class SeedInitializerTest {
         assertThat(assetUnitRepository.count()).isGreaterThanOrEqualTo(6);
         assertThat(communityListingRepository.count()).isGreaterThanOrEqualTo(7);
     }
+
+    // ── Creator-manager invariant ──────────────────────────────────────
 
     @Test
     void everyCreatorHasActiveManagerMembership() {
@@ -105,5 +96,153 @@ public class SeedInitializerTest {
             assertThat(membership.getRole()).isEqualTo(MembershipRole.MANAGER);
             assertThat(membership.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
         }
+    }
+
+    // ── Canonical user emails ──────────────────────────────────────────
+
+    @Test
+    void allCanonicalUsersExist() {
+        seedDataInitializer.seed();
+
+        for (String email : List.of(
+                "ahmed@example.com", "salah@example.com", "omar@example.com",
+                "youssef@example.com", "karim@example.com")) {
+            assertThat(userRepository.findByEmail(email))
+                    .as("user %s", email)
+                    .isPresent();
+        }
+    }
+
+    // ── Canonical community names and types ────────────────────────────
+
+    @Test
+    void canonicalCommunitiesExist() {
+        seedDataInitializer.seed();
+
+        Map<String, Community> byName = communityRepository.findAll().stream()
+                .collect(Collectors.toMap(Community::getName, c -> c));
+
+        assertThat(byName).containsKey("CSE Department");
+        assertThat(byName.get("CSE Department").getType()).isEqualTo(CommunityType.COLLEGE);
+
+        assertThat(byName).containsKey("Hostel Block B");
+        assertThat(byName.get("Hostel Block B").getType()).isEqualTo(CommunityType.HOSTEL);
+
+        assertThat(byName).containsKey("Engineering Office");
+        assertThat(byName.get("Engineering Office").getType()).isEqualTo(CommunityType.OFFICE);
+    }
+
+    // ── Canonical asset titles and unit counts ─────────────────────────
+
+    @Test
+    void canonicalAssetsHaveCorrectUnits() {
+        seedDataInitializer.seed();
+
+        User ahmed = userRepository.findByEmail("ahmed@example.com").orElseThrow();
+        User omar  = userRepository.findByEmail("omar@example.com").orElseThrow();
+        User youssef = userRepository.findByEmail("youssef@example.com").orElseThrow();
+        User karim = userRepository.findByEmail("karim@example.com").orElseThrow();
+
+        Asset football = findAssetByOwnerAndTitle(ahmed, "Football");
+        List<AssetUnit> footballUnits = assetUnitRepository.findByAssetId(football.getId());
+        assertThat(footballUnits).hasSize(2);
+        assertThat(footballUnits).extracting(AssetUnit::getStatus)
+                .containsExactlyInAnyOrder(AssetUnitStatus.AVAILABLE, AssetUnitStatus.BORROWED);
+
+        assertThat(findAssetByOwnerAndTitle(omar, "Camera")).isNotNull();
+        assertThat(findAssetByOwnerAndTitle(youssef, "Cordless Drill")).isNotNull();
+        assertThat(findAssetByOwnerAndTitle(karim, "Scientific Calculator")).isNotNull();
+        assertThat(findAssetByOwnerAndTitle(karim, "Spare Laptop")).isNotNull();
+    }
+
+    // ── Canonical listing counts ───────────────────────────────────────
+
+    @Test
+    void canonicalListingCounts() {
+        seedDataInitializer.seed();
+
+        User ahmed  = userRepository.findByEmail("ahmed@example.com").orElseThrow();
+        User omar   = userRepository.findByEmail("omar@example.com").orElseThrow();
+        User youssef = userRepository.findByEmail("youssef@example.com").orElseThrow();
+        User karim  = userRepository.findByEmail("karim@example.com").orElseThrow();
+
+        Asset football    = findAssetByOwnerAndTitle(ahmed, "Football");
+        Asset camera      = findAssetByOwnerAndTitle(omar, "Camera");
+        Asset drill       = findAssetByOwnerAndTitle(youssef, "Cordless Drill");
+        Asset calculator  = findAssetByOwnerAndTitle(karim, "Scientific Calculator");
+        Asset spareLaptop = findAssetByOwnerAndTitle(karim, "Spare Laptop");
+
+        // Football must be listed in at least the 3 canonical communities
+        // (CSE, Hostel, Office). Extra listings may exist from prior test runs.
+        List<CommunityListing> footballListings = communityListingRepository.findByAssetId(football.getId());
+        assertThat(footballListings).hasSizeGreaterThanOrEqualTo(3);
+        List<String> footballCommunities = footballListings.stream()
+                .map(l -> l.getCommunity().getName()).toList();
+        assertThat(footballCommunities).contains("CSE Department", "Hostel Block B", "Engineering Office");
+
+        assertThat(communityListingRepository.findByAssetId(camera.getId())).hasSizeGreaterThanOrEqualTo(1);
+        assertThat(communityListingRepository.findByAssetId(drill.getId())).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(communityListingRepository.findByAssetId(calculator.getId())).hasSizeGreaterThanOrEqualTo(1);
+        assertThat(communityListingRepository.findByAssetId(spareLaptop.getId())).isEmpty();
+    }
+
+    // ── Spare Laptop is unlisted ───────────────────────────────────────
+
+    @Test
+    void spareLaptopHasNoListings() {
+        seedDataInitializer.seed();
+
+        User karim = userRepository.findByEmail("karim@example.com").orElseThrow();
+        Asset spareLaptop = findAssetByOwnerAndTitle(karim, "Spare Laptop");
+        assertThat(communityListingRepository.findByAssetId(spareLaptop.getId())).isEmpty();
+    }
+
+    // ── Football shared availability across all listings ───────────────
+
+    @Test
+    void footballAvailabilityConsistentAcrossListings() {
+        seedDataInitializer.seed();
+
+        User ahmed = userRepository.findByEmail("ahmed@example.com").orElseThrow();
+        Asset football = findAssetByOwnerAndTitle(ahmed, "Football");
+
+        List<AssetUnit> units = assetUnitRepository.findByAssetId(football.getId());
+        long total     = units.size();
+        long available = units.stream().filter(u -> u.getStatus() == AssetUnitStatus.AVAILABLE).count();
+        long borrowed  = units.stream().filter(u -> u.getStatus() == AssetUnitStatus.BORROWED).count();
+
+        assertThat(total).isEqualTo(2);
+        assertThat(available).isEqualTo(1);
+        assertThat(borrowed).isEqualTo(1);
+
+        List<CommunityListing> listings = communityListingRepository.findByAssetId(football.getId());
+        assertThat(listings).hasSizeGreaterThanOrEqualTo(3);
+    }
+
+    // ── Admission mode fixtures ────────────────────────────────────────
+
+    @Test
+    void canonicalAdmissionModes() {
+        seedDataInitializer.seed();
+
+        Map<String, Community> byName = communityRepository.findAll().stream()
+                .collect(Collectors.toMap(Community::getName, c -> c));
+
+        assertThat(byName.get("CSE Department").getAdmissionMode())
+                .isEqualTo(CommunityAdmissionMode.MANAGER_APPROVAL);
+        assertThat(byName.get("Hostel Block B").getAdmissionMode())
+                .isEqualTo(CommunityAdmissionMode.MANAGER_APPROVAL);
+        assertThat(byName.get("Engineering Office").getAdmissionMode())
+                .isEqualTo(CommunityAdmissionMode.LOCATION_VERIFIED);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────
+
+    private Asset findAssetByOwnerAndTitle(User owner, String title) {
+        return assetRepository.findByOwnerId(owner.getId()).stream()
+                .filter(a -> title.equals(a.getTitle()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "Asset '" + title + "' not found for owner " + owner.getEmail()));
     }
 }

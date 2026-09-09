@@ -1,6 +1,6 @@
-# BorrowBox 📦
+# BorrowBox
 
-> A full-stack platform for sharing and tracking physical items within groups and communities.
+> A full-stack community-based platform for sharing and tracking physical assets across bounded communities.
 
 [![Build and Test](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml/badge.svg)](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
@@ -8,7 +8,7 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-20_Tests_Passing-green?logo=cypress)
+![Cypress](https://img.shields.io/badge/Cypress-44_Tests_Passing-green?logo=cypress)
 
 ---
 
@@ -26,39 +26,48 @@ BorrowBox is fully containerized and ready for local or cloud deployment.
 
 ---
 
-## 📖 What is BorrowBox?
+## What is BorrowBox?
 
-BorrowBox helps communities, maker spaces, campus labs, and co-living teams manage shared physical assets. Instead of disorganized spreadsheets and informal messaging, BorrowBox provides a structured, auditable borrowing lifecycle:
+BorrowBox is a community-based asset-sharing platform. Users own physical assets independently of communities, then selectively expose them to specific communities via CommunityListings. Community members discover available assets through community-scoped Explore. A single owned asset pool shared across multiple communities always shows one consistent shared physical inventory state.
 
-1. **Catalog & Inventory:** Browse shared items with live status indicators (`AVAILABLE`, `BORROWED`, `ARCHIVED`) and multi-criteria filters.
-2. **Borrow Requests:** Borrowers submit requests with custom notes; item owners review, approve, or reject.
-3. **Loan Confirmation:** Owners confirm loans with binding due dates, atomically updating item statuses.
-4. **Loan Tracking & Returns:** Monitor active and overdue loans, view borrowing history, and reconcile returns with one click.
+V2.1 (Community + Ownership Foundation) delivers:
+
+- Community creation with MANAGER_APPROVAL and LOCATION_VERIFIED admission
+- Membership with community-specific roles and context metadata (JSON)
+- Global asset ownership with immediate AssetUnit materialization
+- CommunityListing: selective visibility of owned assets to communities
+- Community-scoped Explore with aggregate availability (shared across listings)
+- Deterministic seed data and idempotent development reset
+- Docker health-gated startup with backend healthcheck
+
+V2.1 does not include transactions, borrowing workflows, messaging, notifications, reputation, or AI. See `docs/BORROWBOX_ROADMAP.ipynb` for the full roadmap.
 
 📄 **Project Pitch & Overview:** See the one-page project pitch in [Markdown](docs/PITCH.md) or download the [Pitch PDF](docs/assets/borrowbox-project-pitch.pdf).
 
 ---
 
-## 🚀 Core Features (Implemented in v1)
+## Core Features (V2.1)
 
 | Module | Implemented Capabilities |
 |---|---|
-| **Authentication & Security** | BCrypt password hashing, stateless HttpOnly JWT cookies (XSS-safe), global exception handling, and protected React route guards. |
-| **Catalog & Explore** | Live inventory discovery with multi-status filters (`All`, `Available`, `Borrowed`), category filtering, Spring Data JPA Specification search, real-time stats overview, and pagination. |
-| **Inventory Management** | Add new items with descriptions and categories, view user-owned inventory, edit details, and safely delete/archive items. |
-| **Borrow Request Workflow** | Borrower request creation with notes, custodian incoming request inbox, accept/reject controls, and atomic loan confirmation with return dates. |
-| **Active Loans & Returns** | Active loan monitoring, overdue loan detection, borrower history logging, and one-click item return reconciliation. |
-| **User Experience & Accessibility** | Modern dark-themed dashboard (Explore, My Inventory, Requests, Loans), active tab persistence across page reloads via `localStorage`, keyboard-navigable forms, and semantic HTML. |
+| **Authentication & Security** | BCrypt password hashing, stateless HttpOnly JWT cookies, global exception handling, protected React route guards. |
+| **Community + Membership** | Community creation with type/location/admission mode, MANAGER_APPROVAL and LOCATION_VERIFIED join flows, community-specific roles and context metadata (JSON), manager controls. |
+| **Asset Ownership** | Global asset ownership independent of communities, atomic Asset + N AssetUnit creation, owner inventory at `/me/inventory`. |
+| **CommunityListing** | Selective visibility: one Asset listed in multiple communities, shared physical inventory pool, authorization enforced server-side (owner must have ACTIVE membership). |
+| **Community Explore** | Community-scoped listing discovery with aggregate availability (totalUnits, availableUnits, borrowedUnits), AssetUnit IDs hidden from public API. |
+| **Shared Availability** | Changing one AssetUnit status affects availability across all communities where the Asset is listed. Backend/database is authoritative. |
 
 ---
 
-## 🔮 Future Roadmap (BorrowBox v2)
+## Future Roadmap (BorrowBox V2.2+)
 
-*The following features represent planned enhancements beyond the current v1 release:*
-- **Multi-Tenant Community Workspaces:** Isolated group hierarchies and multi-organization role-based permissions.
-- **Automated Notifications:** Email and webhook alerts for request approvals, upcoming due dates, and overdue reminders.
-- **Barcode & QR Scanning:** Mobile camera-driven physical item check-out and instant check-in.
-- **Cloud Asset Storage:** S3-compatible cloud object storage integration for item photos and condition documentation.
+*Planned features beyond V2.1:*
+- **Transaction Engine:** Structured borrow requests, approval/rejection, pickup coordination, handover confirmation, loan timer, extensions, return workflow.
+- **Trust + Ledger:** Borrow/lending history, reputation events, reliability metrics, badges.
+- **Community Health:** Manager dashboard, membership review, flags, moderation.
+- **Condition + Evidence Intelligence:** Evidence timeline, condition metadata, before/after comparison.
+- **Notifications + Automation:** In-app, email, push notifications.
+- **AI + Tribunal:** AI-assisted condition comparison, blind tribunal, anonymous peer review.
 
 ---
 
@@ -148,15 +157,20 @@ This starts three orchestrated containers:
 
 ---
 
-## 💻 Local Development
+## Local Development
 
 To run the application locally outside of Docker:
 
 ### 1. Database
-Ensure MySQL 8.0 is running with database `borrowbox_db`:
+Ensure MySQL 8.0 is running with database `borrowbox_v2`:
 ```bash
 # Or start just the MySQL container
 docker compose up -d mysql
+```
+
+To reset the local database:
+```powershell
+.\scripts\reset-v2-db.ps1
 ```
 
 ### 2. Backend (Spring Boot)
@@ -164,7 +178,7 @@ docker compose up -d mysql
 cd backend
 mvn clean spring-boot:run
 ```
-The backend starts on `http://localhost:8080`.
+The backend starts on `http://localhost:8080` with `borrowbox.seed.enabled=true` (schema + seed run automatically).
 
 ### 3. Frontend (Vite Dev Server)
 ```bash
@@ -176,16 +190,16 @@ Open `http://localhost:5173` for hot-reloading development (requests to `/api` a
 
 ---
 
-## 🧪 Testing & Verification
+## Testing & Verification
 
 BorrowBox maintains a comprehensive test suite across unit, integration, and end-to-end layers:
 
-### Run Backend Tests (96 Tests)
+### Run Backend Tests
 ```bash
 cd backend
 mvn test
 ```
-*Executes unit tests, service logic tests, MockMvc controller tests, and MySQL repository integration tests.*
+*Requires local MySQL running on port 3306 with database `borrowbox_v2`.*
 
 ### Build Frontend
 ```bash
@@ -194,13 +208,13 @@ npm run build
 ```
 *Validates modules, compiles JSX, bundles CSS, and confirms production asset generation with zero errors.*
 
-### Run Cypress End-to-End Tests (20 Tests)
+### Run Cypress End-to-End Tests (44 Tests)
 With the application running on `http://localhost:3000`:
 ```bash
 cd frontend
 npx cypress run --headless
 ```
-*Runs automated browser tests covering Landing Page, User Registration & Sign In, Dashboard Navigation, Tab Persistence, and Sign Out.*
+*Covers Landing Page, Authentication, Dashboard Routing, Community Listings, Shared Inventory Availability, and V2.1 Completion Flow.*
 
 ---
 
@@ -225,18 +239,24 @@ Here are practical solutions for common local development and runtime issues:
   - *Linux/macOS:* `lsof -ti:3000 | xargs kill -9`
 
 ### 4. MySQL Port Conflict (Port 3306)
-- **Note:** BorrowBox maps the MySQL container to host port **3307** (`3307:3306`) in `docker-compose.yml` to prevent conflicts with any local MySQL instances running on port 3306.
+- **Note:** BorrowBox maps the MySQL container to host port **3307** (`3307:3306`) in `docker-compose.yml` to prevent conflicts with any local MySQL instances running on port 3306. Local development uses port 3306 directly.
 
 ### 5. Backend Startup Timing / Database Waiting
 - **Symptom:** Backend container restarts or logs HikariCP connection retry warnings.
-- **Fix:** The MySQL container takes a few seconds to complete internal initialization on first start. The `run_demo.bat` and `run_demo.sh` scripts automatically poll `http://localhost:8080/api/health` for up to 120 seconds until the database is ready.
+- **Fix:** The MySQL container takes a few seconds to complete internal initialization on first start. Docker Compose waits for MySQL healthcheck before starting the backend. The backend healthcheck (`/api/health`) ensures the frontend does not start until the API is ready.
 
 ### 6. Resetting Corrupted or Stale State
 - **Symptom:** Database schema inconsistencies or stale session cookies.
 - **Fix:** Execute a clean reset:
   ```bash
+  # Docker reset
   docker compose down -v
   docker compose up -d --build
+  ```
+  For local development:
+  ```powershell
+  .\scripts\reset-v2-db.ps1
+  cd backend && mvn spring-boot:run
   ```
   Then clear cookies/localStorage in your browser or use an incognito window.
 
@@ -247,7 +267,7 @@ Here are practical solutions for common local development and runtime issues:
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 BorrowBox/
@@ -258,34 +278,38 @@ BorrowBox/
 │       └── deploy.yml        # Deployment automation (Railway & Render hooks)
 ├── backend/                  # Spring Boot REST API (Java 21)
 │   ├── src/main/java/com/borrowbox/
-│   │   ├── config/           # Security, CORS, OpenAPI configs
-│   │   ├── controller/       # REST endpoints (Items, Requests, Records, Auth)
+│   │   ├── config/           # Security, CORS, OpenAPI, SeedDataInitializer
+│   │   ├── controller/       # REST endpoints (Auth, Community, Asset, Listing, Health)
 │   │   ├── dto/              # Request & Response DTOs
-│   │   ├── entity/           # JPA Entities (User, Item, Group, BorrowRecord, BorrowRequest)
+│   │   ├── entity/           # JPA Entities (User, Community, Membership, Asset, AssetUnit, CommunityListing, etc.)
 │   │   ├── exception/        # Global exception handler
 │   │   ├── repository/       # Spring Data JPA repositories
 │   │   ├── security/         # JWT filter & authentication logic
 │   │   ├── service/          # Business logic services
 │   │   └── spec/             # Dynamic JPA Specifications
-│   ├── src/test/java/        # 96 Unit, Service, Controller, and Integration tests
+│   ├── src/test/java/        # Unit, service, controller, and integration tests
 │   └── Dockerfile
 ├── frontend/                 # React 18 + Vite SPA
-│   ├── cypress/              # 20 Cypress E2E automated tests
+│   ├── cypress/              # Cypress E2E tests (5 spec files, 44 tests)
+│   │   └── e2e/              # auth, landing, dashboard, listings, completion
 │   ├── src/
-│   │   ├── components/       # UI components (Modals, Lists, Search, Navbar, Toast)
-│   │   ├── contexts/         # React Contexts (AuthContext, AppContext)
+│   │   ├── components/       # UI components
+│   │   ├── contexts/         # React Contexts (AuthContext)
 │   │   ├── pages/            # Page components & DashboardLayout
-│   │   ├── pages/tabs/       # Dashboard Tabs (Explore, Inventory, Requests, Loans)
 │   │   └── utils/            # API client and helper utilities
 │   ├── nginx.conf            # Production Nginx reverse proxy configuration
 │   └── Dockerfile
+├── scripts/
+│   └── reset-v2-db.ps1       # Local V2.1 database reset script
 ├── docs/
-│   ├── assets/               # Pitch PDF and dark mode screenshot
-│   ├── PITCH.md              # One-page executive project pitch
-│   └── pitch.html            # Print-ready HTML source for pitch PDF
-├── docker-compose.yml        # Multi-container orchestration
-├── run_demo.bat              # One-click Windows launch script
-├── run_demo.sh               # One-click Linux/macOS launch script
+│   ├── BORROWBOX_ROADMAP.ipynb
+│   ├── BORROWBOX_DECISIONS.ipynb
+│   ├── BORROWBOX_V2_1_DATABASE_SCHEMA.ipynb
+│   ├── BORROWBOX_V2_1_SEED_DATA_AND_INITIALIZATION.ipynb
+│   └── ...                   # Additional planning and specification notebooks
+├── docker-compose.yml        # V2.1 multi-container orchestration
+├── PROJECT_STATUS.md         # Current project state
+├── DEV_NOTES.md              # Developer notes (reset, seed, Docker)
 └── README.md
 ```
 
