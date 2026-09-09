@@ -102,7 +102,7 @@ export default function InventoryPage() {
                   <span className="badge badge-warning">{asset.borrowedUnits} borrowed</span>
                   <span className="badge badge-neutral">{asset.totalUnits} total</span>
                   <span className={`badge ${listedCount > 0 ? 'badge-info' : 'badge-neutral'}`}>
-                    {listedCount > 0 ? `Listed in ${listedCount} community${listedCount > 1 ? 's' : ''}` : 'Not listed'}
+                    {listedCount > 0 ? `Listed in ${listedCount} ${listedCount === 1 ? 'community' : 'communities'}` : 'Not listed'}
                   </span>
                 </div>
               </div>

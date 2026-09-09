@@ -3,7 +3,7 @@ services:
     image: mysql:8.0
     container_name: borrowbox-mysql
     environment:
-      MYSQL_DATABASE: borrowbox_db
+      MYSQL_DATABASE: borrowbox_v2
       MYSQL_ROOT_PASSWORD: rootpassword
     ports:
       - "3307:3306"
@@ -20,22 +20,30 @@ services:
       context: ./backend
     container_name: borrowbox-backend
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/borrowbox_db
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/borrowbox_v2
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword
-      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      BORROWBOX_SEED_ENABLED: "true"
     depends_on:
       mysql:
         condition: service_healthy
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   frontend:
     build:
       context: ./frontend
     container_name: borrowbox-frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "3000:80"
 
