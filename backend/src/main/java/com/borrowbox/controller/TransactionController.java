@@ -87,6 +87,26 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.cancel(id, currentUser()));
     }
 
+    @PostMapping("/transactions/{id}/stage-handover")
+    public ResponseEntity<TransactionResponse> stageHandover(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.stageHandover(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/confirm-handover")
+    public ResponseEntity<TransactionResponse> confirmHandover(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.confirmHandover(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/initiate-return")
+    public ResponseEntity<TransactionResponse> initiateReturn(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.initiateReturn(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/confirm-return")
+    public ResponseEntity<TransactionResponse> confirmReturn(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.confirmReturn(id, currentUser()));
+    }
+
     private User currentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String email;

@@ -11,4 +11,8 @@ export const requestService = {
   counterOffer: (id, data) => apiClient.post(`/transactions/${id}/counter-offer`, data),
   acceptCounter: (id) => apiClient.post(`/transactions/${id}/accept-counter`),
   cancel: (id) => apiClient.post(`/transactions/${id}/cancel`),
+  stageHandover: (id) => apiClient.post(`/transactions/${id}/stage-handover`),
+  confirmHandover: (id) => apiClient.post(`/transactions/${id}/confirm-handover`),
+  initiateReturn: (id) => apiClient.post(`/transactions/${id}/initiate-return`),
+  confirmReturn: (id) => apiClient.post(`/transactions/${id}/confirm-return`),
 }

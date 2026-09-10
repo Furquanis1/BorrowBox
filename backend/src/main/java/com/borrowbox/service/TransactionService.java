@@ -235,9 +235,10 @@ public class TransactionService {
     }
 
     /**
-     * Cancellation escape hatch:
-     *  - borrower may cancel PENDING / COUNTER_OFFERED / APPROVED
-     *  - lender may cancel APPROVED (V2.2.1 only, until handover exists)
+     * Cancellation rules:
+     *  - borrower may cancel PENDING / COUNTER_OFFERED
+     *  - either party may cancel AWAITING_HANDOVER (absorbs the removed
+     *    V2.2.1 APPROVED escape hatch; APPROVED itself is forward-only)
      * The reservation is released immediately.
      */
     @Transactional
@@ -254,7 +255,7 @@ public class TransactionService {
         TransactionStatus state = txn.getState();
         boolean allowed = switch (state) {
             case PENDING, COUNTER_OFFERED -> isBorrower;
-            case APPROVED -> isBorrower || isLender;
+            case AWAITING_HANDOVER -> isBorrower || isLender;
             default -> false;
         };
         if (!allowed) {
@@ -264,6 +265,88 @@ public class TransactionService {
 
         txn.setState(TransactionStatus.CANCELLED);
         releaseReservation(txn);
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * Either party stages an APPROVED transaction into AWAITING_HANDOVER.
+     * The reservation is kept (unit stays RESERVED).
+     */
+    @Transactional
+    public TransactionResponse stageHandover(Long id, User actor) {
+        requireUser(actor);
+        Transaction txn = findForUpdate(id);
+        requireParticipant(txn, actor);
+        requireState(txn, TransactionStatus.APPROVED);
+
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * Lender confirms the physical handover. The loan clock starts here
+     * (startedAt, backend-authoritative) and the reserved unit flips
+     * RESERVED → BORROWED, moving the transaction to ACTIVE.
+     */
+    @Transactional
+    public TransactionResponse confirmHandover(Long id, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireState(txn, TransactionStatus.AWAITING_HANDOVER);
+
+        AssetUnit unit = txn.getReservedUnit();
+        if (unit == null || unit.getStatus() != AssetUnitStatus.RESERVED) {
+            throw new BusinessRuleViolationException("The reserved unit is not available to hand over");
+        }
+
+        txn.setState(TransactionStatus.ACTIVE);
+        txn.setStartedAt(LocalDateTime.now());
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        assetUnitRepository.save(unit);
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * Borrower initiates the return of an ACTIVE loan. The unit stays BORROWED;
+     * only a lender receipt completes the loan.
+     */
+    @Transactional
+    public TransactionResponse initiateReturn(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireState(txn, TransactionStatus.ACTIVE);
+
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * Lender confirms receipt of the returned unit. This closes the loan:
+     * completedAt records the backend clock, the unit flips BORROWED →
+     * AVAILABLE and the reservation handle is released.
+     */
+    @Transactional
+    public TransactionResponse confirmReturn(Long id, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireState(txn, TransactionStatus.RETURN_INITIATED);
+
+        AssetUnit unit = txn.getReservedUnit();
+        if (unit == null) {
+            throw new BusinessRuleViolationException("The returned unit is not attached to this transaction");
+        }
+
+        txn.setState(TransactionStatus.COMPLETED);
+        txn.setCompletedAt(LocalDateTime.now());
+        unit.setStatus(AssetUnitStatus.AVAILABLE);
+        assetUnitRepository.save(unit);
+
+        // Release the reservation handle so no other transaction claims this unit.
+        txn.setReservedUnit(null);
+        txn.setReservedAt(null);
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -403,6 +486,8 @@ public class TransactionService {
                 txn.getAgreedAt(),
                 txn.getDecisionNote(),
                 txn.getReservedUnit() != null,
+                txn.getStartedAt(),
+                txn.getCompletedAt(),
                 txn.getCreatedAt(),
                 txn.getUpdatedAt()
         );

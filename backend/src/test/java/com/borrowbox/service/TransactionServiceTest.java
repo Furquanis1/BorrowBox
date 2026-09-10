@@ -460,19 +460,32 @@ public class TransactionServiceTest {
     }
 
     @Test
-    void lenderCanCancelApprovedAsEscapeHatch() {
+    void approvedIsForwardOnlyCannotBeCancelled() {
         Transaction txn = pending(unit);
         txn.setState(TransactionStatus.APPROVED);
         txn.setAgreedPurpose("Football match practice");
         txn.setAgreedDurationDays(3);
         txn.setAgreedAt(LocalDateTime.now());
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.cancel(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> transactionService.cancel(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void eitherPartyCanCancelAwaitingHandoverAndReleasesUnit() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TransactionResponse response = transactionService.cancel(1L, owner);
-
         assertThat(response.state()).isEqualTo(TransactionStatus.CANCELLED);
         assertThat(response.reservationHeld()).isFalse();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        verify(assetUnitRepository).save(unit);
     }
 
     @Test
@@ -494,6 +507,185 @@ public class TransactionServiceTest {
 
         assertThatThrownBy(() -> transactionService.cancel(1L, intruder))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    // ── V2.2.2 loan lifecycle ────────────────────────────────────────
+
+    @Test
+    void stageHandoverMovesApprovedToAwaitingHandover() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.stageHandover(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+        assertThat(response.reservationHeld()).isTrue();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+    }
+
+    @Test
+    void eitherPartyCanStageHandover() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(transactionService.stageHandover(1L, borrower).state())
+                .isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+    }
+
+    @Test
+    void stageHandoverOnNonApprovedIsRejected() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.stageHandover(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void nonParticipantCannotStageHandover() {
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.stageHandover(1L, intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void confirmHandoverStartsLoanAndFlipsUnitToBorrowed() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.confirmHandover(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(response.startedAt()).isNotNull();
+        assertThat(response.reservationHeld()).isTrue();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(assetUnitRepository).save(unit);
+    }
+
+    @Test
+    void borrowerCannotConfirmHandover() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(1L, borrower))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void confirmHandoverOnApprovedIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void confirmHandoverRequiresReservedUnit() {
+        Transaction txn = pending(null);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void confirmHandoverOnNonReservedUnitIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void initiateReturnMovesActiveToReturnInitiated() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        txn.setStartedAt(LocalDateTime.now());
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.initiateReturn(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
+        assertThat(response.startedAt()).isNotNull();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+    }
+
+    @Test
+    void lenderCannotInitiateReturn() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.initiateReturn(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void initiateReturnOnNonActiveIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.initiateReturn(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void confirmReturnCompletesLoanAndReleasesUnit() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.confirmReturn(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(response.completedAt()).isNotNull();
+        assertThat(response.reservationHeld()).isFalse();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        assertThat(txn.getReservedUnit()).isNull();
+        verify(assetUnitRepository).save(unit);
+    }
+
+    @Test
+    void borrowerCannotConfirmReturn() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReturn(1L, borrower))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void confirmReturnOnActiveIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReturn(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     // ── agreed terms immutability ─────────────────────────────────────

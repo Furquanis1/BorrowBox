@@ -160,6 +160,17 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
     cy.get('.userbar-nav a[href="/me/inventory"]').should('have.class', 'active')
   })
 
+  it('Loans should be discoverable from the UserBar and stay global', () => {
+    cy.get('.userbar-nav a[href="/me/loans"]').should('be.visible')
+
+    cy.get('.userbar-nav').contains('a', 'Loans').click()
+    cy.url().should('include', '/me/loans')
+    cy.get('.active-loans', { timeout: 15000 }).should('be.visible')
+    cy.get('.userbar-nav a[href="/me/loans"]').should('have.class', 'active')
+    cy.get('.community-header').should('not.exist')
+    cy.get('.community-tabs').should('not.exist')
+  })
+
   it('community pages should not expose My Inventory or duplicate nav', () => {
     cy.visit(`/communities/${cseId}`)
     cy.url({ timeout: 15000 }).should('match', /\/communities\/\d+$/)
@@ -297,12 +308,12 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
     cy.get('.community-header').should('not.exist')
   })
 
-  it('should keep Requests in personal nav, outside the community panel', () => {
+  it('should keep Requests and Loans in personal nav, outside the community panel', () => {
     cy.get('.bottom-nav').should('not.exist')
     cy.get('.community-panel').should('not.contain', 'Requests')
     cy.get('.community-panel').should('not.contain', 'Loans')
     cy.get('.userbar-nav').should('contain', 'Requests')
-    cy.get('.userbar-nav').should('not.contain', 'Loans')
+    cy.get('.userbar-nav').should('contain', 'Loans')
     cy.get('.userbar').should('not.contain', 'Notifications')
     cy.visit('/me/requests')
     cy.url({ timeout: 15000 }).should('include', '/me/requests')

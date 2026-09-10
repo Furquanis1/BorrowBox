@@ -8,7 +8,7 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-54_Tests_Passing-green?logo=cypress)
+![Cypress](https://img.shields.io/badge/Cypress-57_Tests_Passing-green?logo=cypress)
 
 ---
 
@@ -54,7 +54,7 @@ V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction eng
 
 ---
 
-## Core Features (V2.1)
+## Core Features (V2.1 → V2.2.2)
 
 | Module | Implemented Capabilities |
 |---|---|
@@ -64,13 +64,15 @@ V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction eng
 | **CommunityListing** | Selective visibility: one Asset listed in multiple communities, shared physical inventory pool, authorization enforced server-side (owner must have ACTIVE membership). |
 | **Community Explore** | Community-scoped listing discovery with aggregate availability (totalUnits, availableUnits, borrowedUnits), AssetUnit IDs hidden from public API. |
 | **Shared Availability** | Changing one AssetUnit status affects availability across all communities where the Asset is listed. Backend/database is authoritative. |
+| **Transaction Negotiation (V2.2.1)** | Lifecycle: PENDING → APPROVED/REJECTED/COUNTER_OFFERED/CANCELLED. Borrower reservation holds unit; lender accepts or counters. Approval is forward-only. |
+| **Loan Lifecycle (V2.2.2)** | Borrower completes handover (APPROVED → AWAITING_HANDOVER → ACTIVE). Borrower initiates return → lender confirms receipt → COMPLETED. Authoritative startedAt/completedAt timestamps. Dedicated `/me/loans` view. |
 
 ---
 
 ## Future Roadmap (BorrowBox V2.2+)
 
-*Planned features beyond V2.1 / V2.2.1:*
-- **Transaction Engine:** V2.2.1 delivers negotiation + reservation; remaining pieces are pickup coordination, handover confirmation, loan timer, extensions, return workflow.
+*Planned features beyond the V2.2.2 loan lifecycle slice:*
+- **Transaction Engine:** Extensions, overdue/expiry handling, messaging, representative handovers, disputes, evidence photos, flagging.
 - **Trust + Ledger:** Borrow/lending history, reputation events, reliability metrics, badges.
 - **Community Health:** Manager dashboard, membership review, flags, moderation.
 - **Condition + Evidence Intelligence:** Evidence timeline, condition metadata, before/after comparison.
@@ -89,7 +91,7 @@ V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction eng
 | **Frontend SPA** | React 18.2, Vite 5, React Router 7, Custom CSS Design System |
 | **API Docs** | Springdoc OpenAPI 3.0 / Swagger UI |
 | **DevOps & Containerization** | Multi-stage Docker builds, Docker Compose, Nginx reverse proxy, launch scripts (`run_demo.bat` / `run_demo.sh`) |
-| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 13 E2E testing (20 automated tests) |
+| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (57 automated tests) |
 | **CI/CD** | GitHub Actions ([build.yml](.github/workflows/build.yml), [e2e.yml](.github/workflows/e2e.yml), [deploy.yml](.github/workflows/deploy.yml)) |
 
 ---
@@ -216,13 +218,13 @@ npm run build
 ```
 *Validates modules, compiles JSX, bundles CSS, and confirms production asset generation with zero errors.*
 
-### Run Cypress End-to-End Tests (44 Tests)
+### Run Cypress End-to-End Tests (57 Tests)
 With the application running on `http://localhost:3000`:
 ```bash
 cd frontend
 npx cypress run --headless
 ```
-*Covers Landing Page, Authentication, Dashboard Routing, Community Listings, Shared Inventory Availability, and V2.1 Completion Flow.*
+*Covers Landing Page, Authentication, Dashboard Routing, Community Listings, Shared Inventory Availability, V2.1 Completion Flow, and the V2.2.2 end-to-end loan lifecycle.*
 
 ---
 
@@ -298,8 +300,8 @@ BorrowBox/
 │   ├── src/test/java/        # Unit, service, controller, and integration tests
 │   └── Dockerfile
 ├── frontend/                 # React 18 + Vite SPA
-│   ├── cypress/              # Cypress E2E tests (5 spec files, 44 tests)
-│   │   └── e2e/              # auth, landing, dashboard, listings, completion
+│   ├── cypress/              # Cypress E2E tests (6 spec files, 57 tests)
+│   │   └── e2e/              # auth, landing, dashboard, listings, completion, loan-lifecycle
 │   ├── src/
 │   │   ├── components/       # UI components
 │   │   ├── contexts/         # React Contexts (AuthContext)

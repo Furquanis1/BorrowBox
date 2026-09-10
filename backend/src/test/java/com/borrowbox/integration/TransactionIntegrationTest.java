@@ -325,7 +325,7 @@ public class TransactionIntegrationTest {
 
     @Test
     @Transactional
-    void seededApprovedTransactionIsTerminalAndNullableEscapeHatch() {
+    void seededApprovedTransactionIsForwardOnly() {
         seedDataInitializer.seed();
         User ahmed = seedUser("ahmed@example.com");
         User salah = seedUser("salah@example.com");
@@ -342,9 +342,57 @@ public class TransactionIntegrationTest {
                 seeded.getId(), new TransactionDecisionRequest("again"), ahmed))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
-        TransactionResponse cancelled = transactionService.cancel(seeded.getId(), salah);
-        assertThat(cancelled.state()).isEqualTo(TransactionStatus.CANCELLED);
-        assertThat(cancelled.reservationHeld()).isFalse();
+        // APPROVED is forward-only in V2.2.2: neither party may cancel it.
+        assertThatThrownBy(() -> transactionService.cancel(seeded.getId(), salah))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> transactionService.cancel(seeded.getId(), ahmed))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        // ...its only path is forward through the loan lifecycle.
+        TransactionResponse staged = transactionService.stageHandover(seeded.getId(), salah);
+        assertThat(staged.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+    }
+
+    @Test
+    @Transactional
+    void fullLoanLifecycleRunsToCompletionWithAvailabilityCounts() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Weekend tournament", 2), salah);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
+
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        assertThat(approved.state()).isEqualTo(TransactionStatus.APPROVED);
+
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        assertThat(staged.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isZero();
+
+        TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
+        assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(active.startedAt()).isNotNull();
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
+
+        TransactionResponse returned = transactionService.initiateReturn(active.id(), salah);
+        assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+
+        TransactionResponse completed = transactionService.confirmReturn(returned.id(), ahmed);
+        assertThat(completed.state()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(completed.startedAt()).isNotNull();
+        assertThat(completed.completedAt()).isNotNull();
+        assertThat(completed.completedAt()).isAfter(completed.startedAt());
+        assertThat(completed.reservationHeld()).isFalse();
+        assertThat(countOf(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isZero();
     }
 
     // ── Response hygiene ──────────────────────────────────────────────

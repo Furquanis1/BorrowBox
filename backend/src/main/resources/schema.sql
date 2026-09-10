@@ -1,4 +1,4 @@
--- BorrowBox V2.2.1 schema baseline (Community + Membership + Rules + Assets + Transactions)
+-- BorrowBox V2.2.2 schema baseline (Community + Membership + Rules + Assets + Transactions + Loan Lifecycle)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the V2.2.1 application:
 --   users, communities, memberships, categories, community_rules,
@@ -125,11 +125,12 @@ CREATE TABLE IF NOT EXISTS community_listings (
     INDEX idx_community_listings_asset_status (asset_id, listing_status)
 ) ENGINE=InnoDB;
 
--- V2.2.1 transaction negotiation: one row per (listing, borrower, lender)
+-- V2.2.1+ transaction negotiation: one row per (listing, borrower, lender)
 -- negotiation record. reserved_unit_id is NULL when no reservation is held;
 -- MySQL permits many NULLs in a UNIQUE column, so at most one transaction can
 -- hold a given non-null reserved_unit_id (the reservation authority is the
 -- DB, with the pessimistic lock in TransactionService as the primary guard).
+-- V2.2.2 adds started_at and completed_at for loan lifecycle tracking.
 CREATE TABLE IF NOT EXISTS transactions (
     id                       BIGINT       NOT NULL AUTO_INCREMENT,
     community_id             BIGINT       NOT NULL,
@@ -152,6 +153,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     decided_by               BIGINT       DEFAULT NULL,
     decision_note            VARCHAR(255) DEFAULT NULL,
     reserved_at              DATETIME(6)  DEFAULT NULL,
+    started_at               DATETIME(6)  DEFAULT NULL,
+    completed_at             DATETIME(6)  DEFAULT NULL,
     created_at               DATETIME(6)  NOT NULL,
     updated_at               DATETIME(6)  NOT NULL,
     PRIMARY KEY (id),
