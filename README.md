@@ -8,7 +8,7 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-44_Tests_Passing-green?logo=cypress)
+![Cypress](https://img.shields.io/badge/Cypress-54_Tests_Passing-green?logo=cypress)
 
 ---
 
