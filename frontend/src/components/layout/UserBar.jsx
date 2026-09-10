@@ -48,6 +48,13 @@ export default function UserBar() {
           <i className="bi bi-box" aria-hidden="true" />
           <span>Inventory</span>
         </NavLink>
+        <NavLink
+          to="/me/requests"
+          className={({ isActive }) => `userbar-nav-item${isActive ? ' active' : ''}`}
+        >
+          <i className="bi bi-inbox" aria-hidden="true" />
+          <span>Requests</span>
+        </NavLink>
       </nav>
 
       <div className="userbar-actions">
