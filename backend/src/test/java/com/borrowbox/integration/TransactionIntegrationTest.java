@@ -32,6 +32,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -359,9 +360,6 @@ public class TransactionIntegrationTest {
         TransactionResponse created = transactionService.create(
                 new TransactionCreateRequest(cseFootballListing(football).getId(), "Hygiene", 1), salah);
 
-        List<AssetUnit> units = assetUnitRepository.findByAssetId(football.getId());
-        List<Long> unitIds = units.stream().map(AssetUnit::getId).toList();
-
         String body = List.of(
                 created,
                 transactionService.view(created.id(), salah),
@@ -369,11 +367,26 @@ public class TransactionIntegrationTest {
                 transactionService.approve(created.id(), new TransactionDecisionRequest("ok"), ahmed))
                 .toString();
 
-        for (Long unitId : unitIds) {
-            assertThat(body).doesNotContain(String.valueOf(unitId));
-        }
-        assertThat(body).doesNotContain("reservedUnitId");
-        assertThat(body).doesNotContain("assetUnitId");
+        // The leak signal is the identifier FIELD, not the numeric value: AssetUnit ids
+        // and domain ids (communityId, listingId, assetId, ...) are allocated from the
+        // same MySQL counter space, so a unit id value can legitimately coincide with
+        // another field (e.g. communityId=20). Assert the deterministic contract instead:
+        // (1) the response record declares no AssetUnit-identifier field at all, and
+        // (2) no serialized response names such a field.
+        List<String> declaredFields = Arrays.stream(TransactionResponse.class.getRecordComponents())
+                .map(component -> component.getName())
+                .toList();
+        // 'communityId'/'communityName' legitimately contain the substring "unit"
+        // inside "community"; strip that word so only genuine AssetUnit-identifier
+        // fields (assetUnit*, reservedUnit*, *unitId, ...) trip the check.
+        assertThat(declaredFields).noneMatch(field ->
+                field.toLowerCase().replace("community", "").contains("unit"));
+
+        assertThat(body)
+                .doesNotContain("reservedUnitId")
+                .doesNotContain("assetUnitId")
+                .doesNotContain("reservedUnit")
+                .doesNotContain("assetUnit");
     }
 
     // ── Exactly-one-wins concurrency race ─────────────────────────────
