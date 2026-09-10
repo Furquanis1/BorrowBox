@@ -42,6 +42,14 @@ V2.1 (Community + Ownership Foundation) delivers:
 
 V2.1 does not include transactions, borrowing workflows, messaging, notifications, reputation, or AI. See `docs/BORROWBOX_ROADMAP.ipynb` for the full roadmap.
 
+V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction engine:
+
+- Structured borrow requests: borrower states purpose + duration (1–30 days)
+- Lender approve / reject / counter-offer; borrower accept-counter / cancel
+- Race-safe basis reservation: pessimistic DB lock + `UNIQUE(reserved_unit_id)` backstop, exactly-one-wins
+- Explore "Request" drawer and a Requests inbox (`/me/requests`, `/me/lend-requests`)
+- Backend/database is authoritative for reservation ordering; AssetUnit IDs are never exposed
+
 📄 **Project Pitch & Overview:** See the one-page project pitch in [Markdown](docs/PITCH.md) or download the [Pitch PDF](docs/assets/borrowbox-project-pitch.pdf).
 
 ---
@@ -61,8 +69,8 @@ V2.1 does not include transactions, borrowing workflows, messaging, notification
 
 ## Future Roadmap (BorrowBox V2.2+)
 
-*Planned features beyond V2.1:*
-- **Transaction Engine:** Structured borrow requests, approval/rejection, pickup coordination, handover confirmation, loan timer, extensions, return workflow.
+*Planned features beyond V2.1 / V2.2.1:*
+- **Transaction Engine:** V2.2.1 delivers negotiation + reservation; remaining pieces are pickup coordination, handover confirmation, loan timer, extensions, return workflow.
 - **Trust + Ledger:** Borrow/lending history, reputation events, reliability metrics, badges.
 - **Community Health:** Manager dashboard, membership review, flags, moderation.
 - **Condition + Evidence Intelligence:** Evidence timeline, condition metadata, before/after comparison.
