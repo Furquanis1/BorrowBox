@@ -7,6 +7,7 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,7 @@ public class SeedInitializerTest {
     @Autowired private AssetRepository assetRepository;
     @Autowired private AssetUnitRepository assetUnitRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
+    @Autowired private TransactionRepository transactionRepository;
 
     // ── Idempotency ──────────────────────────────────────────────────
 
@@ -49,6 +51,7 @@ public class SeedInitializerTest {
         long assetsAfterFirst      = assetRepository.count();
         long unitsAfterFirst       = assetUnitRepository.count();
         long listingsAfterFirst    = communityListingRepository.count();
+        long transactionsAfterFirst = transactionRepository.count();
 
         assertThat(usersAfterFirst).isGreaterThan(0);
         assertThat(membershipsAfterFirst).isGreaterThan(0);
@@ -63,6 +66,7 @@ public class SeedInitializerTest {
         assertThat(assetRepository.count()).isEqualTo(assetsAfterFirst);
         assertThat(assetUnitRepository.count()).isEqualTo(unitsAfterFirst);
         assertThat(communityListingRepository.count()).isEqualTo(listingsAfterFirst);
+        assertThat(transactionRepository.count()).isEqualTo(transactionsAfterFirst);
     }
 
     // ── Row-count baseline ────────────────────────────────────────────
@@ -147,7 +151,7 @@ public class SeedInitializerTest {
         List<AssetUnit> footballUnits = assetUnitRepository.findByAssetId(football.getId());
         assertThat(footballUnits).hasSize(2);
         assertThat(footballUnits).extracting(AssetUnit::getStatus)
-                .containsExactlyInAnyOrder(AssetUnitStatus.AVAILABLE, AssetUnitStatus.BORROWED);
+                .containsExactlyInAnyOrder(AssetUnitStatus.AVAILABLE, AssetUnitStatus.RESERVED);
 
         assertThat(findAssetByOwnerAndTitle(omar, "Camera")).isNotNull();
         assertThat(findAssetByOwnerAndTitle(youssef, "Cordless Drill")).isNotNull();
@@ -210,13 +214,44 @@ public class SeedInitializerTest {
         long total     = units.size();
         long available = units.stream().filter(u -> u.getStatus() == AssetUnitStatus.AVAILABLE).count();
         long borrowed  = units.stream().filter(u -> u.getStatus() == AssetUnitStatus.BORROWED).count();
+        long reserved  = units.stream().filter(u -> u.getStatus() == AssetUnitStatus.RESERVED).count();
 
         assertThat(total).isEqualTo(2);
         assertThat(available).isEqualTo(1);
-        assertThat(borrowed).isEqualTo(1);
+        assertThat(borrowed).isEqualTo(0);
+        assertThat(reserved).isEqualTo(1);
 
         List<CommunityListing> listings = communityListingRepository.findByAssetId(football.getId());
         assertThat(listings).hasSizeGreaterThanOrEqualTo(3);
+    }
+
+    // ── Football fixture is transaction-backed (V2.2.1) ───────────────
+
+    @Test
+    void footballFixtureIsTransactionBacked() {
+        seedDataInitializer.seed();
+
+        User ahmed = userRepository.findByEmail("ahmed@example.com").orElseThrow();
+        User salah = userRepository.findByEmail("salah@example.com").orElseThrow();
+        Asset football = findAssetByOwnerAndTitle(ahmed, "Football");
+
+        AssetUnit reservedUnit = assetUnitRepository.findByAssetId(football.getId()).stream()
+                .filter(u -> u.getStatus() == AssetUnitStatus.RESERVED)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("expected a RESERVED Football unit"));
+
+        Transaction backing = transactionRepository.findByReservedUnitId(reservedUnit.getId())
+                .orElseThrow(() -> new AssertionError("RESERVED Football unit has no backing transaction"));
+
+        assertThat(backing.getState()).isEqualTo(TransactionStatus.APPROVED);
+        assertThat(backing.getBorrower().getEmail()).isEqualTo("salah@example.com");
+        assertThat(backing.getLender().getEmail()).isEqualTo("ahmed@example.com");
+        assertThat(backing.getCommunity().getName()).isEqualTo("CSE Department");
+        assertThat(backing.getPurpose()).isEqualTo("Football match practice");
+        assertThat(backing.getRequestedDurationDays()).isEqualTo(3);
+        assertThat(backing.getAgreedPurpose()).isEqualTo("Football match practice");
+        assertThat(backing.getAgreedDurationDays()).isEqualTo(3);
+        assertThat(backing.getReservedUnit()).isSameAs(reservedUnit);
     }
 
     // ── Admission mode fixtures ────────────────────────────────────────
