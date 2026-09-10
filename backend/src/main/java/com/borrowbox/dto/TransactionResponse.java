@@ -31,6 +31,8 @@ public record TransactionResponse(
         LocalDateTime agreedAt,
         String decisionNote,
         boolean reservationHeld,
+        LocalDateTime startedAt,
+        LocalDateTime completedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

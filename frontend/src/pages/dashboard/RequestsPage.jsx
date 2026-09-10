@@ -13,6 +13,10 @@ const STATE_BADGE = {
   REJECTED: 'badge-neutral',
   COUNTER_OFFERED: 'badge-info',
   CANCELLED: 'badge-neutral',
+  AWAITING_HANDOVER: 'badge-info',
+  ACTIVE: 'badge-teal',
+  RETURN_INITIATED: 'badge-warning',
+  COMPLETED: 'badge-neutral',
 }
 
 const STATE_LABEL = {
@@ -21,6 +25,10 @@ const STATE_LABEL = {
   REJECTED: 'Rejected',
   COUNTER_OFFERED: 'Counter-offered',
   CANCELLED: 'Cancelled',
+  AWAITING_HANDOVER: 'Awaiting handover',
+  ACTIVE: 'On loan',
+  RETURN_INITIATED: 'Return in progress',
+  COMPLETED: 'Completed',
 }
 
 function TransactionCard({
@@ -32,13 +40,21 @@ function TransactionCard({
   onCounterOffer,
   onAcceptCounter,
   onCancel,
+  onStageHandover,
+  onConfirmHandover,
+  onInitiateReturn,
+  onConfirmReturn,
 }) {
   const state = transaction.state
   const isMine = role === 'mine'
-  const reservationHint =
-    transaction.reservationHeld && !['REJECTED', 'CANCELLED'].includes(state)
-      ? `A unit is reserved${state === 'APPROVED' ? '.' : ' while the request is open.'}`
-      : null
+  const agreed = ['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED'].includes(state)
+  const reservationHint = transaction.reservationHeld
+    ? state === 'ACTIVE' || state === 'RETURN_INITIATED'
+      ? 'A unit is with the borrower.'
+      : state === 'APPROVED'
+        ? 'A unit is reserved for you.'
+        : 'A unit is reserved while the request is open.'
+    : null
 
   return (
     <li className="transaction-card">
@@ -51,9 +67,9 @@ function TransactionCard({
               : `${transaction.borrowerName} · ${transaction.communityName}`}
           </p>
           <p className="transaction-card-terms">
-            &ldquo;{state === 'APPROVED' ? transaction.agreedPurpose : transaction.purpose}&rdquo;
+            &ldquo;{agreed ? transaction.agreedPurpose : transaction.purpose}&rdquo;
             {' · '}
-            {state === 'APPROVED'
+            {agreed
               ? `${transaction.agreedDurationDays} days`
               : `${transaction.requestedDurationDays} days requested`}
           </p>
@@ -76,10 +92,23 @@ function TransactionCard({
         </p>
       )}
 
-      {state === 'APPROVED' && (
+      {(state === 'APPROVED' || state === 'AWAITING_HANDOVER') && (
         <p className="transaction-card-note">
           Agreed for {transaction.agreedDurationDays} days (from{' '}
           {new Date(transaction.agreedAt).toLocaleDateString()}).
+        </p>
+      )}
+
+      {(state === 'ACTIVE' || state === 'RETURN_INITIATED') && (
+        <p className="transaction-card-note">
+          Loan started {new Date(transaction.startedAt).toLocaleDateString()} · agreed for{' '}
+          {transaction.agreedDurationDays} days.
+        </p>
+      )}
+
+      {state === 'COMPLETED' && (
+        <p className="transaction-card-note">
+          Completed {new Date(transaction.completedAt).toLocaleDateString()}.
         </p>
       )}
 
@@ -124,9 +153,60 @@ function TransactionCard({
         )}
 
         {state === 'APPROVED' && (
-          <Button variant="outline" size="sm" loading={busy === 'cancel'} onClick={() => onCancel()}>
-            <i className="bi bi-x-lg" aria-hidden="true" />
-            Cancel
+          <Button variant="primary" size="sm" loading={busy === 'stage'} onClick={() => onStageHandover()}>
+            <i className="bi bi-hand-index-thumb" aria-hidden="true" />
+            Schedule handover
+          </Button>
+        )}
+
+        {state === 'AWAITING_HANDOVER' && (
+          <>
+            {!isMine && (
+              <Button
+                variant="primary"
+                size="sm"
+                loading={busy === 'confirmHandover'}
+                onClick={() => onConfirmHandover()}
+              >
+                <i className="bi bi-box-arrow-down" aria-hidden="true" />
+                Confirm handover
+              </Button>
+            )}
+            {!isMine ? (
+              <Button variant="outline" size="sm" loading={busy === 'cancel'} onClick={() => onCancel()}>
+                <i className="bi bi-x-lg" aria-hidden="true" />
+                Cancel
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" loading={busy === 'cancel'} onClick={() => onCancel()}>
+                <i className="bi bi-x-lg" aria-hidden="true" />
+                Cancel booking
+              </Button>
+            )}
+          </>
+        )}
+
+        {isMine && state === 'ACTIVE' && (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === 'initiateReturn'}
+            onClick={() => onInitiateReturn()}
+          >
+            <i className="bi bi-arrow-90deg-left" aria-hidden="true" />
+            I&apos;ve returned it
+          </Button>
+        )}
+
+        {!isMine && state === 'RETURN_INITIATED' && (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === 'confirmReturn'}
+            onClick={() => onConfirmReturn()}
+          >
+            <i className="bi bi-check-lg" aria-hidden="true" />
+            Confirm received
           </Button>
         )}
       </div>
@@ -266,6 +346,18 @@ export default function RequestsPage() {
               }
               onCancel={() =>
                 run({ key: 'cancel', run: () => requestService.cancel(transaction.id) }, 'Request cancelled')
+              }
+              onStageHandover={() =>
+                run({ key: 'stage', run: () => requestService.stageHandover(transaction.id) }, 'Handover scheduled')
+              }
+              onConfirmHandover={() =>
+                run({ key: 'confirmHandover', run: () => requestService.confirmHandover(transaction.id) }, 'Loan started')
+              }
+              onInitiateReturn={() =>
+                run({ key: 'initiateReturn', run: () => requestService.initiateReturn(transaction.id) }, 'Return reported')
+              }
+              onConfirmReturn={() =>
+                run({ key: 'confirmReturn', run: () => requestService.confirmReturn(transaction.id) }, 'Loan completed')
               }
             />
           ))}
