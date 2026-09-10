@@ -184,7 +184,7 @@ export default function RequestsPage() {
 
   if (loading && requestCards.length === 0) {
     return (
-      <div className="requests-page">
+      <div className="requests-page request-inbox">
         <Spinner />
       </div>
     )
@@ -192,7 +192,7 @@ export default function RequestsPage() {
 
   if (loadError && requestCards.length === 0) {
     return (
-      <div className="requests-page">
+      <div className="requests-page request-inbox">
         <EmptyRequests
           icon="bi-exclamation-triangle"
           title="Could not load requests"
@@ -203,7 +203,7 @@ export default function RequestsPage() {
   }
 
   return (
-    <div className="requests-page">
+    <div className="requests-page request-inbox">
       <header className="requests-header">
         <h2>Requests</h2>
         <p>Negotiate a borrow with the people around you.</p>
