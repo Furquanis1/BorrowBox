@@ -1,8 +1,8 @@
--- BorrowBox V2.1.4 schema baseline (Community + Membership + Rules + Assets)
+-- BorrowBox V2.2.1 schema baseline (Community + Membership + Rules + Assets + Transactions)
 -- Fresh V2 database. V1 tables are not carried forward.
--- Matches exactly the entities mapped by the V2.1.4 application:
+-- Matches exactly the entities mapped by the V2.2.1 application:
 --   users, communities, memberships, categories, community_rules,
---   assets, asset_units
+--   assets, asset_units, community_listings, transactions
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -123,4 +123,47 @@ CREATE TABLE IF NOT EXISTS community_listings (
     CONSTRAINT uq_asset_community UNIQUE (asset_id, community_id),
     INDEX idx_community_listings_community_status (community_id, listing_status),
     INDEX idx_community_listings_asset_status (asset_id, listing_status)
+) ENGINE=InnoDB;
+
+-- V2.2.1 transaction negotiation: one row per (listing, borrower, lender)
+-- negotiation record. reserved_unit_id is NULL when no reservation is held;
+-- MySQL permits many NULLs in a UNIQUE column, so at most one transaction can
+-- hold a given non-null reserved_unit_id (the reservation authority is the
+-- DB, with the pessimistic lock in TransactionService as the primary guard).
+CREATE TABLE IF NOT EXISTS transactions (
+    id                       BIGINT       NOT NULL AUTO_INCREMENT,
+    community_id             BIGINT       NOT NULL,
+    listing_id               BIGINT       NOT NULL,
+    asset_id                 BIGINT       NOT NULL,
+    borrower_id              BIGINT       NOT NULL,
+    lender_id                BIGINT       NOT NULL,
+    reserved_unit_id         BIGINT       DEFAULT NULL,
+    state                    VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
+    purpose                  VARCHAR(255) NOT NULL,
+    requested_duration_days  INT          NOT NULL,
+    counter_purpose          VARCHAR(255) DEFAULT NULL,
+    counter_duration_days    INT          DEFAULT NULL,
+    counter_note             VARCHAR(255) DEFAULT NULL,
+    counter_offered_at       DATETIME(6)  DEFAULT NULL,
+    agreed_purpose           VARCHAR(255) DEFAULT NULL,
+    agreed_duration_days     INT          DEFAULT NULL,
+    agreed_at                DATETIME(6)  DEFAULT NULL,
+    decided_at               DATETIME(6)  DEFAULT NULL,
+    decided_by               BIGINT       DEFAULT NULL,
+    decision_note            VARCHAR(255) DEFAULT NULL,
+    reserved_at              DATETIME(6)  DEFAULT NULL,
+    created_at               DATETIME(6)  NOT NULL,
+    updated_at               DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_transactions_community     FOREIGN KEY (community_id) REFERENCES communities (id),
+    CONSTRAINT fk_transactions_listing       FOREIGN KEY (listing_id) REFERENCES community_listings (id),
+    CONSTRAINT fk_transactions_asset         FOREIGN KEY (asset_id) REFERENCES assets (id),
+    CONSTRAINT fk_transactions_borrower      FOREIGN KEY (borrower_id) REFERENCES users (id),
+    CONSTRAINT fk_transactions_lender        FOREIGN KEY (lender_id) REFERENCES users (id),
+    CONSTRAINT fk_transactions_reserved_unit FOREIGN KEY (reserved_unit_id) REFERENCES asset_units (id),
+    CONSTRAINT fk_transactions_decided_by    FOREIGN KEY (decided_by) REFERENCES users (id),
+    CONSTRAINT uq_transactions_reserved_unit UNIQUE (reserved_unit_id),
+    INDEX idx_transactions_lender_state (lender_id, state),
+    INDEX idx_transactions_borrower_state (borrower_id, state),
+    INDEX idx_transactions_listing_state (listing_id, state)
 ) ENGINE=InnoDB;

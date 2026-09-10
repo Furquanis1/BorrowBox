@@ -88,7 +88,7 @@ describe('V2.1 Completion Flow', () => {
 
     cy.then(() => {
       expect(captures['CSE Department']).to.contain('1 available')
-      expect(captures['CSE Department']).to.contain('1 borrowed')
+      expect(captures['CSE Department']).to.contain('0 borrowed')
       expect(captures['Hostel Block B']).to.equal(captures['CSE Department'])
       expect(captures['Engineering Office']).to.equal(captures['CSE Department'])
     })
@@ -165,7 +165,7 @@ describe('V2.1 Seed Baseline Verification (API)', () => {
     })
   })
 
-  it('Football has exactly 2 asset units (1 AVAILABLE + 1 BORROWED)', () => {
+  it('Football has exactly 2 asset units (1 AVAILABLE + 1 RESERVED)', () => {
     cy.request({
       method: 'POST',
       url: '/api/auth/login',
@@ -177,7 +177,7 @@ describe('V2.1 Seed Baseline Verification (API)', () => {
       expect(football).to.exist
       expect(football.totalUnits).to.equal(2)
       expect(football.availableUnits).to.equal(1)
-      expect(football.borrowedUnits).to.equal(1)
+      expect(football.borrowedUnits).to.equal(0)
     })
   })
 

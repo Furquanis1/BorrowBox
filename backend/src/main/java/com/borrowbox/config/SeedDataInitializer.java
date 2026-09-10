@@ -14,6 +14,8 @@ import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.MembershipVerificationMethod;
+import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.UserStatus;
 import com.borrowbox.repository.AssetRepository;
@@ -21,6 +23,7 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -36,12 +39,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * V2.1 deterministic, idempotent development seed.
+ * V2.2.1 deterministic, idempotent development seed.
  *
  * Baselines so far:
  *  - V2.1.1: Users + Communities + Memberships.
  *  - V2.1.5: Assets + AssetUnits + CommunityListings (canonical 5/6/7 fixture
  *    including AHMED_FOOTBALL 2/1/1 shared availability).
+ *  - V2.2.1: Football's non-available unit is backed by an APPROVED transaction
+ *    (Salah → Football in CSE); the fixture unit is RESERVED (2/1/0).
  *
  * Idempotency keys:
  *   users         -> email
@@ -49,6 +54,7 @@ import java.util.Map;
  *   memberships   -> (user_id, community_id)
  *   assets        -> (owner_id, title); units are reconciled upward only
  *   listings      -> (asset_id, community_id)
+ *   transactions  -> (reserved_unit_id)
  *
  * The seed is strictly additive: it never deletes or rewrites existing rows.
  */
@@ -61,6 +67,7 @@ public class SeedDataInitializer implements ApplicationRunner {
     private final AssetRepository assetRepository;
     private final AssetUnitRepository assetUnitRepository;
     private final CommunityListingRepository communityListingRepository;
+    private final TransactionRepository transactionRepository;
     private final PasswordEncoder passwordEncoder;
 
     public SeedDataInitializer(UserRepository userRepository,
@@ -69,6 +76,7 @@ public class SeedDataInitializer implements ApplicationRunner {
                                AssetRepository assetRepository,
                                AssetUnitRepository assetUnitRepository,
                                CommunityListingRepository communityListingRepository,
+                               TransactionRepository transactionRepository,
                                PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.communityRepository = communityRepository;
@@ -76,6 +84,7 @@ public class SeedDataInitializer implements ApplicationRunner {
         this.assetRepository = assetRepository;
         this.assetUnitRepository = assetUnitRepository;
         this.communityListingRepository = communityListingRepository;
+        this.transactionRepository = transactionRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -144,6 +153,12 @@ public class SeedDataInitializer implements ApplicationRunner {
         listing(youssefDrill, hostel, youssef);
         listing(youssefDrill, cse, youssef);
         listing(karimCalculator, office, karim);
+
+        // V2.2.1: the canonical Football fixture's non-available unit must be
+        // backed by a real transaction once the transactions table exists.
+        // Salah reserves Ahmed's Football in CSE; the fixture unit flips to
+        // RESERVED (the seed never deletes or rewrites existing rows).
+        backingFootballTransaction(ahmedFootball, salah, ahmed, cse);
     }
 
     private User user(String fullName, String email, String rawPassword) {
@@ -259,6 +274,63 @@ public class SeedDataInitializer implements ApplicationRunner {
         listing.setListingStatus(ListingStatus.LISTED);
         listing.setListedAt(LocalDateTime.now());
         communityListingRepository.save(listing);
+    }
+
+    /**
+     * V2.2.1: the canonical Football fixture's non-available unit must be backed
+     * by a real transaction (Salah borrowing Ahmed's Football in CSE, APPROVED).
+     * The fixture unit flips BORROWED -> RESERVED and the reservation is held by
+     * the transaction. Idempotency key is the reserved-unit relationship: a
+     * transaction already holding that unit is left untouched.
+     */
+    private void backingFootballTransaction(Asset football, User borrower, User lender, Community cse) {
+        if (football == null) {
+            return;
+        }
+        List<AssetUnit> units = assetUnitRepository.findByAssetId(football.getId());
+        AssetUnit fixtureUnit = units.stream()
+                .filter(u -> u.getStatus() == AssetUnitStatus.BORROWED
+                        || u.getStatus() == AssetUnitStatus.RESERVED)
+                .findFirst()
+                .orElse(null);
+        if (fixtureUnit == null) {
+            return;
+        }
+        if (transactionRepository.findByReservedUnitId(fixtureUnit.getId()).isPresent()) {
+            if (fixtureUnit.getStatus() == AssetUnitStatus.BORROWED) {
+                fixtureUnit.setStatus(AssetUnitStatus.RESERVED);
+                assetUnitRepository.save(fixtureUnit);
+            }
+            return;
+        }
+        CommunityListing listing = communityListingRepository
+                .findByAssetIdAndCommunityId(football.getId(), cse.getId())
+                .orElse(null);
+        if (listing == null) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        fixtureUnit.setStatus(AssetUnitStatus.RESERVED);
+        assetUnitRepository.save(fixtureUnit);
+
+        Transaction txn = new Transaction();
+        txn.setCommunity(cse);
+        txn.setListing(listing);
+        txn.setAsset(football);
+        txn.setBorrower(borrower);
+        txn.setLender(lender);
+        txn.setReservedUnit(fixtureUnit);
+        txn.setReservedAt(now);
+        txn.setState(TransactionStatus.APPROVED);
+        txn.setPurpose("Football match practice");
+        txn.setRequestedDurationDays(3);
+        txn.setAgreedPurpose("Football match practice");
+        txn.setAgreedDurationDays(3);
+        txn.setAgreedAt(now);
+        txn.setDecidedAt(now);
+        txn.setDecidedBy(lender);
+        transactionRepository.save(txn);
     }
 
     private Map<String, Object> mapOf(Object... entries) {

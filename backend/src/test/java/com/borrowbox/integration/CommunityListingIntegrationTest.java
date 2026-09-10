@@ -164,8 +164,14 @@ public class CommunityListingIntegrationTest {
         ListingResponse afterHostel = footballListing(hostel, ahmed);
         ListingResponse afterOffice = footballListing(office, ahmed);
 
+        // Every non-archived unit is available, borrowed or reserved (V2.2.1);
+        // the shared pool totals stay identical across all listings.
+        long reservedUnits = assetUnitRepository.findByAssetId(football.getId()).stream()
+                .filter(u -> u.getStatus() == AssetUnitStatus.RESERVED)
+                .count();
         assertThat(afterCse.totalUnits()).isEqualTo(before.totalUnits());
-        assertThat(afterCse.availableUnits() + afterCse.borrowedUnits()).isEqualTo(afterCse.totalUnits());
+        assertThat(afterCse.availableUnits() + afterCse.borrowedUnits() + reservedUnits)
+                .isEqualTo(afterCse.totalUnits());
         assertThat(afterHostel.availableUnits()).isEqualTo(afterCse.availableUnits());
         assertThat(afterHostel.borrowedUnits()).isEqualTo(afterCse.borrowedUnits());
         assertThat(afterOffice.availableUnits()).isEqualTo(afterCse.availableUnits());
