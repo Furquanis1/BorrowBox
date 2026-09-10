@@ -1623,6 +1623,23 @@ select,
   white-space: nowrap;
 }
 
+.request-drawer-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.request-drawer-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+.request-drawer-actions {
+  margin-top: var(--sp-1);
+}
+
 /* ============ COMMUNITY HOME (Phase RN) ============ */
 
 .community-home-section-title {
