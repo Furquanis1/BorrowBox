@@ -1401,6 +1401,7 @@ select,
 .explore-dashboard,
 .inventory-manager,
 .request-inbox,
+.requests-page,
 .active-loans,
 .members-page,
 .rules-page,
@@ -1638,6 +1639,170 @@ select,
 
 .request-drawer-actions {
   margin-top: var(--sp-1);
+}
+
+/* ============ REQUESTS INBOX (V2.2.1) ============ */
+
+.requests-header {
+  margin-bottom: var(--sp-5);
+}
+
+.requests-header h2 {
+  margin-bottom: var(--sp-1);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.requests-header p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.requests-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.requests-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+
+.requests-tab:hover {
+  color: var(--ink);
+}
+
+.requests-tab.active {
+  border-bottom-color: var(--teal-600);
+  color: var(--teal-700);
+}
+
+.requests-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.transaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transaction-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.transaction-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.transaction-card-main {
+  min-width: 0;
+}
+
+.transaction-card-main h3 {
+  margin: 0 0 var(--sp-1);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.transaction-card-subline {
+  margin: 0 0 var(--sp-1);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.transaction-card-terms {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.transaction-reservation-dot {
+  margin-left: 6px;
+  font-size: 0.45rem;
+  vertical-align: middle;
+  color: var(--teal-600);
+}
+
+.transaction-card-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.transaction-card-counter {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.transaction-card-reservation {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--teal-700);
+}
+
+.transaction-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
+.request-drawer-counter-summary {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.request-drawer-summary .badge {
+  margin-right: var(--sp-2);
 }
 
 /* ============ COMMUNITY HOME (Phase RN) ============ */
