@@ -1,20 +1,21 @@
 /**
- * V2.2.2 Loan Lifecycle Coverage
+ * V2.2.3 Loan Lifecycle Coverage
  *
  * Drives an approved Football reservation through the whole physical loan
  * lifecycle against the running backend + seeded MySQL DB:
  *
- *   PENDING → APPROVED → AWAITING_HANDOVER → ACTIVE → RETURN_INITIATED → COMPLETED
+ *   PENDING → APPROVED → AWAITING_HANDOVER → ACTIVE → RETURN_INITIATED
+ *     → RETURN_REPORTED → COMPLETED
  *
  * Verifies the authoritative timestamps, the shared availability counts at
- * each step, and the Requests/Loans UI actions for both borrower and lender.
+ * each step, and the Loans UI return actions for both borrower and lender.
  *
  * All transactions created here carry a unique purpose marker; the `after`
  * hook closes or releases every one of them so the canonical seeded fixture
  * (Football 2 units: 1 AVAILABLE + 1 RESERVED, 0 borrowed) is restored for the
  * rest of the test suite regardless of where the spec stopped.
  */
-describe('V2.2.2 Loan Lifecycle', () => {
+describe('V2.2.3 Loan Lifecycle', () => {
   const ahmed = { email: 'ahmed@example.com', password: 'password123' }
   const salah = { email: 'salah@example.com', password: 'password123' }
 
@@ -69,10 +70,13 @@ describe('V2.2.2 Loan Lifecycle', () => {
       case 'ACTIVE':
         loginViaApi(salah)
         cy.request('POST', `/api/transactions/${txn.id}/initiate-return`)
+        cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
       case 'RETURN_INITIATED':
+        loginViaApi(salah)
+        cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
@@ -146,26 +150,42 @@ describe('V2.2.2 Loan Lifecycle', () => {
       expect(borrowed).to.equal(1)
     })
 
-    // ── Borrower UI: active loan + mark returned ────────────────────
+    // ── Borrower UI: active loan; return is initiated from the conversation ──
     loginViaUi(salah)
     cy.visit('/me/loans')
     cy.url({ timeout: 15000 }).should('include', '/me/loans')
     cy.get('.active-loans').should('be.visible')
     cy.get('.transaction-list').contains('Football').should('be.visible')
     cy.get('.transaction-card').contains('On loan').should('be.visible')
-    cy.get('.transaction-card').contains('button', "I've returned it").click()
-    cy.get('.transaction-card', { timeout: 15000 }).contains('Return in progress').should('be.visible')
+    cy.get('.transaction-card').contains('button', 'Conversation').click()
+    cy.get('.conversation-body').should('be.visible')
+    cy.get('.conversation-return-action').contains('Ready to return the item?').should('be.visible')
+    cy.get('.conversation-return-action button').contains('Start return').click()
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').should('be.visible')
 
+    // RETURN_INITIATED: the borrower reports the physical handback.
+    cy.get('.conversation-return-action button').contains("I've handed the item back").click()
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').should('be.visible')
+    cy.get('.conversation-return-action').should('not.exist')
+    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').should('be.visible')
+    cy.get('button[aria-label="Close"]').click()
+
+    // RETURN_REPORTED shows on Loans; the Requests inbox no longer lists it.
+    cy.get('.transaction-card', { timeout: 15000 }).contains('Return reported').should('be.visible')
     cy.visit('/me/requests')
     cy.get('.requests-tab').contains('My requests').click()
-    cy.get('.transaction-card').contains('Return in progress').should('be.visible')
+    cy.get('.transaction-card').should('not.contain', marker)
 
-    // ── Lender UI: confirm receipt → COMPLETED ──────────────────────
+    // ── Lender UI: confirm receipt from the conversation → COMPLETED ──
     loginViaUi(ahmed)
-    cy.visit('/me/requests')
-    cy.url({ timeout: 15000 }).should('include', '/me/requests')
-    cy.get('.transaction-card').contains('Return in progress').should('be.visible')
-    cy.get('.transaction-card').contains('button', 'Confirm received').click()
+    cy.visit('/me/loans')
+    cy.url({ timeout: 15000 }).should('include', '/me/loans')
+    cy.get('.transaction-card').contains('Return reported').should('be.visible')
+    cy.get('.transaction-card').contains('button', 'Conversation').click()
+    cy.get('.conversation-return-action').contains('The borrower reported the item is back.').should('be.visible')
+    cy.get('.conversation-return-action button').contains('Confirm received').click()
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Loan completed').should('be.visible')
+    cy.get('button[aria-label="Close"]').click()
     cy.get('.transaction-card', { timeout: 15000 }).contains('Completed').should('be.visible')
 
     // ── Final API assertions ────────────────────────────────────────

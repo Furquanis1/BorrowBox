@@ -1,27 +1,39 @@
 import React, { useCallback, useState } from 'react'
 import { useAsync } from '../../hooks/useAsync'
 import { useApp } from '../../contexts/AppContext'
+import { useAuth } from '../../contexts/AuthContext'
 import { requestService } from '../../services'
 import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
+import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
 
-const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'COMPLETED'])
+const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED'])
 
 const STATE_BADGE = {
   ACTIVE: 'badge-teal',
   RETURN_INITIATED: 'badge-warning',
+  RETURN_REPORTED: 'badge-info',
   COMPLETED: 'badge-neutral',
 }
 
 const STATE_LABEL = {
   ACTIVE: 'On loan',
   RETURN_INITIATED: 'Return in progress',
+  RETURN_REPORTED: 'Return reported',
   COMPLETED: 'Completed',
 }
 
-function LoanCard({ loan, busy, onInitiateReturn }) {
+const CONVERSATION_LABEL = {
+  ACTIVE: 'Conversation',
+  RETURN_INITIATED: 'Conversation',
+  RETURN_REPORTED: 'Conversation',
+  COMPLETED: 'View conversation',
+}
+
+function LoanCard({ loan, currentUserId, onConversation }) {
   const state = loan.state
+  const isBorrower = currentUserId && loan.borrowerId === currentUserId
   const dueDate = new Date(loan.startedAt)
   dueDate.setDate(dueDate.getDate() + (loan.agreedDurationDays || 0))
 
@@ -31,7 +43,9 @@ function LoanCard({ loan, busy, onInitiateReturn }) {
         <div className="transaction-card-main">
           <h3>{loan.title}</h3>
           <p className="transaction-card-subline">
-            {loan.lenderName} · {loan.communityName}
+            {isBorrower
+              ? `${loan.lenderName} · ${loan.communityName}`
+              : `${loan.borrowerName} · ${loan.communityName}`}
           </p>
           <p className="transaction-card-terms">
             &ldquo;{loan.agreedPurpose || loan.purpose}&rdquo; · {loan.agreedDurationDays || loan.requestedDurationDays}{' '}
@@ -48,9 +62,13 @@ function LoanCard({ loan, busy, onInitiateReturn }) {
         <p className="transaction-card-note">
           Returned {new Date(loan.completedAt).toLocaleDateString()}.
         </p>
+      ) : state === 'RETURN_REPORTED' ? (
+        <p className="transaction-card-note">
+          Handback reported. Awaiting the owner&apos;s receipt confirmation.
+        </p>
       ) : state === 'RETURN_INITIATED' ? (
         <p className="transaction-card-note">
-          Return reported. Awaiting the owner&apos;s receipt confirmation.
+          Return in progress. Awaiting the handback report.
         </p>
       ) : (
         <p className="transaction-card-note">
@@ -58,45 +76,38 @@ function LoanCard({ loan, busy, onInitiateReturn }) {
         </p>
       )}
 
-      {state === 'ACTIVE' && (
-        <div className="transaction-card-actions">
-          <Button
-            variant="primary"
-            size="sm"
-            loading={busy === 'initiateReturn'}
-            onClick={() => onInitiateReturn()}
-          >
-            <i className="bi bi-arrow-90deg-left" aria-hidden="true" />
-            I&apos;ve returned it
-          </Button>
-        </div>
-      )}
+      <div className="transaction-card-actions">
+        <Button variant="outline" size="sm" onClick={() => onConversation()}>
+          <i className="bi bi-chat-dots" aria-hidden="true" />
+          {CONVERSATION_LABEL[state] || 'Conversation'}
+        </Button>
+      </div>
     </li>
   )
 }
 
 export default function LoansPage() {
-  const { showToast, triggerRefresh } = useApp()
-  const [busy, setBusy] = useState(null)
+  const { triggerRefresh } = useApp()
+  const { user } = useAuth()
+  const [conversationTarget, setConversationTarget] = useState(null)
   const fetchMine = useCallback(() => requestService.getMine(), [])
-  const loansState = useAsync(fetchMine, [])
-  const loans = (loansState.data || []).filter((t) => LOAN_STATES.has(t.state))
+  const fetchLended = useCallback(() => requestService.getLendRequests(), [])
+  const mineState = useAsync(fetchMine, [])
+  const lendedState = useAsync(fetchLended, [])
 
-  const handleInitiateReturn = async (id) => {
-    setBusy('initiateReturn')
-    try {
-      await requestService.initiateReturn(id)
-      showToast('Return reported to the owner.')
-      triggerRefresh()
-      await loansState.reload()
-    } catch (err) {
-      showToast(err?.message || 'Action failed', 'error')
-    } finally {
-      setBusy(null)
-    }
+  const loans = [...(mineState.data || []), ...(lendedState.data || [])].filter((t) =>
+    LOAN_STATES.has(t.state)
+  )
+
+  const handleDataChanged = async () => {
+    triggerRefresh()
+    await Promise.allSettled([mineState.reload(), lendedState.reload()])
   }
 
-  if (loansState.loading && loans.length === 0) {
+  const loading = mineState.loading || lendedState.loading
+  const loadError = mineState.error || lendedState.error
+
+  if (loading && loans.length === 0) {
     return (
       <div className="active-loans">
         <Spinner />
@@ -104,13 +115,13 @@ export default function LoansPage() {
     )
   }
 
-  if (loansState.error && loans.length === 0) {
+  if (loadError && loans.length === 0) {
     return (
       <div className="active-loans">
         <EmptyState
           icon="bi-exclamation-triangle"
           title="Could not load loans"
-          description={loansState.error.message}
+          description={loadError.message}
         />
       </div>
     )
@@ -135,12 +146,19 @@ export default function LoansPage() {
             <LoanCard
               key={loan.id}
               loan={loan}
-              busy={busy}
-              onInitiateReturn={() => handleInitiateReturn(loan.id)}
+              currentUserId={user?.id}
+              onConversation={() => setConversationTarget(loan)}
             />
           ))}
         </ul>
       )}
+
+      <ConversationDrawer
+        open={!!conversationTarget}
+        onClose={() => setConversationTarget(null)}
+        transaction={conversationTarget}
+        onDataChanged={handleDataChanged}
+      />
     </div>
   )
 }

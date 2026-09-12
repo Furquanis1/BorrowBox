@@ -6,6 +6,9 @@ import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import CounterOfferDrawer from '../../components/dashboard/CounterOfferDrawer'
+import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
+
+const REQUEST_STATES = new Set(['PENDING', 'COUNTER_OFFERED', 'APPROVED', 'AWAITING_HANDOVER'])
 
 const STATE_BADGE = {
   PENDING: 'badge-warning',
@@ -31,6 +34,13 @@ const STATE_LABEL = {
   COMPLETED: 'Completed',
 }
 
+const CONVERSATION_LABEL = {
+  PENDING: 'Conversation',
+  COUNTER_OFFERED: 'Conversation',
+  APPROVED: 'Discuss pickup',
+  AWAITING_HANDOVER: 'Discuss pickup',
+}
+
 function TransactionCard({
   transaction,
   role,
@@ -42,8 +52,7 @@ function TransactionCard({
   onCancel,
   onStageHandover,
   onConfirmHandover,
-  onInitiateReturn,
-  onConfirmReturn,
+  onConversation,
 }) {
   const state = transaction.state
   const isMine = role === 'mine'
@@ -115,6 +124,11 @@ function TransactionCard({
       {reservationHint && <p className="transaction-card-reservation">{reservationHint}</p>}
 
       <div className="transaction-card-actions">
+        <Button variant="outline" size="sm" onClick={() => onConversation()}>
+          <i className="bi bi-chat-dots" aria-hidden="true" />
+          {CONVERSATION_LABEL[state] || 'Conversation'}
+        </Button>
+
         {!isMine && state === 'PENDING' && (
           <>
             <Button variant="primary" size="sm" loading={busy === 'approve'} onClick={() => onApprove()}>
@@ -185,30 +199,6 @@ function TransactionCard({
             )}
           </>
         )}
-
-        {isMine && state === 'ACTIVE' && (
-          <Button
-            variant="primary"
-            size="sm"
-            loading={busy === 'initiateReturn'}
-            onClick={() => onInitiateReturn()}
-          >
-            <i className="bi bi-arrow-90deg-left" aria-hidden="true" />
-            I&apos;ve returned it
-          </Button>
-        )}
-
-        {!isMine && state === 'RETURN_INITIATED' && (
-          <Button
-            variant="primary"
-            size="sm"
-            loading={busy === 'confirmReturn'}
-            onClick={() => onConfirmReturn()}
-          >
-            <i className="bi bi-check-lg" aria-hidden="true" />
-            Confirm received
-          </Button>
-        )}
       </div>
     </li>
   )
@@ -223,6 +213,7 @@ export default function RequestsPage() {
   const [tab, setTab] = useState('incoming')
   const [busy, setBusy] = useState(null)
   const [counterTarget, setCounterTarget] = useState(null)
+  const [conversationTarget, setConversationTarget] = useState(null)
 
   const fetchIncoming = useCallback(() => requestService.getLendRequests(), [])
   const fetchMine = useCallback(() => requestService.getMine(), [])
@@ -248,8 +239,8 @@ export default function RequestsPage() {
     }
   }
 
-  const incoming = incomingState.data || []
-  const mine = mineState.data || []
+  const incoming = (incomingState.data || []).filter((t) => REQUEST_STATES.has(t.state))
+  const mine = (mineState.data || []).filter((t) => REQUEST_STATES.has(t.state))
   const loading = incomingState.loading || mineState.loading
   const loadError = incomingState.error || mineState.error
 
@@ -353,12 +344,7 @@ export default function RequestsPage() {
               onConfirmHandover={() =>
                 run({ key: 'confirmHandover', run: () => requestService.confirmHandover(transaction.id) }, 'Loan started')
               }
-              onInitiateReturn={() =>
-                run({ key: 'initiateReturn', run: () => requestService.initiateReturn(transaction.id) }, 'Return reported')
-              }
-              onConfirmReturn={() =>
-                run({ key: 'confirmReturn', run: () => requestService.confirmReturn(transaction.id) }, 'Loan completed')
-              }
+              onConversation={() => setConversationTarget(transaction)}
             />
           ))}
         </ul>
@@ -369,6 +355,13 @@ export default function RequestsPage() {
         onClose={() => setCounterTarget(null)}
         transaction={counterTarget}
         onSubmitted={handleCounterSubmitted}
+      />
+
+      <ConversationDrawer
+        open={!!conversationTarget}
+        onClose={() => setConversationTarget(null)}
+        transaction={conversationTarget}
+        onDataChanged={refreshAll}
       />
     </div>
   )
