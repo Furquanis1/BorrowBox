@@ -53,6 +53,9 @@ public class TransactionServiceTest {
     @Mock
     private MembershipService membershipService;
 
+    @Mock
+    private TransactionMessageService messageService;
+
     private TransactionService transactionService;
 
     private User owner;
@@ -65,7 +68,8 @@ public class TransactionServiceTest {
     @BeforeEach
     void setUp() {
         transactionService = new TransactionService(
-                transactionRepository, listingRepository, assetUnitRepository, membershipService);
+                transactionRepository, listingRepository, assetUnitRepository,
+                membershipService, messageService);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -523,6 +527,7 @@ public class TransactionServiceTest {
         assertThat(response.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover scheduled"));
     }
 
     @Test
@@ -571,6 +576,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(assetUnitRepository).save(unit);
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan started"));
     }
 
     @Test
@@ -628,6 +634,7 @@ public class TransactionServiceTest {
         assertThat(response.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
         assertThat(response.startedAt()).isNotNull();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Return initiated"));
     }
 
     @Test
@@ -651,9 +658,59 @@ public class TransactionServiceTest {
     }
 
     @Test
-    void confirmReturnCompletesLoanAndReleasesUnit() {
+    void reportHandbackMovesReturnInitiatedToReturnReported() {
         Transaction txn = pending(unit);
         txn.setState(TransactionStatus.RETURN_INITIATED);
+        txn.setStartedAt(LocalDateTime.now());
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.reportHandback(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
+        assertThat(response.startedAt()).isNotNull();
+        assertThat(response.reservationHeld()).isTrue();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Handback reported"));
+    }
+
+    @Test
+    void lenderCannotReportHandback() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.reportHandback(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void nonBorrowerCannotReportHandback() {
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.reportHandback(1L, intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void reportHandbackOnNonReturnInitiatedIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.reportHandback(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void confirmReturnCompletesLoanAndReleasesUnit() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
         unit.setStatus(AssetUnitStatus.BORROWED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -666,16 +723,27 @@ public class TransactionServiceTest {
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
         assertThat(txn.getReservedUnit()).isNull();
         verify(assetUnitRepository).save(unit);
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan completed"));
     }
 
     @Test
-    void borrowerCannotConfirmReturn() {
+    void borrowerCannotConfirmReturnEvenAfterHandbackReported() {
         Transaction txn = pending(unit);
-        txn.setState(TransactionStatus.RETURN_INITIATED);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
 
         assertThatThrownBy(() -> transactionService.confirmReturn(1L, borrower))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void lenderCannotPrematurelyCompleteBeforeHandbackReported() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReturn(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     @Test

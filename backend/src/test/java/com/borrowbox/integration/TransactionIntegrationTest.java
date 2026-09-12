@@ -5,12 +5,14 @@ import com.borrowbox.dto.CounterOfferRequest;
 import com.borrowbox.dto.ListingCreateRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
+import com.borrowbox.dto.TransactionMessageResponse;
 import com.borrowbox.dto.TransactionResponse;
 import com.borrowbox.entity.Asset;
 import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
@@ -24,6 +26,7 @@ import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.TransactionService;
+import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +64,7 @@ public class TransactionIntegrationTest {
 
     @Autowired private SeedDataInitializer seedDataInitializer;
     @Autowired private TransactionService transactionService;
+    @Autowired private TransactionMessageService transactionMessageService;
     @Autowired private CommunityListingService listingService;
     @Autowired private UserRepository userRepository;
     @Autowired private CommunityRepository communityRepository;
@@ -385,7 +389,11 @@ public class TransactionIntegrationTest {
         assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
 
-        TransactionResponse completed = transactionService.confirmReturn(returned.id(), ahmed);
+        TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
+        assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+
+        TransactionResponse completed = transactionService.confirmReturn(reported.id(), ahmed);
         assertThat(completed.state()).isEqualTo(TransactionStatus.COMPLETED);
         assertThat(completed.startedAt()).isNotNull();
         assertThat(completed.completedAt()).isNotNull();
@@ -393,6 +401,160 @@ public class TransactionIntegrationTest {
         assertThat(completed.reservationHeld()).isFalse();
         assertThat(countOf(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isZero();
+    }
+
+    @Test
+    @Transactional
+    void returnDecisionsAreStrictlyScoped() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Scoped return checks", 2), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
+        TransactionResponse returned = transactionService.initiateReturn(active.id(), salah);
+        assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
+
+        // RETURN_INITIATED: the lender can neither report the handback nor
+        // prematurely complete the loan before the borrower reports it.
+        assertThatThrownBy(() -> transactionService.reportHandback(returned.id(), ahmed))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> transactionService.confirmReturn(returned.id(), ahmed))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
+        assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
+
+        // RETURN_REPORTED: the borrower still cannot confirm receipt, and the
+        // handback report cannot be replayed.
+        assertThatThrownBy(() -> transactionService.confirmReturn(reported.id(), salah))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> transactionService.reportHandback(reported.id(), salah))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        TransactionResponse completed = transactionService.confirmReturn(reported.id(), ahmed);
+        assertThat(completed.state()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(countOf(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isZero();
+    }
+
+    // ── V2.2.3 conversation + lifecycle timeline ─────────────────────
+
+    @Test
+    @Transactional
+    void conversationFollowsLifecycleWithSystemTimelineAndTerminalArchive() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Weekend tournament", 2), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        assertThat(approved.state()).isEqualTo(TransactionStatus.APPROVED);
+
+        // Messaging coordinates pickup through the coordination phases; both
+        // participants can write while it is approved.
+        TransactionMessageResponse pickupProposal =
+                transactionMessageService.sendMessage(approved.id(), salah, "Meet at the pitch at 5pm");
+        assertThat(pickupProposal.kind()).isEqualTo(MessageKind.USER);
+        assertThat(pickupProposal.authorName()).isEqualTo("Salah");
+        assertThat(pickupProposal.createdAt()).isNotNull();
+
+        transactionMessageService.sendMessage(approved.id(), ahmed, "Sure, see you there");
+
+        // Stage handover emits a SYSTEM entry in the same backend transaction.
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        assertThat(staged.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+
+        List<TransactionMessageResponse> aroundHandover = transactionMessageService.listMessages(staged.id(), salah);
+        assertThat(aroundHandover).extracting(TransactionMessageResponse::kind)
+                .containsExactly(MessageKind.USER, MessageKind.USER, MessageKind.SYSTEM);
+        assertThat(aroundHandover.get(2).body()).isEqualTo("Handover scheduled");
+        assertThat(aroundHandover.get(2).authorId()).isNull();
+
+        // Still writable while awaiting handover.
+        transactionMessageService.sendMessage(staged.id(), salah, "I am at the gate now");
+
+        TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
+        assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+        transactionMessageService.sendMessage(active.id(), ahmed, "Enjoy the match");
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
+
+        TransactionResponse returned = transactionService.initiateReturn(active.id(), salah);
+        assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
+
+        // Return coordination happens in the RETURN_INITIATED window.
+        transactionMessageService.sendMessage(returned.id(), salah, "Returning it now");
+
+        // The borrower reports the physical handback; the lender can then confirm
+        // receipt. Messaging stays open through RETURN_REPORTED.
+        TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
+        assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
+        transactionMessageService.sendMessage(reported.id(), ahmed, "Thanks, I will confirm shortly");
+
+        TransactionResponse completed = transactionService.confirmReturn(reported.id(), ahmed);
+        assertThat(completed.state()).isEqualTo(TransactionStatus.COMPLETED);
+
+        // The completed archive carries the full timeline, including the five
+        // SYSTEM markers produced by the lifecycle transitions.
+        List<TransactionMessageResponse> timeline = transactionMessageService.listMessages(completed.id(), ahmed);
+        List<String> systemBodies = timeline.stream()
+                .filter(message -> message.kind() == MessageKind.SYSTEM)
+                .map(TransactionMessageResponse::body)
+                .toList();
+        assertThat(systemBodies).containsExactly(
+                "Handover scheduled", "Loan started", "Return initiated",
+                "Handback reported", "Loan completed");
+        assertThat(timeline).allSatisfy(message -> assertThat(message.createdAt()).isNotNull());
+
+        // SYSTEM rows are never authored by a participant.
+        assertThat(timeline).filteredOn(message -> message.kind() == MessageKind.SYSTEM)
+                .allSatisfy(message -> {
+                    assertThat(message.authorId()).isNull();
+                    assertThat(message.authorName()).isNull();
+                });
+
+        // COMPLETED is a read-only archive: reads allowed, writes rejected.
+        assertThat(transactionMessageService.listMessages(completed.id(), salah)).hasSize(11);
+        assertThatThrownBy(() -> transactionMessageService.sendMessage(completed.id(), salah, "hi"))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        // The availability picture is untouched by messaging: completion
+        // released exactly the borrower's unit.
+        assertThat(countOf(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
+        assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
+    }
+
+    @Test
+    @Transactional
+    void outsiderCannotReadOrWriteConversation() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        User youssef = seedUser("youssef@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Coordination", 1), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+
+        assertThatThrownBy(() -> transactionMessageService.sendMessage(approved.id(), youssef, "hi"))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> transactionMessageService.listMessages(approved.id(), youssef))
+                .isInstanceOf(UnauthorizedException.class);
     }
 
     // ── Response hygiene ──────────────────────────────────────────────

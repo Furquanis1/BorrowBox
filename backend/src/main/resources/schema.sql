@@ -1,8 +1,8 @@
--- BorrowBox V2.2.2 schema baseline (Community + Membership + Rules + Assets + Transactions + Loan Lifecycle)
+-- BorrowBox V2.2.3 schema baseline (Community + Membership + Rules + Assets + Transactions + Loan Lifecycle + Conversation)
 -- Fresh V2 database. V1 tables are not carried forward.
--- Matches exactly the entities mapped by the V2.2.1 application:
+-- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
---   assets, asset_units, community_listings, transactions
+--   assets, asset_units, community_listings, transactions, transaction_messages
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -169,4 +169,23 @@ CREATE TABLE IF NOT EXISTS transactions (
     INDEX idx_transactions_lender_state (lender_id, state),
     INDEX idx_transactions_borrower_state (borrower_id, state),
     INDEX idx_transactions_listing_state (listing_id, state)
+) ENGINE=InnoDB;
+
+-- V2.2.3 transaction conversation: one row per message in a transaction's
+-- per-transaction conversation. USER rows (author_id set) carry borrower/lender
+-- pickup-coordination and logistics messages. SYSTEM rows (author_id NULL) are
+-- server-generated timeline entries emitted by lifecycle transitions and can
+-- never be created through the public message API. ``kind`` defaults to USER.
+-- Timestamps are always server-generated; client clocks are never trusted.
+CREATE TABLE IF NOT EXISTS transaction_messages (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    transaction_id BIGINT        NOT NULL,
+    author_id      BIGINT        DEFAULT NULL,
+    kind           VARCHAR(10)   NOT NULL DEFAULT 'USER',
+    body           VARCHAR(1000) NOT NULL,
+    created_at     DATETIME(6)   NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_txn_messages_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT fk_txn_messages_author      FOREIGN KEY (author_id)      REFERENCES users (id),
+    INDEX idx_txn_messages_txn_created (transaction_id, created_at)
 ) ENGINE=InnoDB;

@@ -3,11 +3,17 @@ package com.borrowbox.controller;
 import com.borrowbox.dto.CounterOfferRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
+import com.borrowbox.dto.TransactionMessageRequest;
+import com.borrowbox.dto.TransactionMessageResponse;
 import com.borrowbox.dto.TransactionResponse;
+import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
+import com.borrowbox.exception.ResourceNotFoundException;
+import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.JwtService;
+import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,6 +53,9 @@ public class TransactionControllerTest {
 
     @MockitoBean
     private TransactionService transactionService;
+
+    @MockitoBean
+    private TransactionMessageService transactionMessageService;
 
     @MockitoBean
     private UserService userService;
@@ -253,6 +262,15 @@ public class TransactionControllerTest {
     }
 
     @Test
+    void reportHandbackDelegates() throws Exception {
+        when(transactionService.reportHandback(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/report-handback"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1));
+    }
+
+    @Test
     void confirmReturnDelegates() throws Exception {
         when(transactionService.confirmReturn(1L, currentUser)).thenReturn(pendingResponse);
 
@@ -277,5 +295,101 @@ public class TransactionControllerTest {
         org.assertj.core.api.Assertions.assertThat(body)
                 .doesNotContain("reservedUnit")
                 .doesNotContain("assetUnitId");
+    }
+
+    @Test
+    void sendMessageReturns201() throws Exception {
+        when(transactionMessageService.sendMessage(eq(1L), eq(currentUser), eq("See you Friday")))
+                .thenReturn(new TransactionMessageResponse(
+                        11L, 1L, 101L, "Salah", MessageKind.USER,
+                        "See you Friday", LocalDateTime.of(2026, 1, 3, 12, 0)));
+
+        mockMvc.perform(post("/api/transactions/1/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TransactionMessageRequest("See you Friday"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(11))
+                .andExpect(jsonPath("$.transactionId").value(1))
+                .andExpect(jsonPath("$.authorId").value(101))
+                .andExpect(jsonPath("$.authorName").value("Salah"))
+                .andExpect(jsonPath("$.kind").value("USER"))
+                .andExpect(jsonPath("$.body").value("See you Friday"));
+    }
+
+    @Test
+    void sendMessageWithBlankBodyIsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/transactions/1/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"body\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void sendMessageWithMissingBodyIsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/transactions/1/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void sendMessageToUnknownTransactionIsNotFound() throws Exception {
+        when(transactionMessageService.sendMessage(eq(999L), eq(currentUser), any()))
+                .thenThrow(new ResourceNotFoundException("Transaction not found with id: 999"));
+
+        mockMvc.perform(post("/api/transactions/999/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TransactionMessageRequest("hello"))))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listMessagesReturnsConversation() throws Exception {
+        when(transactionMessageService.listMessages(1L, currentUser)).thenReturn(List.of(
+                new TransactionMessageResponse(
+                        11L, 1L, null, null, MessageKind.SYSTEM,
+                        "Handover scheduled", LocalDateTime.of(2026, 1, 3, 11, 0)),
+                new TransactionMessageResponse(
+                        12L, 1L, 101L, "Salah", MessageKind.USER,
+                        "On my way", LocalDateTime.of(2026, 1, 3, 11, 5))));
+
+        mockMvc.perform(get("/api/transactions/1/messages"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].kind").value("SYSTEM"))
+                .andExpect(jsonPath("$[0].authorId").doesNotExist())
+                .andExpect(jsonPath("$[1].kind").value("USER"))
+                .andExpect(jsonPath("$[1].authorName").value("Salah"));
+    }
+
+    @Test
+    void listMessagesForUnknownTransactionIsNotFound() throws Exception {
+        when(transactionMessageService.listMessages(999L, currentUser))
+                .thenThrow(new ResourceNotFoundException("Transaction not found with id: 999"));
+
+        mockMvc.perform(get("/api/transactions/999/messages"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void outsiderSendingMessageIsUnauthorized() throws Exception {
+        when(transactionMessageService.sendMessage(eq(1L), eq(currentUser), any()))
+                .thenThrow(new UnauthorizedException("Only participants can view this conversation"));
+
+        mockMvc.perform(post("/api/transactions/1/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new TransactionMessageRequest("hello"))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void outsiderListingMessagesIsUnauthorized() throws Exception {
+        when(transactionMessageService.listMessages(1L, currentUser))
+                .thenThrow(new UnauthorizedException("Only participants can view this conversation"));
+
+        mockMvc.perform(get("/api/transactions/1/messages"))
+                .andExpect(status().isUnauthorized());
     }
 }

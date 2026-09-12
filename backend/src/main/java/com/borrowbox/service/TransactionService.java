@@ -28,7 +28,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * V2.2.1 transaction negotiation.
+ * V2.2.1 transaction negotiation + V2.2.2 loan lifecycle + V2.2.3 system
+ * timeline events.
  *
  * Locked invariants (ADR-005 / V2.2.1):
  *  - Backend/database is authoritative for availability and reservation
@@ -40,6 +41,9 @@ import java.util.List;
  *    Transaction.
  *  - REJECTED / CANCELLED release the reservation immediately; APPROVED keeps it.
  *  - AssetUnit IDs are never exposed through responses.
+ *  - V2.2.3: lifecycle transitions emit SYSTEM conversation events through
+ *    TransactionMessageService inside the same backend transaction, so the
+ *    state change and its timeline entry commit atomically.
  */
 @Service
 public class TransactionService {
@@ -50,15 +54,18 @@ public class TransactionService {
     private final CommunityListingRepository listingRepository;
     private final AssetUnitRepository assetUnitRepository;
     private final MembershipService membershipService;
+    private final TransactionMessageService messageService;
 
     public TransactionService(TransactionRepository transactionRepository,
                               CommunityListingRepository listingRepository,
                               AssetUnitRepository assetUnitRepository,
-                              MembershipService membershipService) {
+                              MembershipService membershipService,
+                              TransactionMessageService messageService) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
         this.membershipService = membershipService;
+        this.messageService = messageService;
     }
 
     /**
@@ -280,6 +287,7 @@ public class TransactionService {
         requireState(txn, TransactionStatus.APPROVED);
 
         txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        messageService.addSystemEvent(txn, "Handover scheduled");
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -304,12 +312,14 @@ public class TransactionService {
         txn.setStartedAt(LocalDateTime.now());
         unit.setStatus(AssetUnitStatus.BORROWED);
         assetUnitRepository.save(unit);
+        messageService.addSystemEvent(txn, "Loan started");
         return toResponse(transactionRepository.save(txn));
     }
 
     /**
      * Borrower initiates the return of an ACTIVE loan. The unit stays BORROWED;
-     * only a lender receipt completes the loan.
+     * the borrower is starting the return process and coordinating the physical
+     * handback through the conversation.
      */
     @Transactional
     public TransactionResponse initiateReturn(Long id, User borrower) {
@@ -319,20 +329,40 @@ public class TransactionService {
         requireState(txn, TransactionStatus.ACTIVE);
 
         txn.setState(TransactionStatus.RETURN_INITIATED);
+        messageService.addSystemEvent(txn, "Return initiated");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * Borrower reports that the item has been physically handed back while a
+     * return is in progress. The unit stays BORROWED until a lender receipt;
+     * the transition is borrower-only and guarded against invalid states.
+     */
+    @Transactional
+    public TransactionResponse reportHandback(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireState(txn, TransactionStatus.RETURN_INITIATED);
+
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        messageService.addSystemEvent(txn, "Handback reported");
         return toResponse(transactionRepository.save(txn));
     }
 
     /**
      * Lender confirms receipt of the returned unit. This closes the loan:
      * completedAt records the backend clock, the unit flips BORROWED →
-     * AVAILABLE and the reservation handle is released.
+     * AVAILABLE and the reservation handle is released. Only a RETURN_REPORTED
+     * transaction may be completed: the lender cannot finish a loan before the
+     * borrower has reported the physical handback.
      */
     @Transactional
     public TransactionResponse confirmReturn(Long id, User lender) {
         requireUser(lender);
         Transaction txn = findForUpdate(id);
         requireLender(txn, lender);
-        requireState(txn, TransactionStatus.RETURN_INITIATED);
+        requireState(txn, TransactionStatus.RETURN_REPORTED);
 
         AssetUnit unit = txn.getReservedUnit();
         if (unit == null) {
@@ -347,6 +377,7 @@ public class TransactionService {
         // Release the reservation handle so no other transaction claims this unit.
         txn.setReservedUnit(null);
         txn.setReservedAt(null);
+        messageService.addSystemEvent(txn, "Loan completed");
         return toResponse(transactionRepository.save(txn));
     }
 

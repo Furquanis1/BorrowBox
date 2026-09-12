@@ -3,8 +3,11 @@ package com.borrowbox.controller;
 import com.borrowbox.dto.CounterOfferRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
+import com.borrowbox.dto.TransactionMessageRequest;
+import com.borrowbox.dto.TransactionMessageResponse;
 import com.borrowbox.dto.TransactionResponse;
 import com.borrowbox.entity.User;
+import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.UserService;
 import jakarta.validation.Valid;
@@ -27,10 +30,14 @@ import java.util.List;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final TransactionMessageService transactionMessageService;
     private final UserService userService;
 
-    public TransactionController(TransactionService transactionService, UserService userService) {
+    public TransactionController(TransactionService transactionService,
+                                 TransactionMessageService transactionMessageService,
+                                 UserService userService) {
         this.transactionService = transactionService;
+        this.transactionMessageService = transactionMessageService;
         this.userService = userService;
     }
 
@@ -102,9 +109,27 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.initiateReturn(id, currentUser()));
     }
 
+    @PostMapping("/transactions/{id}/report-handback")
+    public ResponseEntity<TransactionResponse> reportHandback(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.reportHandback(id, currentUser()));
+    }
+
     @PostMapping("/transactions/{id}/confirm-return")
     public ResponseEntity<TransactionResponse> confirmReturn(@PathVariable Long id) {
         return ResponseEntity.ok(transactionService.confirmReturn(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/messages")
+    public ResponseEntity<TransactionMessageResponse> sendMessage(
+            @PathVariable Long id,
+            @Valid @RequestBody TransactionMessageRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(transactionMessageService.sendMessage(id, currentUser(), request.body()));
+    }
+
+    @GetMapping("/transactions/{id}/messages")
+    public ResponseEntity<List<TransactionMessageResponse>> listMessages(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionMessageService.listMessages(id, currentUser()));
     }
 
     private User currentUser() {

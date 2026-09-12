@@ -14,5 +14,8 @@ export const requestService = {
   stageHandover: (id) => apiClient.post(`/transactions/${id}/stage-handover`),
   confirmHandover: (id) => apiClient.post(`/transactions/${id}/confirm-handover`),
   initiateReturn: (id) => apiClient.post(`/transactions/${id}/initiate-return`),
+  reportHandback: (id) => apiClient.post(`/transactions/${id}/report-handback`),
   confirmReturn: (id) => apiClient.post(`/transactions/${id}/confirm-return`),
+  getMessages: (id) => apiClient.get(`/transactions/${id}/messages`),
+  sendMessage: (id, body) => apiClient.post(`/transactions/${id}/messages`, { body }),
 }
