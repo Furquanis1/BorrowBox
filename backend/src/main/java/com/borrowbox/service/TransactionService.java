@@ -29,7 +29,7 @@ import java.util.List;
 
 /**
  * V2.2.1 transaction negotiation + V2.2.2 loan lifecycle + V2.2.3 system
- * timeline events.
+ * timeline events + V2.2.4 loan accountability clock.
  *
  * Locked invariants (ADR-005 / V2.2.1):
  *  - Backend/database is authoritative for availability and reservation
@@ -44,11 +44,28 @@ import java.util.List;
  *  - V2.2.3: lifecycle transitions emit SYSTEM conversation events through
  *    TransactionMessageService inside the same backend transaction, so the
  *    state change and its timeline entry commit atomically.
+ *
+ * V2.2.4 loan accountability clock:
+ *  - confirmHandover derives dueAt from the server clock:
+ *    dueAt = startedAt + agreedDurationDays; originalDueAt is stamped equal to
+ *    dueAt and never changes. Client timestamps never determine dueAt.
+ *  - The 30-minute handover confirmation/dispute window opens at
+ *    confirmHandover. The borrower may confirm receipt (persists
+ *    borrowerConfirmedAt) or dispute non-receipt (moves the transaction to the
+ *    terminal HANDOVER_DISPUTED state and releases the borrowed AssetUnit back
+ *    to AVAILABLE) only while the window is open.
+ *  - DUE_SOON (24h before dueAt) and OVERDUE are derived read-time conditions,
+ *    never persisted states. No scheduler/background timer is introduced.
+ *  - HANDOVER_DISPUTED has no forward transitions in V2.2.4.
  */
 @Service
 public class TransactionService {
 
     public static final int MAX_DURATION_DAYS = 30;
+
+    public static final long DUE_SOON_THRESHOLD_HOURS = 24;
+
+    public static final long HANDOVER_WINDOW_MINUTES = 30;
 
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
@@ -308,11 +325,62 @@ public class TransactionService {
             throw new BusinessRuleViolationException("The reserved unit is not available to hand over");
         }
 
+        LocalDateTime now = LocalDateTime.now();
         txn.setState(TransactionStatus.ACTIVE);
-        txn.setStartedAt(LocalDateTime.now());
+        txn.setStartedAt(now);
+        // V2.2.4: authoritative loan clock. dueAt derives from the server clock
+        // and the agreed duration; originalDueAt is captured once and never
+        // changes (future extensions may modify dueAt only).
+        LocalDateTime due = now.plusDays(txn.getAgreedDurationDays());
+        txn.setDueAt(due);
+        txn.setOriginalDueAt(due);
         unit.setStatus(AssetUnitStatus.BORROWED);
         assetUnitRepository.save(unit);
         messageService.addSystemEvent(txn, "Loan started");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.4: borrower explicitly confirms receipt of the item within the
+     * 30-minute handover confirmation/dispute window. The transaction stays
+     * ACTIVE; borrowerConfirmedAt is persisted by the server clock. A second
+     * confirmation is rejected.
+     */
+    @Transactional
+    public TransactionResponse confirmReceipt(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireState(txn, TransactionStatus.ACTIVE);
+        requireHandoverWindowOpen(txn);
+
+        if (txn.getBorrowerConfirmedAt() != null) {
+            throw new BusinessRuleViolationException("Receipt has already been confirmed");
+        }
+
+        txn.setBorrowerConfirmedAt(LocalDateTime.now());
+        messageService.addSystemEvent(txn, "Borrower confirmed receipt");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.4: borrower disputes non-receipt within the 30-minute handover
+     * confirmation/dispute window. The borrowed AssetUnit flips BORROWED →
+     * AVAILABLE immediately, the reservation handle is released and the
+     * transaction moves to the terminal HANDOVER_DISPUTED state. HANDOVER_DISPUTED
+     * has no forward transitions in V2.2.4; resolution is later-stage scope.
+     */
+    @Transactional
+    public TransactionResponse disputeHandover(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireState(txn, TransactionStatus.ACTIVE);
+        requireHandoverWindowOpen(txn);
+
+        releaseBorrowedUnit(txn);
+        txn.setState(TransactionStatus.HANDOVER_DISPUTED);
+        messageService.addSystemEvent(txn, "Handover disputed");
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -418,6 +486,23 @@ public class TransactionService {
         }
     }
 
+    /**
+     * V2.2.4: releases a currently BORROWED AssetUnit back to AVAILABLE and
+     * clears the reservation handle, following the same pattern as
+     * releaseReservation but for the loan-until-dispute case.
+     */
+    private void releaseBorrowedUnit(Transaction txn) {
+        AssetUnit unit = txn.getReservedUnit();
+        if (unit != null) {
+            if (unit.getStatus() == AssetUnitStatus.BORROWED) {
+                unit.setStatus(AssetUnitStatus.AVAILABLE);
+                assetUnitRepository.save(unit);
+            }
+            txn.setReservedUnit(null);
+            txn.setReservedAt(null);
+        }
+    }
+
     private Transaction findForUpdate(Long id) {
         return transactionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction not found with id: " + id));
@@ -460,6 +545,45 @@ public class TransactionService {
             throw new BusinessRuleViolationException(
                     "Transaction is not in state " + expected);
         }
+    }
+
+    /**
+     * V2.2.4: verifies the borrower handover confirmation/dispute window is
+     * still open. The window derives from the server-stamped handover time and
+     * is never extended by client input. The caller must already have verified
+     * the ACTIVE state.
+     */
+    private void requireHandoverWindowOpen(Transaction txn) {
+        LocalDateTime startedAt = txn.getStartedAt();
+        if (startedAt == null || !LocalDateTime.now().isBefore(startedAt.plusMinutes(HANDOVER_WINDOW_MINUTES))) {
+            throw new BusinessRuleViolationException("The handover confirmation window has closed");
+        }
+    }
+
+    /**
+     * V2.2.4 derived read-time conditions. NEVER persisted as states.
+     */
+    private boolean isDueSoon(Transaction txn) {
+        if (txn.getState() != TransactionStatus.ACTIVE || txn.getDueAt() == null) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime threshold = txn.getDueAt().minusHours(DUE_SOON_THRESHOLD_HOURS);
+        return !now.isBefore(threshold) && now.isBefore(txn.getDueAt());
+    }
+
+    private boolean isOverdue(Transaction txn) {
+        if (txn.getState() != TransactionStatus.ACTIVE || txn.getDueAt() == null) {
+            return false;
+        }
+        return LocalDateTime.now().isAfter(txn.getDueAt());
+    }
+
+    private boolean isHandoverWindowOpen(Transaction txn) {
+        if (txn.getState() != TransactionStatus.ACTIVE || txn.getStartedAt() == null) {
+            return false;
+        }
+        return LocalDateTime.now().isBefore(txn.getStartedAt().plusMinutes(HANDOVER_WINDOW_MINUTES));
     }
 
     private void requireListed(CommunityListing listing) {
@@ -518,6 +642,12 @@ public class TransactionService {
                 txn.getDecisionNote(),
                 txn.getReservedUnit() != null,
                 txn.getStartedAt(),
+                txn.getDueAt(),
+                txn.getOriginalDueAt(),
+                txn.getBorrowerConfirmedAt(),
+                isDueSoon(txn),
+                isOverdue(txn),
+                isHandoverWindowOpen(txn),
                 txn.getCompletedAt(),
                 txn.getCreatedAt(),
                 txn.getUpdatedAt()

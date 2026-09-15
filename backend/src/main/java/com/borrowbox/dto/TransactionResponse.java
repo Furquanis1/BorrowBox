@@ -7,6 +7,9 @@ import java.time.LocalDateTime;
 /**
  * Transaction negotiation view. Physical-unit identifiers (AssetUnit IDs,
  * reserved_unit IDs) are NEVER exposed.
+ *
+ * V2.2.4: dueAt / originalDueAt / borrowerConfirmedAt are persisted;
+ * dueSoon / overdue / handoverWindowOpen are derived read-time booleans.
  */
 public record TransactionResponse(
         Long id,
@@ -32,6 +35,12 @@ public record TransactionResponse(
         String decisionNote,
         boolean reservationHeld,
         LocalDateTime startedAt,
+        LocalDateTime dueAt,
+        LocalDateTime originalDueAt,
+        LocalDateTime borrowerConfirmedAt,
+        boolean dueSoon,
+        boolean overdue,
+        boolean handoverWindowOpen,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

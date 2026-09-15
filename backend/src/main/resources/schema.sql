@@ -1,4 +1,5 @@
--- BorrowBox V2.2.3 schema baseline (Community + Membership + Rules + Assets + Transactions + Loan Lifecycle + Conversation)
+-- BorrowBox V2.2.4 schema baseline (Community + Membership + Rules + Assets
+-- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
@@ -131,6 +132,10 @@ CREATE TABLE IF NOT EXISTS community_listings (
 -- hold a given non-null reserved_unit_id (the reservation authority is the
 -- DB, with the pessimistic lock in TransactionService as the primary guard).
 -- V2.2.2 adds started_at and completed_at for loan lifecycle tracking.
+-- V2.2.4 adds the loan accountability clock: due_at and original_due_at are
+-- stamped by the server at handover confirmation (due_at = started_at +
+-- agreed_duration_days; original_due_at never changes), and
+-- borrower_confirmed_at records the borrower's explicit receipt confirmation.
 CREATE TABLE IF NOT EXISTS transactions (
     id                       BIGINT       NOT NULL AUTO_INCREMENT,
     community_id             BIGINT       NOT NULL,
@@ -154,6 +159,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     decision_note            VARCHAR(255) DEFAULT NULL,
     reserved_at              DATETIME(6)  DEFAULT NULL,
     started_at               DATETIME(6)  DEFAULT NULL,
+    due_at                   DATETIME(6)  DEFAULT NULL,
+    original_due_at          DATETIME(6)  DEFAULT NULL,
+    borrower_confirmed_at    DATETIME(6)  DEFAULT NULL,
     completed_at             DATETIME(6)  DEFAULT NULL,
     created_at               DATETIME(6)  NOT NULL,
     updated_at               DATETIME(6)  NOT NULL,

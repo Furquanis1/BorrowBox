@@ -104,6 +104,16 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.confirmHandover(id, currentUser()));
     }
 
+    @PostMapping("/transactions/{id}/confirm-receipt")
+    public ResponseEntity<TransactionResponse> confirmReceipt(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.confirmReceipt(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/dispute-handover")
+    public ResponseEntity<TransactionResponse> disputeHandover(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.disputeHandover(id, currentUser()));
+    }
+
     @PostMapping("/transactions/{id}/initiate-return")
     public ResponseEntity<TransactionResponse> initiateReturn(@PathVariable Long id) {
         return ResponseEntity.ok(transactionService.initiateReturn(id, currentUser()));

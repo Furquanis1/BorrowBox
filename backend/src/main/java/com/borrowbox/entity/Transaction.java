@@ -25,6 +25,12 @@ import java.time.LocalDateTime;
  * Immutable context (set at create, never mutated): borrower, lender,
  * community, listing, asset, reservedUnit, reservedAt, purpose,
  * requestedDurationDays. Everything else is negotiation state.
+ *
+ * V2.2.4 loan accountability clock: dueAt / originalDueAt are null before
+ * confirmHandover, which stamps both from the server clock (dueAt =
+ * startedAt + agreedDurationDays). originalDueAt never changes; future
+ * V2.2.5 extensions may modify dueAt. borrowerConfirmedAt is set only by the
+ * borrower's confirm-receipt action within the handover window.
  */
 @Entity
 @Table(name = "transactions")
@@ -111,6 +117,15 @@ public class Transaction {
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;
+
+    @Column(name = "due_at")
+    private LocalDateTime dueAt;
+
+    @Column(name = "original_due_at")
+    private LocalDateTime originalDueAt;
+
+    @Column(name = "borrower_confirmed_at")
+    private LocalDateTime borrowerConfirmedAt;
 
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
@@ -310,6 +325,30 @@ public class Transaction {
 
     public void setStartedAt(LocalDateTime startedAt) {
         this.startedAt = startedAt;
+    }
+
+    public LocalDateTime getDueAt() {
+        return dueAt;
+    }
+
+    public void setDueAt(LocalDateTime dueAt) {
+        this.dueAt = dueAt;
+    }
+
+    public LocalDateTime getOriginalDueAt() {
+        return originalDueAt;
+    }
+
+    public void setOriginalDueAt(LocalDateTime originalDueAt) {
+        this.originalDueAt = originalDueAt;
+    }
+
+    public LocalDateTime getBorrowerConfirmedAt() {
+        return borrowerConfirmedAt;
+    }
+
+    public void setBorrowerConfirmedAt(LocalDateTime borrowerConfirmedAt) {
+        this.borrowerConfirmedAt = borrowerConfirmedAt;
     }
 
     public LocalDateTime getCompletedAt() {

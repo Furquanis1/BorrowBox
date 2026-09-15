@@ -72,6 +72,9 @@ describe('V2.2.3 Transaction Conversation', () => {
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
+      case 'HANDOVER_DISPUTED':
+        // V2.2.4: unit already released back to AVAILABLE; nothing to clean up.
+        break
       default:
         break
     }

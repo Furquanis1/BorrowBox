@@ -86,7 +86,10 @@ public class TransactionControllerTest {
                 null, null, null, null,
                 null, null, null,
                 null, true,
-                null, null,
+                null,
+                null, null, null,
+                false, false, false,
+                null,
                 LocalDateTime.of(2026, 1, 2, 10, 0),
                 LocalDateTime.of(2026, 1, 2, 10, 0));
     }
@@ -248,6 +251,24 @@ public class TransactionControllerTest {
         when(transactionService.confirmHandover(1L, currentUser)).thenReturn(pendingResponse);
 
         mockMvc.perform(post("/api/transactions/1/confirm-handover"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void confirmReceiptDelegates() throws Exception {
+        when(transactionService.confirmReceipt(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/confirm-receipt"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void disputeHandoverDelegates() throws Exception {
+        when(transactionService.disputeHandover(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/dispute-handover"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("PENDING"));
     }

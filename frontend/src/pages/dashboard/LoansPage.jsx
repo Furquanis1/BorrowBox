@@ -8,13 +8,14 @@ import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
 
-const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED'])
+const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED', 'HANDOVER_DISPUTED'])
 
 const STATE_BADGE = {
   ACTIVE: 'badge-teal',
   RETURN_INITIATED: 'badge-warning',
   RETURN_REPORTED: 'badge-info',
   COMPLETED: 'badge-neutral',
+  HANDOVER_DISPUTED: 'badge-danger',
 }
 
 const STATE_LABEL = {
@@ -22,6 +23,7 @@ const STATE_LABEL = {
   RETURN_INITIATED: 'Return in progress',
   RETURN_REPORTED: 'Return reported',
   COMPLETED: 'Completed',
+  HANDOVER_DISPUTED: 'Handover disputed',
 }
 
 const CONVERSATION_LABEL = {
@@ -29,13 +31,19 @@ const CONVERSATION_LABEL = {
   RETURN_INITIATED: 'Conversation',
   RETURN_REPORTED: 'Conversation',
   COMPLETED: 'View conversation',
+  HANDOVER_DISPUTED: 'View conversation',
 }
 
 function LoanCard({ loan, currentUserId, onConversation }) {
   const state = loan.state
   const isBorrower = currentUserId && loan.borrowerId === currentUserId
-  const dueDate = new Date(loan.startedAt)
-  dueDate.setDate(dueDate.getDate() + (loan.agreedDurationDays || 0))
+  // V2.2.4: due date and derived conditions come from the backend; no client-side
+  // calculation is ever performed for dueSoon or overdue.
+  const dueDate = loan.dueAt ? new Date(loan.dueAt) : null
+
+  const badgeClass =
+    loan.overdue ? 'badge-danger' : loan.dueSoon ? 'badge-warning' : STATE_BADGE[state] || 'badge-neutral'
+  const badgeLabel = loan.overdue ? 'Overdue' : loan.dueSoon ? 'Due soon' : STATE_LABEL[state] || state
 
   return (
     <li className="transaction-card">
@@ -52,8 +60,8 @@ function LoanCard({ loan, currentUserId, onConversation }) {
             days
           </p>
         </div>
-        <span className={`badge ${STATE_BADGE[state] || 'badge-neutral'}`}>
-          {STATE_LABEL[state] || state}
+        <span className={`badge ${badgeClass}`}>
+          {badgeLabel}
           <i className="bi bi-circle-fill transaction-reservation-dot" aria-hidden="true" />
         </span>
       </div>
@@ -70,9 +78,15 @@ function LoanCard({ loan, currentUserId, onConversation }) {
         <p className="transaction-card-note">
           Return in progress. Awaiting the handback report.
         </p>
+      ) : state === 'HANDOVER_DISPUTED' ? (
+        <p className="transaction-card-note">
+          Handover disputed. The item was returned to available inventory.
+        </p>
       ) : (
         <p className="transaction-card-note">
-          Started {new Date(loan.startedAt).toLocaleDateString()} · due around {dueDate.toLocaleDateString()}.
+          {dueDate
+            ? `Started ${new Date(loan.startedAt).toLocaleDateString()} · due ${dueDate.toLocaleDateString()}.`
+            : `Started ${new Date(loan.startedAt).toLocaleDateString()}.`}
         </p>
       )}
 

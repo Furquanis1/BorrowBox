@@ -5,7 +5,7 @@ import Spinner from '../ui/Spinner'
 import { useAuth } from '../../contexts/AuthContext'
 import { requestService } from '../../services'
 
-const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED'])
+const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
 
 function formatTime(iso) {
@@ -146,6 +146,38 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     }
   }
 
+  const handleConfirmHandoverReceipt = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.confirmReceipt(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not confirm the receipt')
+    } finally {
+      setActionBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  const handleDisputeHandover = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.disputeHandover(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not report the problem')
+    } finally {
+      setActionBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
   if (!transaction) return null
 
   return (
@@ -198,10 +230,43 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         </div>
       )}
 
+      {state === 'HANDOVER_DISPUTED' && (
+        <div className="conversation-context">
+          <p className="conversation-return-status">
+            Handover disputed. The item has been returned to available inventory.
+          </p>
+        </div>
+      )}
+
       {!terminal && (
         <div className="conversation-context">
           {actionError && (
             <p className="field-error" role="alert">{actionError}</p>
+          )}
+
+          {state === 'ACTIVE' && isBorrower && active.handoverWindowOpen && !active.borrowerConfirmedAt && (
+            <div className="conversation-return-action">
+              <p className="conversation-return-title">Confirm the item was received?</p>
+              <p className="conversation-return-hint">
+                Verify the item was handed over to you. You have 30 minutes from handover to confirm or report a problem.
+              </p>
+              <div className="conversation-window-actions">
+                <Button variant="primary" size="sm" loading={actionBusy} onClick={handleConfirmHandoverReceipt}>
+                  <i className="bi bi-check-circle" aria-hidden="true" />
+                  Confirm receipt
+                </Button>
+                <Button variant="outline" size="sm" loading={actionBusy} onClick={handleDisputeHandover}>
+                  <i className="bi bi-exclamation-triangle" aria-hidden="true" />
+                  Report a problem
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {state === 'ACTIVE' && isBorrower && active.borrowerConfirmedAt && (
+            <p className="conversation-return-status">
+              Receipt confirmed. The loan is active; due date and overdue status are tracked automatically.
+            </p>
           )}
 
           {state === 'ACTIVE' && isBorrower && (
