@@ -141,6 +141,23 @@ public class TransactionServiceTest {
         return base;
     }
 
+    /**
+     * V2.2.4: an ACTIVE loan fixture with the accountability clock stamped at
+     * "now" and the reserved unit BORROWED. Callers override dueAt/startedAt
+     * where a specific derived condition is under test.
+     */
+    private Transaction active(AssetUnit reserved) {
+        Transaction txn = pending(reserved);
+        txn.setState(TransactionStatus.ACTIVE);
+        txn.setAgreedPurpose("Football match practice");
+        txn.setAgreedDurationDays(3);
+        txn.setStartedAt(LocalDateTime.now());
+        if (reserved != null) {
+            reserved.setStatus(AssetUnitStatus.BORROWED);
+        }
+        return txn;
+    }
+
     // ── create ────────────────────────────────────────────────────────
 
     @Test
@@ -566,6 +583,7 @@ public class TransactionServiceTest {
     void confirmHandoverStartsLoanAndFlipsUnitToBorrowed() {
         Transaction txn = pending(unit);
         txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        txn.setAgreedDurationDays(3);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -573,6 +591,14 @@ public class TransactionServiceTest {
 
         assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
         assertThat(response.startedAt()).isNotNull();
+        assertThat(response.dueAt()).isNotNull();
+        assertThat(response.originalDueAt()).isNotNull();
+        assertThat(response.dueAt()).isEqualTo(response.startedAt().plusDays(3));
+        assertThat(response.originalDueAt()).isEqualTo(response.dueAt());
+        assertThat(response.borrowerConfirmedAt()).isNull();
+        assertThat(response.dueSoon()).isFalse();
+        assertThat(response.overdue()).isFalse();
+        assertThat(response.handoverWindowOpen()).isTrue();
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(assetUnitRepository).save(unit);
@@ -753,6 +779,188 @@ public class TransactionServiceTest {
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
 
         assertThatThrownBy(() -> transactionService.confirmReturn(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    // ── V2.2.4 loan accountability clock ────────────────────────────
+
+    @Test
+    void confirmHandoverStampsDueAtAndOriginalDueAt() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        txn.setAgreedDurationDays(7);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.confirmHandover(1L, owner);
+
+        assertThat(response.dueAt()).isNotNull();
+        assertThat(response.originalDueAt()).isNotNull();
+        assertThat(response.dueAt()).isEqualTo(response.startedAt().plusDays(7));
+        assertThat(response.originalDueAt()).isEqualTo(response.dueAt());
+    }
+
+    @Test
+    void dueSoonIsTrueWithin24Hours() {
+        Transaction txn = active(unit);
+        txn.setStartedAt(LocalDateTime.now().minusHours(2));
+        txn.setDueAt(LocalDateTime.now().plusHours(12));
+        txn.setOriginalDueAt(txn.getDueAt());
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        TransactionResponse response = transactionService.view(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(response.dueSoon()).isTrue();
+        assertThat(response.overdue()).isFalse();
+    }
+
+    @Test
+    void overdueIsTrueAfterDueAt() {
+        Transaction txn = active(unit);
+        txn.setStartedAt(LocalDateTime.now().minusDays(2));
+        txn.setDueAt(LocalDateTime.now().minusHours(1));
+        txn.setOriginalDueAt(txn.getDueAt());
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        TransactionResponse response = transactionService.view(1L, borrower);
+
+        assertThat(response.overdue()).isTrue();
+        assertThat(response.dueSoon()).isFalse();
+    }
+
+    @Test
+    void derivedTimingIsFalseOutsideActive() {
+        Transaction txn = active(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        txn.setDueAt(LocalDateTime.now().minusHours(1));
+        txn.setOriginalDueAt(txn.getDueAt());
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        TransactionResponse response = transactionService.view(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
+        assertThat(response.dueSoon()).isFalse();
+        assertThat(response.overdue()).isFalse();
+    }
+
+    @Test
+    void confirmReceiptAcceptsBorrowerInWindow() {
+        Transaction txn = active(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.confirmReceipt(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(response.borrowerConfirmedAt()).isNotNull();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Borrower confirmed receipt"));
+    }
+
+    @Test
+    void confirmReceiptRejectsExpiredWindow() {
+        Transaction txn = active(unit);
+        txn.setStartedAt(LocalDateTime.now().minusMinutes(60));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReceipt(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The handover confirmation window has closed");
+    }
+
+    @Test
+    void confirmReceiptRejectsLender() {
+        Transaction txn = active(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReceipt(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void confirmReceiptRejectsDuplicateConfirmation() {
+        Transaction txn = active(unit);
+        txn.setBorrowerConfirmedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmReceipt(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Receipt has already been confirmed");
+    }
+
+    @Test
+    void disputeHandoverAcceptsBorrowerInWindow() {
+        Transaction txn = active(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.disputeHandover(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.HANDOVER_DISPUTED);
+        assertThat(response.reservationHeld()).isFalse();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover disputed"));
+    }
+
+    @Test
+    void disputeHandoverReleasesBorrowedUnit() {
+        Transaction txn = active(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.disputeHandover(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.HANDOVER_DISPUTED);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        assertThat(txn.getReservedUnit()).isNull();
+        assertThat(txn.getReservedAt()).isNull();
+        assertThat(response.reservationHeld()).isFalse();
+        verify(assetUnitRepository).save(unit);
+    }
+
+    @Test
+    void disputeHandoverRejectsExpiredWindow() {
+        Transaction txn = active(unit);
+        txn.setStartedAt(LocalDateTime.now().minusMinutes(60));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.disputeHandover(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The handover confirmation window has closed");
+    }
+
+    @Test
+    void disputeHandoverRejectsLender() {
+        Transaction txn = active(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.disputeHandover(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void disputeHandoverRejectsNonActive() {
+        Transaction txn = active(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.disputeHandover(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void handoverDisputedHasNoForwardTransitions() {
+        Transaction txn = active(unit);
+        txn.setState(TransactionStatus.HANDOVER_DISPUTED);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.initiateReturn(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> transactionService.stageHandover(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> transactionService.confirmReceipt(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+        assertThatThrownBy(() -> transactionService.disputeHandover(1L, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class);
     }
 

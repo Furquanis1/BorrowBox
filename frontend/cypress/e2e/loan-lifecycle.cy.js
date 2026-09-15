@@ -80,6 +80,10 @@ describe('V2.2.3 Loan Lifecycle', () => {
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
+      case 'HANDOVER_DISPUTED':
+        // V2.2.4: the unit was already released back to AVAILABLE; nothing to
+        // clean up, only ignore so the marker never drifts inventory.
+        break
       default:
         break
     }
@@ -95,6 +99,18 @@ describe('V2.2.3 Loan Lifecycle', () => {
       return cy.request('GET', `/api/communities/${cseId}/listings`).then((res) => {
         listingId = res.body.find((l) => l.title === 'Football').id
       })
+    })
+  })
+
+  afterEach(() => {
+    // Run after every test (even failed ones) so a marker loan left ACTIVE or
+    // in a handover state is driven back to terminal, never blocking the next
+    // test from reserving the single AVAILABLE Football unit.
+    loginViaApi(ahmed)
+    cy.request('GET', '/api/me/lend-requests').then((res) => {
+      res.body
+        .filter((t) => t.purpose.startsWith(marker))
+        .forEach((txn) => closeMarkerTxn(txn))
     })
   })
 
@@ -143,6 +159,12 @@ describe('V2.2.3 Loan Lifecycle', () => {
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       expect(res.body.state).to.equal('ACTIVE')
       expect(res.body.startedAt).to.not.equal(null)
+      expect(res.body.dueAt).to.not.equal(null)
+      expect(res.body.originalDueAt).to.equal(res.body.dueAt)
+      expect(res.body.dueSoon).to.equal(false)
+      expect(res.body.overdue).to.equal(false)
+      expect(res.body.handoverWindowOpen).to.equal(true)
+      expect(res.body.borrowerConfirmedAt).to.equal(null)
     })
 
     footballCounts().then(({ available, borrowed }) => {
@@ -200,5 +222,135 @@ describe('V2.2.3 Loan Lifecycle', () => {
       expect(available).to.equal(1)
       expect(borrowed).to.equal(0)
     })
+  })
+
+  it('borrower confirms receipt within the handover window', () => {
+    let txnId
+    loginViaApi(salah)
+    cy.request({
+      method: 'POST',
+      url: '/api/transactions',
+      body: { listingId, purpose: `${marker} Confirm receipt`, requestedDurationDays: 2 },
+    }).then((res) => {
+      txnId = res.body.id
+    })
+
+    loginViaApi(ahmed)
+    post(() => `/api/transactions/${txnId}/approve`)
+    loginViaApi(salah)
+    post(() => `/api/transactions/${txnId}/stage-handover`)
+    loginViaApi(ahmed)
+    post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
+      expect(res.body.handoverWindowOpen).to.equal(true)
+    })
+
+    // V2.2.4: borrower explicitly confirms receipt while the window is open.
+    loginViaApi(salah)
+    cy.wrap(null)
+      .then(() => cy.request({ method: 'POST', url: `/api/transactions/${txnId}/confirm-receipt` }))
+      .then((res) => {
+        expect(res.body.state).to.equal('ACTIVE')
+        expect(res.body.borrowerConfirmedAt).to.not.equal(null)
+        expect(res.body.handoverWindowOpen).to.equal(true)
+      })
+
+    // The confirmation is a SYSTEM conversation event, never a user-editable row.
+    get(() => `/api/transactions/${txnId}/messages`).then((res) => {
+      const bodies = res.body.map((m) => m.body)
+      expect(bodies).to.include('Borrower confirmed receipt')
+      const event = res.body.find((m) => m.body === 'Borrower confirmed receipt')
+      expect(event.kind).to.equal('SYSTEM')
+      expect(event.authorId).to.equal(null)
+    })
+
+    // A second confirmation must be rejected.
+    cy.wrap(null)
+      .then(() =>
+        cy.request({
+          method: 'POST',
+          url: `/api/transactions/${txnId}/confirm-receipt`,
+          failOnStatusCode: false,
+        }),
+      )
+      .then((res) => {
+        expect(res.status).to.equal(400)
+      })
+
+    // Close the marker so the canonical fixture is restored for later specs.
+    post(() => `/api/transactions/${txnId}/initiate-return`)
+    post(() => `/api/transactions/${txnId}/report-handback`)
+    loginViaApi(ahmed)
+    post(() => `/api/transactions/${txnId}/confirm-return`)
+
+    footballCounts().then(({ available, borrowed }) => {
+      expect(available).to.equal(1)
+      expect(borrowed).to.equal(0)
+    })
+  })
+
+  it('borrower disputing the handover releases the unit and resolves transaction read-only', () => {
+    let txnId
+    loginViaApi(salah)
+    cy.request({
+      method: 'POST',
+      url: '/api/transactions',
+      body: { listingId, purpose: `${marker} Dispute handover`, requestedDurationDays: 2 },
+    }).then((res) => {
+      txnId = res.body.id
+    })
+
+    loginViaApi(ahmed)
+    post(() => `/api/transactions/${txnId}/approve`)
+    loginViaApi(salah)
+    post(() => `/api/transactions/${txnId}/stage-handover`)
+
+    loginViaApi(ahmed)
+    post(() => `/api/transactions/${txnId}/confirm-handover`)
+
+    // The unit is now BORROWED; no other Football unit is available.
+    footballCounts().then(({ available, borrowed }) => {
+      expect(available).to.equal(0)
+      expect(borrowed).to.equal(1)
+    })
+
+    // V2.2.4: borrower disputes non-receipt within the window.
+    loginViaApi(salah)
+    cy.wrap(null)
+      .then(() => cy.request({ method: 'POST', url: `/api/transactions/${txnId}/dispute-handover` }))
+      .then((res) => {
+        expect(res.body.state).to.equal('HANDOVER_DISPUTED')
+        expect(res.body.reservationHeld).to.equal(false)
+      })
+
+    // The borrowed unit is released back to AVAILABLE immediately.
+    footballCounts().then(({ available, borrowed }) => {
+      expect(available).to.equal(1)
+      expect(borrowed).to.equal(0)
+    })
+
+    // The dispute is recorded as a SYSTEM event.
+    get(() => `/api/transactions/${txnId}/messages`).then((res) => {
+      const event = res.body.find((m) => m.body === 'Handover disputed')
+      expect(event).to.exist
+      expect(event.kind).to.equal('SYSTEM')
+    })
+
+    // HANDOVER_DISPUTED has no forward transitions.
+    cy.wrap(null)
+      .then(() => cy.request({ method: 'POST', url: `/api/transactions/${txnId}/initiate-return`, failOnStatusCode: false }))
+      .then((res) => {
+        expect(res.status).to.equal(400)
+      })
+
+    // The conversation is read-only: the Loans UI shows the terminal state.
+    loginViaUi(salah)
+    cy.visit('/me/loans')
+    cy.get('.transaction-card', { timeout: 15000 }).contains('Handover disputed').should('be.visible')
+    cy.get('.transaction-card').contains('button', 'View conversation').click()
+    cy.get('.conversation-body').should('be.visible')
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handover disputed').should('be.visible')
+    cy.get('.conversation-return-status').contains('Handover disputed. The item has been returned to available inventory.')
+      .should('be.visible')
+    cy.get('.conversation-composer').should('not.exist')
   })
 })
