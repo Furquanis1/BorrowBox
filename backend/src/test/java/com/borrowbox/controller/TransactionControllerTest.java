@@ -1,6 +1,7 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionMessageRequest;
@@ -88,6 +89,8 @@ public class TransactionControllerTest {
                 null, true,
                 null,
                 null, null, null,
+                null, null, null, null,
+                false, false,
                 false, false, false,
                 null,
                 LocalDateTime.of(2026, 1, 2, 10, 0),
@@ -412,5 +415,75 @@ public class TransactionControllerTest {
 
         mockMvc.perform(get("/api/transactions/1/messages"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── V2.2.5 loan extensions ─────────────────────────────────────
+
+    @Test
+    void requestExtensionDelegates() throws Exception {
+        when(transactionService.requestExtension(eq(1L), any(ExtensionRequest.class), eq(currentUser)))
+                .thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newDueAt\":\"2026-09-20T18:30:00\",\"note\":\"Need more time\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void acceptExtensionDelegates() throws Exception {
+        when(transactionService.acceptExtension(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-accept"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void rejectExtensionDelegates() throws Exception {
+        when(transactionService.rejectExtension(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-reject"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void counterExtensionDelegates() throws Exception {
+        when(transactionService.counterExtension(eq(1L), any(ExtensionRequest.class), eq(currentUser)))
+                .thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-counter")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newDueAt\":\"2026-09-18T12:00:00\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void acceptExtensionCounterDelegates() throws Exception {
+        when(transactionService.acceptExtensionCounter(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-accept-counter"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void rejectExtensionCounterDelegates() throws Exception {
+        when(transactionService.rejectExtensionCounter(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/extension-counter-reject"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void requestExtensionWithMissingDateIsBadRequest() throws Exception {
+        mockMvc.perform(post("/api/transactions/1/extension-request")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"test\"}"))
+                .andExpect(status().isBadRequest());
     }
 }

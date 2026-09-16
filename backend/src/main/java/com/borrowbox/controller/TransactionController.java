@@ -1,6 +1,7 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionMessageRequest;
@@ -112,6 +113,40 @@ public class TransactionController {
     @PostMapping("/transactions/{id}/dispute-handover")
     public ResponseEntity<TransactionResponse> disputeHandover(@PathVariable Long id) {
         return ResponseEntity.ok(transactionService.disputeHandover(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-request")
+    public ResponseEntity<TransactionResponse> requestExtension(
+            @PathVariable Long id,
+            @Valid @RequestBody ExtensionRequest request) {
+        return ResponseEntity.ok(transactionService.requestExtension(id, request, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-accept")
+    public ResponseEntity<TransactionResponse> acceptExtension(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.acceptExtension(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-reject")
+    public ResponseEntity<TransactionResponse> rejectExtension(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.rejectExtension(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-counter")
+    public ResponseEntity<TransactionResponse> counterExtension(
+            @PathVariable Long id,
+            @Valid @RequestBody ExtensionRequest request) {
+        return ResponseEntity.ok(transactionService.counterExtension(id, request, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-accept-counter")
+    public ResponseEntity<TransactionResponse> acceptExtensionCounter(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.acceptExtensionCounter(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/extension-counter-reject")
+    public ResponseEntity<TransactionResponse> rejectExtensionCounter(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.rejectExtensionCounter(id, currentUser()));
     }
 
     @PostMapping("/transactions/{id}/initiate-return")
