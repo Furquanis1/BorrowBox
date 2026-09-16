@@ -18,6 +18,12 @@ export const requestService = {
   initiateReturn: (id) => apiClient.post(`/transactions/${id}/initiate-return`),
   reportHandback: (id) => apiClient.post(`/transactions/${id}/report-handback`),
   confirmReturn: (id) => apiClient.post(`/transactions/${id}/confirm-return`),
+  requestExtension: (id, data) => apiClient.post(`/transactions/${id}/extension-request`, data),
+  acceptExtension: (id) => apiClient.post(`/transactions/${id}/extension-accept`),
+  rejectExtension: (id) => apiClient.post(`/transactions/${id}/extension-reject`),
+  counterExtension: (id, data) => apiClient.post(`/transactions/${id}/extension-counter`, data),
+  acceptExtensionCounter: (id) => apiClient.post(`/transactions/${id}/extension-accept-counter`),
+  rejectExtensionCounter: (id) => apiClient.post(`/transactions/${id}/extension-counter-reject`),
   getMessages: (id) => apiClient.get(`/transactions/${id}/messages`),
   sendMessage: (id, body) => apiClient.post(`/transactions/${id}/messages`, { body }),
 }

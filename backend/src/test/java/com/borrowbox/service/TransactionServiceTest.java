@@ -1,6 +1,7 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionResponse;
@@ -33,7 +34,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1056,5 +1059,387 @@ public class TransactionServiceTest {
         assertThat(json).doesNotContain("777");
         assertThat(json).doesNotContain("reservedUnitId");
         assertThat(json).doesNotContain("assetUnitId");
+    }
+
+    // ── V2.2.5 loan extensions ──────────────────────────────────────
+
+    private Transaction activeWithDue(AssetUnit reserved) {
+        Transaction txn = active(reserved);
+        LocalDateTime due = txn.getStartedAt().plusDays(txn.getAgreedDurationDays());
+        txn.setDueAt(due);
+        txn.setOriginalDueAt(due);
+        return txn;
+    }
+
+    private void stubMembership(long memberId) {
+        lenient().when(membershipService.isActiveMember(eq(memberId), eq(900L))).thenReturn(true);
+    }
+
+    private void stubExtensionRepo(Transaction txn) {
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        lenient().when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        stubMembership(101L);
+        stubMembership(100L);
+    }
+
+    @Test
+    void requestExtensionSetsFieldsAndEvent() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(3), "Extra practice"), borrower);
+
+        assertThat(response.extensionRequestedDueAt()).isEqualTo(txn.getDueAt().plusDays(3));
+        assertThat(response.extensionOfferedDueAt()).isNull();
+        assertThat(response.extensionNote()).isEqualTo("Extra practice");
+        assertThat(response.extensionRequestedAt()).isNotNull();
+        assertThat(response.extensionRequestPending()).isTrue();
+        assertThat(response.extensionCounterPending()).isFalse();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension requested"));
+    }
+
+    @Test
+    void requestExtensionRejectsNotActive() {
+        Transaction txn = activeWithDue(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(3), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Transaction is not in state ACTIVE");
+    }
+
+    @Test
+    void requestExtensionRejectsLender() {
+        Transaction txn = activeWithDue(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(3), null), owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void requestExtensionRejectsNonParticipant() {
+        Transaction txn = activeWithDue(unit);
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(3), null), intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void requestExtensionRejectsNullDate() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(null, null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("A new due date is required");
+    }
+
+    @Test
+    void requestExtensionRejectsDateNotAfterDueAt() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt(), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The new due date must be after the current due date");
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().minusDays(1), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The new due date must be after the current due date");
+    }
+
+    @Test
+    void requestExtensionRejectsDateInPastOrPresent() {
+        Transaction txn = activeWithDue(unit);
+        txn.setDueAt(LocalDateTime.now().minusDays(1));
+        txn.setOriginalDueAt(txn.getDueAt());
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusHours(1), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The new due date must be in the future");
+    }
+
+    @Test
+    void requestExtensionRejectsDateBeyond30Days() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(31), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("no more than");
+    }
+
+    @Test
+    void requestExtensionRejectsDateAtExactly31Days() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(30).plusMinutes(1), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void requestExtensionRejectsDuplicateWhilePending() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(3), null), borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("An extension request is already pending");
+    }
+
+    @Test
+    void acceptExtensionUpdatesDueAtAndClears() {
+        Transaction txn = activeWithDue(unit);
+        LocalDateTime originalDue = txn.getOriginalDueAt();
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.acceptExtension(1L, owner);
+
+        assertThat(response.dueAt()).isEqualTo(originalDue.plusDays(3));
+        assertThat(response.originalDueAt()).isEqualTo(originalDue);
+        assertThat(response.extensionRequestedDueAt()).isNull();
+        assertThat(response.extensionOfferedDueAt()).isNull();
+        assertThat(response.extensionRequestedAt()).isNull();
+        assertThat(response.extensionRequestPending()).isFalse();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension approved"));
+    }
+
+    @Test
+    void acceptExtensionRejectsWhenNoRequestPending() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.acceptExtension(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension request is pending");
+    }
+
+    @Test
+    void acceptExtensionRejectsWhenCounterPending() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(2));
+        txn.setExtensionOfferedDueAt(txn.getDueAt().plusDays(1));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.acceptExtension(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension request is pending");
+    }
+
+    @Test
+    void acceptExtensionRejectsBorrower() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.acceptExtension(1L, borrower))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void rejectExtensionLeavesDueAtAndClears() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.rejectExtension(1L, owner);
+
+        assertThat(response.dueAt()).isEqualTo(txn.getOriginalDueAt());
+        assertThat(response.extensionRequestedDueAt()).isNull();
+        assertThat(response.extensionRequestedAt()).isNull();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension rejected"));
+    }
+
+    @Test
+    void rejectExtensionRejectsWhenNoRequestPending() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.rejectExtension(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension request is pending");
+    }
+
+    @Test
+    void counterExtensionSetsOfferedAndEvent() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.counterExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(2), "Counter offer"), owner);
+
+        assertThat(response.extensionOfferedDueAt()).isEqualTo(txn.getDueAt().plusDays(2));
+        assertThat(response.extensionNote()).isEqualTo("Counter offer");
+        assertThat(response.extensionRequestPending()).isFalse();
+        assertThat(response.extensionCounterPending()).isTrue();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension countered"));
+    }
+
+    @Test
+    void counterExtensionRejectsWhenNoRequestPending() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.counterExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(2), null), owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension request is pending");
+    }
+
+    @Test
+    void counterExtensionRejectsBorrower() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.counterExtension(
+                1L, new ExtensionRequest(txn.getDueAt().plusDays(2), null), borrower))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void counterExtensionRejectsInvalidDate() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.counterExtension(
+                1L, new ExtensionRequest(txn.getDueAt(), null), owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("The new due date must be after the current due date");
+    }
+
+    @Test
+    void acceptExtensionCounterAppliesOfferedDate() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionOfferedDueAt(txn.getDueAt().plusDays(2));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.acceptExtensionCounter(1L, borrower);
+
+        assertThat(response.dueAt()).isEqualTo(txn.getOriginalDueAt().plusDays(2));
+        assertThat(response.originalDueAt()).isEqualTo(txn.getOriginalDueAt());
+        assertThat(response.extensionRequestedDueAt()).isNull();
+        assertThat(response.extensionCounterPending()).isFalse();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension counter accepted"));
+    }
+
+    @Test
+    void acceptExtensionCounterRejectsNoCounterPending() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.acceptExtensionCounter(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension counter is pending");
+    }
+
+    @Test
+    void acceptExtensionCounterRejectsLender() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionOfferedDueAt(txn.getDueAt().plusDays(2));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.acceptExtensionCounter(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void rejectExtensionCounterLeavesDueAtAndClears() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(5));
+        txn.setExtensionOfferedDueAt(txn.getDueAt().plusDays(2));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+
+        TransactionResponse response = transactionService.rejectExtensionCounter(1L, borrower);
+
+        assertThat(response.dueAt()).isEqualTo(txn.getOriginalDueAt());
+        assertThat(response.extensionRequestedAt()).isNull();
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension counter rejected"));
+    }
+
+    @Test
+    void rejectExtensionCounterRejectsNoCounterPending() {
+        Transaction txn = activeWithDue(unit);
+        stubExtensionRepo(txn);
+
+        assertThatThrownBy(() -> transactionService.rejectExtensionCounter(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("No extension counter is pending");
+    }
+
+    @Test
+    void derivedExtensionFlagsFalseOutsideActive() {
+        Transaction txn = activeWithDue(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        TransactionResponse response = transactionService.view(1L, borrower);
+
+        assertThat(response.extensionRequestPending()).isFalse();
+        assertThat(response.extensionCounterPending()).isFalse();
+    }
+
+    @Test
+    void initiateReturnBlockedWhileExtensionPending() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.initiateReturn(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("An extension request is already pending");
+    }
+
+    @Test
+    void disputeHandoverClearsExtensionNegotiation() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionOfferedDueAt(txn.getDueAt().plusDays(1));
+        txn.setExtensionNote("Counter");
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        transactionService.disputeHandover(1L, borrower);
+
+        verify(transactionRepository).save(argThat(tx -> tx.getExtensionRequestedAt() == null));
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover disputed"));
     }
 }

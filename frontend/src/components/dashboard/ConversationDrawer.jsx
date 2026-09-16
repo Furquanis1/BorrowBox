@@ -31,12 +31,24 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const [busy, setBusy] = useState(false)
   const [actionBusy, setActionBusy] = useState(false)
   const [currentTxn, setCurrentTxn] = useState(transaction)
+  const [extensionDate, setExtensionDate] = useState('')
+  const [extensionNote, setExtensionNote] = useState('')
+  const [counterDate, setCounterDate] = useState('')
+  const [counterNote, setCounterNote] = useState('')
+  const [counterOpen, setCounterOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(false)
   const { user } = useAuth()
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
     setCurrentTxn(transaction)
+    setExtensionDate('')
+    setExtensionNote('')
+    setCounterDate('')
+    setCounterNote('')
+    setCounterOpen(false)
+    setRequestOpen(false)
   }, [transaction])
 
   const active = currentTxn || transaction
@@ -178,6 +190,110 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     }
   }
 
+  const handleRequestExtension = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.requestExtension(active.id, {
+        newDueAt: extensionDate,
+        note: extensionNote || null,
+      })
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not request the extension')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleAcceptExtension = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.acceptExtension(active.id)
+      setCurrentTxn(updated)
+      setCounterOpen(false)
+      setCounterDate('')
+      setExtensionDate('')
+      setExtensionNote('')
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not accept the extension')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleRejectExtension = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.rejectExtension(active.id)
+      setCurrentTxn(updated)
+      setCounterOpen(false)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not reject the extension')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleCounterExtension = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.counterExtension(active.id, {
+        newDueAt: counterDate,
+        note: counterNote || null,
+      })
+      setCurrentTxn(updated)
+      setCounterOpen(false)
+      setCounterDate('')
+      setCounterNote('')
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not send the counter offer')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleAcceptExtensionCounter = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.acceptExtensionCounter(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not accept the counter offer')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const handleRejectExtensionCounter = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.rejectExtensionCounter(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not decline the counter offer')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
   if (!transaction) return null
 
   return (
@@ -269,7 +385,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
             </p>
           )}
 
-          {state === 'ACTIVE' && isBorrower && (
+          {state === 'ACTIVE' && isBorrower && !active.extensionRequestPending && !active.extensionCounterPending && (
             <div className="conversation-return-action">
               <p className="conversation-return-title">Ready to return the item?</p>
               <p className="conversation-return-hint">Start the return process and coordinate the handback here.</p>
@@ -311,6 +427,144 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
           {state === 'RETURN_REPORTED' && isBorrower && (
             <p className="conversation-return-status">
               Handback reported. Awaiting the owner&apos;s receipt confirmation.
+            </p>
+          )}
+
+          {state === 'ACTIVE' && isBorrower && !active.extensionRequestPending && !active.extensionCounterPending && (
+            requestOpen ? (
+              <div className="conversation-extension-action">
+                <p className="conversation-extension-title">Need more time?</p>
+                <p className="conversation-extension-hint">
+                  Request a due-date extension. Current due date:{' '}
+                  <strong>{formatDate(active.dueAt)} {formatTime(active.dueAt)}</strong>.
+                </p>
+                <label className="conversation-extension-field">
+                  <span>New due date</span>
+                  <input
+                    type="datetime-local"
+                    className="conversation-extension-input"
+                    value={extensionDate}
+                    onChange={(event) => setExtensionDate(event.target.value)}
+                  />
+                </label>
+                <label className="conversation-extension-field">
+                  <span>Note (optional)</span>
+                  <input
+                    type="text"
+                    className="conversation-extension-input"
+                    placeholder="Why do you need more time?"
+                    value={extensionNote}
+                    onChange={(event) => setExtensionNote(event.target.value)}
+                    maxLength={255}
+                  />
+                </label>
+                <Button variant="primary" size="sm" loading={actionBusy} onClick={handleRequestExtension} disabled={!extensionDate}>
+                  <i className="bi bi-calendar-plus" aria-hidden="true" />
+                  Request extension
+                </Button>
+              </div>
+            ) : (
+              <div className="conversation-extension-action">
+                <Button variant="outline" size="sm" onClick={() => setRequestOpen(true)}>
+                  <i className="bi bi-calendar-plus" aria-hidden="true" />
+                  Need more time?
+                </Button>
+              </div>
+            )
+          )}
+
+          {state === 'ACTIVE' && isBorrower && active.extensionRequestPending && !active.extensionCounterPending && (
+            <p className="conversation-extension-status">
+              Extension request sent to the owner. Awaiting their decision.
+            </p>
+          )}
+
+          {state === 'ACTIVE' && isLender && active.extensionRequestPending && (
+            <div className="conversation-extension-action">
+              <p className="conversation-extension-title">Extension requested</p>
+              <p className="conversation-extension-hint">
+                {active.extensionNote && (
+                  <>
+                    <span className="conversation-extension-quote">&ldquo;{active.extensionNote}&rdquo;</span>{' '}
+                  </>
+                )}
+                The borrower asked to move the due date to{' '}
+                <strong>{formatDate(active.extensionRequestedDueAt)} {formatTime(active.extensionRequestedDueAt)}</strong>.
+              </p>
+              <div className="conversation-window-actions">
+                <Button variant="primary" size="sm" loading={actionBusy} onClick={handleAcceptExtension}>
+                  <i className="bi bi-check-circle" aria-hidden="true" />
+                  Accept
+                </Button>
+                <Button variant="outline" size="sm" loading={actionBusy} onClick={handleRejectExtension}>
+                  <i className="bi bi-x-circle" aria-hidden="true" />
+                  Reject
+                </Button>
+                <Button variant="outline" size="sm" loading={actionBusy} onClick={() => setCounterOpen(!counterOpen)}>
+                  <i className="bi bi-arrow-repeat" aria-hidden="true" />
+                  Counter offer
+                </Button>
+              </div>
+              {counterOpen && (
+                <div className="conversation-extension-counter">
+                  <label className="conversation-extension-field">
+                    <span>Proposed due date</span>
+                    <input
+                      type="datetime-local"
+                      className="conversation-extension-input"
+                      value={counterDate}
+                      onChange={(event) => setCounterDate(event.target.value)}
+                    />
+                  </label>
+                  <label className="conversation-extension-field">
+                    <span>Note (optional)</span>
+                    <input
+                      type="text"
+                      className="conversation-extension-input"
+                      placeholder="Your proposed date"
+                      value={counterNote}
+                      onChange={(event) => setCounterNote(event.target.value)}
+                      maxLength={255}
+                    />
+                  </label>
+                  <Button variant="primary" size="sm" loading={actionBusy} onClick={handleCounterExtension} disabled={!counterDate}>
+                    <i className="bi bi-send" aria-hidden="true" />
+                    Send counter offer
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {state === 'ACTIVE' && isBorrower && active.extensionCounterPending && (
+            <div className="conversation-extension-action">
+              <p className="conversation-extension-title">Counter offer received</p>
+              <p className="conversation-extension-hint">
+                {active.extensionNote && (
+                  <>
+                    <span className="conversation-extension-quote">&ldquo;{active.extensionNote}&rdquo;</span>{' '}
+                  </>
+                )}
+                The owner proposed{' '}
+                <strong>{formatDate(active.extensionOfferedDueAt)} {formatTime(active.extensionOfferedDueAt)}</strong>{' '}
+                instead.
+              </p>
+              <div className="conversation-window-actions">
+                <Button variant="primary" size="sm" loading={actionBusy} onClick={handleAcceptExtensionCounter}>
+                  <i className="bi bi-check-circle" aria-hidden="true" />
+                  Accept counter
+                </Button>
+                <Button variant="outline" size="sm" loading={actionBusy} onClick={handleRejectExtensionCounter}>
+                  <i className="bi bi-x-circle" aria-hidden="true" />
+                  Decline
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {state === 'ACTIVE' && isLender && active.extensionCounterPending && (
+            <p className="conversation-extension-status">
+              Counter offer sent. Awaiting the borrower&apos;s decision.
             </p>
           )}
         </div>

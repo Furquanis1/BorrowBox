@@ -2,6 +2,7 @@ package com.borrowbox.integration;
 
 import com.borrowbox.config.SeedDataInitializer;
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.ListingCreateRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
@@ -34,6 +35,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -555,6 +557,198 @@ public class TransactionIntegrationTest {
                 .isInstanceOf(UnauthorizedException.class);
         assertThatThrownBy(() -> transactionMessageService.listMessages(approved.id(), youssef))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    // ── V2.2.5 loan extensions ─────────────────────────────────────────
+
+    private TransactionResponse activateToActive(Asset football, User ahmed, User salah) {
+        long listingId = cseFootballListing(football).getId();
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Extension test", 3), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        return transactionService.confirmHandover(staged.id(), ahmed);
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestThenAcceptUpdatesDueAt() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(active.extensionRequestPending()).isFalse();
+
+        TransactionResponse requested = transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(3), "More time"), salah);
+        assertThat(requested.extensionRequestedDueAt()).isEqualTo(active.dueAt().plusDays(3));
+        assertThat(requested.extensionRequestPending()).isTrue();
+
+        TransactionResponse accepted = transactionService.acceptExtension(requested.id(), ahmed);
+        assertThat(accepted.dueAt()).isEqualTo(active.dueAt().plusDays(3));
+        assertThat(accepted.originalDueAt()).isEqualTo(active.originalDueAt());
+        assertThat(accepted.extensionRequestedDueAt()).isNull();
+        assertThat(accepted.extensionRequestPending()).isFalse();
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestThenCounterThenAcceptCounter() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(5), "Need 5 more days"), salah);
+
+        TransactionResponse countered = transactionService.counterExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(2), "I can do 2"), ahmed);
+        assertThat(countered.extensionOfferedDueAt()).isEqualTo(active.dueAt().plusDays(2));
+        assertThat(countered.extensionCounterPending()).isTrue();
+
+        TransactionResponse accepted = transactionService.acceptExtensionCounter(countered.id(), salah);
+        assertThat(accepted.dueAt()).isEqualTo(active.dueAt().plusDays(2));
+        assertThat(accepted.extensionCounterPending()).isFalse();
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestThenRejectLeavesDueAtUnchanged() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        LocalDateTime originalDue = active.dueAt();
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(3), "Please"), salah);
+
+        TransactionResponse rejected = transactionService.rejectExtension(active.id(), ahmed);
+        assertThat(rejected.dueAt()).isEqualTo(originalDue);
+        assertThat(rejected.extensionRequestedDueAt()).isNull();
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestThenCounterThenRejectCounter() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(5), "Please"), salah);
+        transactionService.counterExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(1), "Too much"), ahmed);
+
+        TransactionResponse rejected = transactionService.rejectExtensionCounter(active.id(), salah);
+        assertThat(rejected.dueAt()).isEqualTo(active.originalDueAt());
+        assertThat(rejected.extensionRequestedAt()).isNull();
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestBlockedWhilePendingRequest() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(3), "First"), salah);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(5), "Second"), salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("An extension request is already pending");
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestBlockedWhenNotActive() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Still pending", 2), salah);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                created.id(), new ExtensionRequest(LocalDateTime.now().plusDays(3), null), salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Transaction is not in state ACTIVE");
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestBlockedForLender() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        assertThatThrownBy(() -> transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(3), null), ahmed))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    @Transactional
+    void initiateReturnBlockedWhileExtensionPending() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(3), "Please"), salah);
+
+        assertThatThrownBy(() -> transactionService.initiateReturn(active.id(), salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("An extension request is already pending");
+    }
+
+    @Test
+    @Transactional
+    void disputeHandoverClearsExtensionFields() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(3), "Please"), salah);
+        transactionService.counterExtension(
+                active.id(), new ExtensionRequest(active.dueAt().plusDays(1), "Counter"), ahmed);
+
+        TransactionResponse disputed = transactionService.disputeHandover(active.id(), salah);
+        assertThat(disputed.state()).isEqualTo(TransactionStatus.HANDOVER_DISPUTED);
+        assertThat(disputed.extensionRequestedDueAt()).isNull();
+        assertThat(disputed.extensionOfferedDueAt()).isNull();
+        assertThat(disputed.extensionRequestedAt()).isNull();
+        assertThat(disputed.extensionRequestPending()).isFalse();
+        assertThat(disputed.extensionCounterPending()).isFalse();
     }
 
     // ── Response hygiene ──────────────────────────────────────────────

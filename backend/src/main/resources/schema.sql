@@ -1,5 +1,6 @@
--- BorrowBox V2.2.4 schema baseline (Community + Membership + Rules + Assets
--- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock)
+-- BorrowBox V2.2.5 schema baseline (Community + Membership + Rules + Assets
+-- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock
+-- + Loan Extensions)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
@@ -136,6 +137,10 @@ CREATE TABLE IF NOT EXISTS community_listings (
 -- stamped by the server at handover confirmation (due_at = started_at +
 -- agreed_duration_days; original_due_at never changes), and
 -- borrower_confirmed_at records the borrower's explicit receipt confirmation.
+-- V2.2.5 adds single-extension negotiation fields (extension_requested_due_at,
+-- extension_offered_due_at, extension_note, extension_requested_at), all
+-- nullable; the fields hold the single pending negotiation and are cleared on
+-- resolution so that the durable history lives in the conversation timeline.
 CREATE TABLE IF NOT EXISTS transactions (
     id                       BIGINT       NOT NULL AUTO_INCREMENT,
     community_id             BIGINT       NOT NULL,
@@ -162,6 +167,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     due_at                   DATETIME(6)  DEFAULT NULL,
     original_due_at          DATETIME(6)  DEFAULT NULL,
     borrower_confirmed_at    DATETIME(6)  DEFAULT NULL,
+    extension_requested_due_at DATETIME(6) DEFAULT NULL,
+    extension_offered_due_at   DATETIME(6) DEFAULT NULL,
+    extension_note             VARCHAR(255) DEFAULT NULL,
+    extension_requested_at     DATETIME(6) DEFAULT NULL,
     completed_at             DATETIME(6)  DEFAULT NULL,
     created_at               DATETIME(6)  NOT NULL,
     updated_at               DATETIME(6)  NOT NULL,

@@ -127,6 +127,18 @@ public class Transaction {
     @Column(name = "borrower_confirmed_at")
     private LocalDateTime borrowerConfirmedAt;
 
+    @Column(name = "extension_requested_due_at")
+    private LocalDateTime extensionRequestedDueAt;
+
+    @Column(name = "extension_offered_due_at")
+    private LocalDateTime extensionOfferedDueAt;
+
+    @Column(name = "extension_note")
+    private String extensionNote;
+
+    @Column(name = "extension_requested_at")
+    private LocalDateTime extensionRequestedAt;
+
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
@@ -349,6 +361,38 @@ public class Transaction {
 
     public void setBorrowerConfirmedAt(LocalDateTime borrowerConfirmedAt) {
         this.borrowerConfirmedAt = borrowerConfirmedAt;
+    }
+
+    public LocalDateTime getExtensionRequestedDueAt() {
+        return extensionRequestedDueAt;
+    }
+
+    public void setExtensionRequestedDueAt(LocalDateTime extensionRequestedDueAt) {
+        this.extensionRequestedDueAt = extensionRequestedDueAt;
+    }
+
+    public LocalDateTime getExtensionOfferedDueAt() {
+        return extensionOfferedDueAt;
+    }
+
+    public void setExtensionOfferedDueAt(LocalDateTime extensionOfferedDueAt) {
+        this.extensionOfferedDueAt = extensionOfferedDueAt;
+    }
+
+    public String getExtensionNote() {
+        return extensionNote;
+    }
+
+    public void setExtensionNote(String extensionNote) {
+        this.extensionNote = extensionNote;
+    }
+
+    public LocalDateTime getExtensionRequestedAt() {
+        return extensionRequestedAt;
+    }
+
+    public void setExtensionRequestedAt(LocalDateTime extensionRequestedAt) {
+        this.extensionRequestedAt = extensionRequestedAt;
     }
 
     public LocalDateTime getCompletedAt() {

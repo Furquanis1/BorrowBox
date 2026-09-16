@@ -10,6 +10,11 @@ import java.time.LocalDateTime;
  *
  * V2.2.4: dueAt / originalDueAt / borrowerConfirmedAt are persisted;
  * dueSoon / overdue / handoverWindowOpen are derived read-time booleans.
+ *
+ * V2.2.5: extensionRequestedDueAt / extensionOfferedDueAt / extensionNote /
+ * extensionRequestedAt are the single pending extension negotiation persisted
+ * on the transaction; extensionRequestPending / extensionCounterPending are
+ * derived read-time booleans (true only while ACTIVE).
  */
 public record TransactionResponse(
         Long id,
@@ -38,6 +43,12 @@ public record TransactionResponse(
         LocalDateTime dueAt,
         LocalDateTime originalDueAt,
         LocalDateTime borrowerConfirmedAt,
+        LocalDateTime extensionRequestedDueAt,
+        LocalDateTime extensionOfferedDueAt,
+        String extensionNote,
+        LocalDateTime extensionRequestedAt,
+        boolean extensionRequestPending,
+        boolean extensionCounterPending,
         boolean dueSoon,
         boolean overdue,
         boolean handoverWindowOpen,

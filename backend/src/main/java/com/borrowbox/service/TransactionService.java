@@ -1,6 +1,7 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionResponse;
@@ -57,6 +58,30 @@ import java.util.List;
  *  - DUE_SOON (24h before dueAt) and OVERDUE are derived read-time conditions,
  *    never persisted states. No scheduler/background timer is introduced.
  *  - HANDOVER_DISPUTED has no forward transitions in V2.2.4.
+ *
+ * V2.2.5 loan extensions:
+ *  - The borrower may request a new absolute due date while ACTIVE (including
+ *    when currently OVERDUE). The lender may accept, reject, or counter, and
+ *    the borrower must explicitly accept or reject a lender counter. The
+ *    transaction stays ACTIVE throughout; no new TransactionStatus.
+ *  - Exactly one pending extension negotiation exists at a time. It is
+ *    persisted on the transaction (extensionRequestedDueAt /
+ *    extensionOfferedDueAt / extensionNote / extensionRequestedAt) and
+ *    represented to clients as derived read-time booleans
+ *    (extensionRequestPending / extensionCounterPending), true only while
+ *    ACTIVE.
+ *  - dueAt changes only when an extension/counter is accepted; originalDueAt
+ *    and agreedDurationDays never change. Accepting an extension while overdue
+ *    immediately re-derives OVERDUE=false.
+ *  - newDueAt must be present, strictly after the current dueAt, strictly after
+ *    the server clock, and no more than EXTENSION_MAX_DAYS after the current
+ *    dueAt.
+ *  - Extensions never touch AssetUnit/reservation/availability state. The
+ *    conversation timeline (SYSTEM events) is the durable negotiation history;
+ *    there is no dedicated history table.
+ *  - While an extension negotiation is pending, initiateReturn is rejected; a
+ *    handover dispute clears the pending extension fields before recording
+ *    HANDOVER_DISPUTED.
  */
 @Service
 public class TransactionService {
@@ -66,6 +91,12 @@ public class TransactionService {
     public static final long DUE_SOON_THRESHOLD_HOURS = 24;
 
     public static final long HANDOVER_WINDOW_MINUTES = 30;
+
+    /**
+     * V2.2.5: an extension/counter may move the due date no more than this many
+     * days past the current due date.
+     */
+    public static final long EXTENSION_MAX_DAYS = 30;
 
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
@@ -369,6 +400,9 @@ public class TransactionService {
      * AVAILABLE immediately, the reservation handle is released and the
      * transaction moves to the terminal HANDOVER_DISPUTED state. HANDOVER_DISPUTED
      * has no forward transitions in V2.2.4; resolution is later-stage scope.
+     *
+     * V2.2.5: any pending extension negotiation is cleared so the terminal
+     * record never carries orphaned extension fields.
      */
     @Transactional
     public TransactionResponse disputeHandover(Long id, User borrower) {
@@ -379,8 +413,130 @@ public class TransactionService {
         requireHandoverWindowOpen(txn);
 
         releaseBorrowedUnit(txn);
+        clearExtensionNegotiation(txn);
         txn.setState(TransactionStatus.HANDOVER_DISPUTED);
         messageService.addSystemEvent(txn, "Handover disputed");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: borrower requests a new absolute due date while ACTIVE (including
+     * when currently OVERDUE). Rejected when any extension negotiation is
+     * already pending. The transaction stays ACTIVE; the request is persisted
+     * on the transaction and the SYSTEM event is the durable history record.
+     */
+    @Transactional
+    public TransactionResponse requestExtension(Long id, ExtensionRequest request, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireActiveMember(borrower.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        validExtensionRequest(request);
+        validateExtensionDate(txn, request.newDueAt());
+        requireNoPendingExtension(txn);
+
+        LocalDateTime now = LocalDateTime.now();
+        txn.setExtensionRequestedDueAt(request.newDueAt());
+        txn.setExtensionOfferedDueAt(null);
+        txn.setExtensionNote(trimToNull(request.note()));
+        txn.setExtensionRequestedAt(now);
+        messageService.addSystemEvent(txn, "Extension requested");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: lender accepts the pending borrower request. dueAt becomes the
+     * requested date; originalDueAt and agreedDurationDays are preserved.
+     */
+    @Transactional
+    public TransactionResponse acceptExtension(Long id, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireActiveMember(lender.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        requirePendingExtensionRequest(txn);
+
+        txn.setDueAt(txn.getExtensionRequestedDueAt());
+        clearExtensionNegotiation(txn);
+        messageService.addSystemEvent(txn, "Extension approved");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: lender rejects the pending borrower request. dueAt is unchanged.
+     */
+    @Transactional
+    public TransactionResponse rejectExtension(Long id, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireActiveMember(lender.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        requirePendingExtensionRequest(txn);
+
+        clearExtensionNegotiation(txn);
+        messageService.addSystemEvent(txn, "Extension rejected");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: lender answers the pending borrower request with a counter offer.
+     * The countered date is validated against the current dueAt (and the server
+     * clock); a counter that is already outstanding cannot be re-countered.
+     * The counter is not final until the borrower accepts it explicitly.
+     */
+    @Transactional
+    public TransactionResponse counterExtension(Long id, ExtensionRequest request, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireActiveMember(lender.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        validExtensionRequest(request);
+        validateExtensionDate(txn, request.newDueAt());
+        requirePendingExtensionRequest(txn);
+
+        txn.setExtensionOfferedDueAt(request.newDueAt());
+        txn.setExtensionNote(trimToNull(request.note()));
+        messageService.addSystemEvent(txn, "Extension countered");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: borrower accepts the lender counter. dueAt becomes the countered
+     * date; originalDueAt and agreedDurationDays are preserved.
+     */
+    @Transactional
+    public TransactionResponse acceptExtensionCounter(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireActiveMember(borrower.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        requirePendingExtensionCounter(txn);
+
+        txn.setDueAt(txn.getExtensionOfferedDueAt());
+        clearExtensionNegotiation(txn);
+        messageService.addSystemEvent(txn, "Extension counter accepted");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.5: borrower rejects the lender counter. dueAt is unchanged.
+     */
+    @Transactional
+    public TransactionResponse rejectExtensionCounter(Long id, User borrower) {
+        requireUser(borrower);
+        Transaction txn = findForUpdate(id);
+        requireBorrower(txn, borrower);
+        requireActiveMember(borrower.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.ACTIVE);
+        requirePendingExtensionCounter(txn);
+
+        clearExtensionNegotiation(txn);
+        messageService.addSystemEvent(txn, "Extension counter rejected");
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -388,6 +544,9 @@ public class TransactionService {
      * Borrower initiates the return of an ACTIVE loan. The unit stays BORROWED;
      * the borrower is starting the return process and coordinating the physical
      * handback through the conversation.
+     *
+     * V2.2.5: a pending extension negotiation must be resolved before the
+     * return flow can start.
      */
     @Transactional
     public TransactionResponse initiateReturn(Long id, User borrower) {
@@ -395,6 +554,7 @@ public class TransactionService {
         Transaction txn = findForUpdate(id);
         requireBorrower(txn, borrower);
         requireState(txn, TransactionStatus.ACTIVE);
+        requireNoPendingExtension(txn);
 
         txn.setState(TransactionStatus.RETURN_INITIATED);
         messageService.addSystemEvent(txn, "Return initiated");
@@ -548,6 +708,98 @@ public class TransactionService {
     }
 
     /**
+     * V2.2.5: verifies the extension/counter negotiation input is present and
+     * dates valid as a request made against the current dueAt.
+     */
+    private void validExtensionRequest(ExtensionRequest request) {
+        if (request == null || request.newDueAt() == null) {
+            throw new BusinessRuleViolationException("A new due date is required");
+        }
+    }
+
+    /**
+     * V2.2.5: a new due date must be strictly after the current dueAt, strictly
+     * after the server clock, and no more than EXTENSION_MAX_DAYS after the
+     * current dueAt.
+     */
+    private void validateExtensionDate(Transaction txn, LocalDateTime newDueAt) {
+        LocalDateTime currentDueAt = txn.getDueAt();
+        if (currentDueAt == null) {
+            throw new BusinessRuleViolationException("Transaction has no due date");
+        }
+        if (!newDueAt.isAfter(currentDueAt)) {
+            throw new BusinessRuleViolationException(
+                    "The new due date must be after the current due date");
+        }
+        if (!newDueAt.isAfter(LocalDateTime.now())) {
+            throw new BusinessRuleViolationException(
+                    "The new due date must be in the future");
+        }
+        if (newDueAt.isAfter(currentDueAt.plusDays(EXTENSION_MAX_DAYS))) {
+            throw new BusinessRuleViolationException(
+                    "The new due date must be no more than " + EXTENSION_MAX_DAYS
+                            + " days after the current due date");
+        }
+    }
+
+    /**
+     * V2.2.5: exactly one extension negotiation may be pending at a time.
+     */
+    private void requireNoPendingExtension(Transaction txn) {
+        if (hasPendingExtension(txn)) {
+            throw new BusinessRuleViolationException("An extension request is already pending");
+        }
+    }
+
+    private void requirePendingExtensionRequest(Transaction txn) {
+        if (!hasPendingExtensionRequest(txn)) {
+            throw new BusinessRuleViolationException("No extension request is pending");
+        }
+    }
+
+    private void requirePendingExtensionCounter(Transaction txn) {
+        if (!hasPendingExtensionCounter(txn)) {
+            throw new BusinessRuleViolationException("No extension counter is pending");
+        }
+    }
+
+    private boolean hasPendingExtension(Transaction txn) {
+        return txn.getExtensionRequestedAt() != null;
+    }
+
+    private boolean hasPendingExtensionRequest(Transaction txn) {
+        return hasPendingExtension(txn) && txn.getExtensionOfferedDueAt() == null;
+    }
+
+    private boolean hasPendingExtensionCounter(Transaction txn) {
+        return hasPendingExtension(txn) && txn.getExtensionOfferedDueAt() != null;
+    }
+
+    /**
+     * V2.2.5 derived read-time conditions. Never persisted as states; true only
+     * while the transaction is ACTIVE so RETURN_INITIATED / RETURN_REPORTED and
+     * terminal rows never report a pending negotiation.
+     */
+    private boolean isExtensionRequestPending(Transaction txn) {
+        return txn.getState() == TransactionStatus.ACTIVE
+                && hasPendingExtension(txn)
+                && txn.getExtensionOfferedDueAt() == null;
+    }
+
+    private boolean isExtensionCounterPending(Transaction txn) {
+        return txn.getState() == TransactionStatus.ACTIVE
+                && hasPendingExtension(txn)
+                && txn.getExtensionOfferedDueAt() != null;
+    }
+
+    private void clearExtensionNegotiation(Transaction txn) {
+        txn.setExtensionRequestedDueAt(null);
+        txn.setExtensionOfferedDueAt(null);
+        txn.setExtensionNote(null);
+        txn.setExtensionRequestedAt(null);
+    }
+
+    /**
      * V2.2.4: verifies the borrower handover confirmation/dispute window is
      * still open. The window derives from the server-stamped handover time and
      * is never extended by client input. The caller must already have verified
@@ -645,6 +897,12 @@ public class TransactionService {
                 txn.getDueAt(),
                 txn.getOriginalDueAt(),
                 txn.getBorrowerConfirmedAt(),
+                txn.getExtensionRequestedDueAt(),
+                txn.getExtensionOfferedDueAt(),
+                txn.getExtensionNote(),
+                txn.getExtensionRequestedAt(),
+                isExtensionRequestPending(txn),
+                isExtensionCounterPending(txn),
                 isDueSoon(txn),
                 isOverdue(txn),
                 isHandoverWindowOpen(txn),
