@@ -164,6 +164,11 @@ public class TransactionController {
         return ResponseEntity.ok(transactionService.confirmReturn(id, currentUser()));
     }
 
+    @PostMapping("/transactions/{id}/dispute-return")
+    public ResponseEntity<TransactionResponse> disputeReturn(@PathVariable Long id) {
+        return ResponseEntity.ok(transactionService.disputeReturn(id, currentUser()));
+    }
+
     @PostMapping("/transactions/{id}/messages")
     public ResponseEntity<TransactionMessageResponse> sendMessage(
             @PathVariable Long id,

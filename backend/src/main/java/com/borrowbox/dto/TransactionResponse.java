@@ -15,6 +15,9 @@ import java.time.LocalDateTime;
  * extensionRequestedAt are the single pending extension negotiation persisted
  * on the transaction; extensionRequestPending / extensionCounterPending are
  * derived read-time booleans (true only while ACTIVE).
+ *
+ * V2.2.6: returnDisputedAt is stamped by the backend clock when the lender
+ * disputes the return (RETURN_DISPUTED).
  */
 public record TransactionResponse(
         Long id,
@@ -52,6 +55,7 @@ public record TransactionResponse(
         boolean dueSoon,
         boolean overdue,
         boolean handoverWindowOpen,
+        LocalDateTime returnDisputedAt,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

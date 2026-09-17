@@ -1,6 +1,7 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.EvidenceResponse;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
@@ -11,6 +12,8 @@ import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.Evidence;
+import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
@@ -20,12 +23,14 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
+import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,6 +39,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -59,6 +65,12 @@ public class TransactionServiceTest {
     @Mock
     private TransactionMessageService messageService;
 
+    @Mock
+    private EvidenceRepository evidenceRepository;
+
+    @Mock
+    private EvidenceStorageService evidenceStorageService;
+
     private TransactionService transactionService;
 
     private User owner;
@@ -72,7 +84,8 @@ public class TransactionServiceTest {
     void setUp() {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
-                membershipService, messageService);
+                membershipService, messageService, evidenceRepository,
+                evidenceStorageService, 5_242_880L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -694,6 +707,10 @@ public class TransactionServiceTest {
         unit.setStatus(AssetUnitStatus.BORROWED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(evidenceRepository.findByTransactionIdAndType(1L, EvidenceType.BORROWER_PRE_RETURN))
+                .thenReturn(List.of(new Evidence()));
+        when(evidenceRepository.findByTransactionIdAndType(1L, EvidenceType.BORROWER_RETURN_HANDOVER))
+                .thenReturn(List.of(new Evidence()));
 
         TransactionResponse response = transactionService.reportHandback(1L, borrower);
 
@@ -1441,5 +1458,258 @@ public class TransactionServiceTest {
 
         verify(transactionRepository).save(argThat(tx -> tx.getExtensionRequestedAt() == null));
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover disputed"));
+    }
+
+    // ── V2.2.6 return disputes + evidence ────────────────────────────
+
+    @Test
+    void reportHandbackRejectedWithoutReturnEvidence() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.reportHandback(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Both return evidence photos are required");
+    }
+
+    @Test
+    void reportHandbackRequiresBothEvidenceTypes() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceRepository.findByTransactionIdAndType(1L, EvidenceType.BORROWER_PRE_RETURN))
+                .thenReturn(List.of(new Evidence()));
+
+        assertThatThrownBy(() -> transactionService.reportHandback(1L, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Both return evidence photos are required");
+    }
+
+    @Test
+    void disputeReturnMovesReportedToDisputedAndKeepsUnitBorrowed() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+
+        TransactionResponse response = transactionService.disputeReturn(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.RETURN_DISPUTED);
+        assertThat(response.returnDisputedAt()).isNotNull();
+        assertThat(response.reservationHeld()).isTrue();
+        assertThat(txn.getReturnDisputedBy().getId()).isEqualTo(100L);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(assetUnitRepository, never()).save(any(AssetUnit.class));
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Return disputed"));
+    }
+
+    @Test
+    void borrowerCannotDisputeReturn() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.disputeReturn(1L, borrower))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void disputeReturnOnNonReportedStateIsRejected() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+
+        assertThatThrownBy(() -> transactionService.disputeReturn(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void disputeReturnRejectsInactiveLenderMember() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(false);
+
+        assertThatThrownBy(() -> transactionService.disputeReturn(1L, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void uploadEvidenceStoresPhotoAndReturnsResponse() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(7L);
+            return e;
+        });
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", new byte[]{1, 2, 3});
+
+        EvidenceResponse response = transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower);
+
+        assertThat(response.id()).isEqualTo(7L);
+        assertThat(response.type()).isEqualTo(EvidenceType.BORROWER_PRE_RETURN);
+        assertThat(response.capturerId()).isEqualTo(101L);
+        assertThat(response.contentType()).isEqualTo("image/png");
+        assertThat(response.sizeBytes()).isEqualTo(3L);
+        assertThat(response.contentUrl()).endsWith("/evidence/7/content");
+        verify(evidenceStorageService).store(any(byte[].class));
+        verify(messageService).addSystemEvent(any(Transaction.class), eq("Evidence added: BORROWER_PRE_RETURN"));
+    }
+
+    @Test
+    void uploadEvidenceRejectsBorrowSideMoment() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", new byte[]{1});
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.LENDER_HANDOVER, file, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("This evidence moment is not available yet");
+    }
+
+    @Test
+    void uploadEvidenceRejectsLender() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", new byte[]{1});
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, owner))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void uploadEvidenceRejectsNonImageContentType() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "note.txt", "text/plain", new byte[]{1});
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Evidence must be an image file");
+    }
+
+    @Test
+    void uploadEvidenceRejectsEmptyFile() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[0]);
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("An evidence photo is required");
+    }
+
+    @Test
+    void uploadEvidenceRejectsOversizedFile() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", new byte[5_242_881]);
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Evidence must be between 1 byte and");
+    }
+
+    @Test
+    void uploadEvidenceRejectsAfterReturnReported() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "photo.png", "image/png", new byte[]{1});
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not in state");
+    }
+
+    @Test
+    void listEvidenceVisibleToParticipants() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+        Evidence evidence = new Evidence();
+        evidence.setId(9L);
+        evidence.setTransaction(txn);
+        evidence.setType(EvidenceType.BORROWER_PRE_RETURN);
+        evidence.setCapturer(borrower);
+        evidence.setContentType("image/png");
+        evidence.setSizeBytes(3L);
+        evidence.setCapturedAt(LocalDateTime.now());
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAsc(1L))
+                .thenReturn(List.of(evidence));
+
+        List<EvidenceResponse> result = transactionService.listEvidence(1L, borrower);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo(9L);
+        assertThat(result.get(0).capturerName()).isEqualTo("Salah");
+    }
+
+    @Test
+    void listEvidenceRejectedForNonParticipant() {
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        Transaction txn = pending(unit);
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.listEvidence(1L, intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void getEvidenceContentVisibleToParticipant() {
+        Transaction txn = pending(unit);
+        Evidence evidence = new Evidence();
+        evidence.setId(9L);
+        evidence.setTransaction(txn);
+        evidence.setFileRef("11111111-2222-3333-4444-555555555555");
+        evidence.setContentType("image/png");
+        when(evidenceRepository.findById(9L)).thenReturn(Optional.of(evidence));
+        when(evidenceStorageService.load("11111111-2222-3333-4444-555555555555"))
+                .thenReturn(new byte[]{1, 2, 3});
+
+        TransactionService.EvidenceContent content = transactionService.getEvidenceContent(9L, owner);
+
+        assertThat(content.contentType()).isEqualTo("image/png");
+        assertThat(content.bytes()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void getEvidenceContentRejectedForNonParticipant() {
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        Transaction txn = pending(unit);
+        Evidence evidence = new Evidence();
+        evidence.setId(9L);
+        evidence.setTransaction(txn);
+        evidence.setFileRef("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.findById(9L)).thenReturn(Optional.of(evidence));
+
+        assertThatThrownBy(() -> transactionService.getEvidenceContent(9L, intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void missingEvidenceThrowsResourceNotFound() {
+        assertThatThrownBy(() -> transactionService.getEvidenceContent(9L, borrower))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

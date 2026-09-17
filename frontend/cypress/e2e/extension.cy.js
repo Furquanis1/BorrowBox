@@ -45,6 +45,21 @@ describe('V2.2.5 Loan Extensions', () => {
     cy.request({ method: 'POST', url: '/api/auth/login', body: user, failOnStatusCode: true })
   }
 
+  // V2.2.6: system-issued evidence uploads; binary content is arbitrary
+  // (only content-type + size are validated by the backend).
+  const uploadPhoto = (txnId, type) =>
+    cy.wrap(null).then(() => {
+      const form = new FormData()
+      form.append('type', type)
+      form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+      return cy.request({ method: 'POST', url: `/api/transactions/${txnId}/evidence`, body: form, failOnStatusCode: true })
+    })
+
+  const uploadReturnEvidence = (id) => {
+    uploadPhoto(id, 'BORROWER_PRE_RETURN')
+    uploadPhoto(id, 'BORROWER_RETURN_HANDOVER')
+  }
+
   const footballCounts = () =>
     cy.wrap(null).then(() =>
       cy.request('GET', `/api/communities/${cseId}/listings`).then((res) => {
@@ -106,19 +121,29 @@ describe('V2.2.5 Loan Extensions', () => {
         resolvePendingExtension(txn)
         loginViaApi(salah)
         cy.request('POST', `/api/transactions/${txn.id}/initiate-return`)
+        uploadReturnEvidence(txn.id)
         cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
       case 'RETURN_INITIATED':
         loginViaApi(salah)
+        uploadReturnEvidence(txn.id)
         cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
+        loginViaApi(ahmed)
+        cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
+        break
+      case 'RETURN_REPORTED':
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
       case 'HANDOVER_DISPUTED':
         // V2.2.4/5: the unit was already released back to AVAILABLE and the
         // extension negotiation was cleared; nothing to clean up.
+        break
+      case 'RETURN_DISPUTED':
+        // V2.2.6: the unit is frozen BORROWED; no product API reverses it.
+        cy.task('restoreReturnDispute', txn.id)
         break
       default:
         break

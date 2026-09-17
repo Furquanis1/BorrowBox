@@ -33,13 +33,14 @@ function errorKind(status, body) {
 }
 
 async function request(path, options = {}) {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
   let res
   try {
     res = await fetch(`${API_BASE}${path}`, {
       ...options,
       credentials: 'include',
       headers: {
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}),
         ...options.headers,
       },
     })
@@ -66,10 +67,17 @@ async function request(path, options = {}) {
 
 export const apiClient = {
   get: (path) => request(path),
-  post: (path, body) => request(path, { method: 'POST', body: body !== undefined ? JSON.stringify(body) : undefined }),
-  patch: (path, body) => request(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
-  put: (path, body) => request(path, { method: 'PUT', body: body !== undefined ? JSON.stringify(body) : undefined }),
+  post: (path, body) => request(path, { method: 'POST', body: serializeBody(body) }),
+  patch: (path, body) => request(path, { method: 'PATCH', body: serializeBody(body) }),
+  put: (path, body) => request(path, { method: 'PUT', body: serializeBody(body) }),
   del: (path) => request(path, { method: 'DELETE' }),
+  multipart: (path, formData) => request(path, { method: 'POST', body: formData }),
+}
+
+function serializeBody(body) {
+  if (body === undefined) return undefined
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
+  return isFormData ? body : JSON.stringify(body)
 }
 
 export default apiClient

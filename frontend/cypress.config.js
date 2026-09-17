@@ -1,4 +1,57 @@
 const { defineConfig } = require('cypress')
+const { execFileSync } = require('child_process')
+
+/**
+ * DB connection for the suite's fixture-restoration task. Values are read from
+ * the environment; credentials are never embedded in this source file. Missing
+ * variables fail loudly instead of falling back to hardcoded values.
+ */
+function dbArgs(sql) {
+  const required = [
+    'CYPRESS_DB_HOST',
+    'CYPRESS_DB_PORT',
+    'CYPRESS_DB_NAME',
+    'CYPRESS_DB_USER',
+    'CYPRESS_DB_PASSWORD',
+  ]
+  const missing = required.filter((name) => !process.env[name])
+  if (missing.length) {
+    throw new Error(
+      `Missing Cypress DB environment variable(s): ${missing.join(', ')}. ` +
+        `Set ${required.join(', ')} before running the suite; credentials are ` +
+        'never embedded in source.',
+    )
+  }
+  return [
+    `--host=${process.env.CYPRESS_DB_HOST}`,
+    `--port=${process.env.CYPRESS_DB_PORT}`,
+    `--user=${process.env.CYPRESS_DB_USER}`,
+    `--password=${process.env.CYPRESS_DB_PASSWORD}`,
+    process.env.CYPRESS_DB_NAME,
+    `--execute=${sql}`,
+  ]
+}
+
+/**
+ * Deletes a RETURN_DISPUTED marker transaction and releases its AssetUnit back
+ * to AVAILABLE so the canonical seeded fixture survives for later specs.
+ * RETURN_DISPUTED is terminal by design (unit stays BORROWED), so there is no
+ * product API that can reverse it; the suite restores inventory directly.
+ */
+function restoreReturnDispute(txnId) {
+  const id = Number(txnId)
+  if (!Number.isInteger(id) || id <= 0) throw new Error(`Invalid transaction id: ${txnId}`)
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `DELETE FROM transaction_evidence WHERE transaction_id = ${id};`,
+    `DELETE FROM transaction_messages WHERE transaction_id = ${id};`,
+    `UPDATE asset_units SET status='AVAILABLE' WHERE id = (SELECT reserved_unit_id FROM transactions WHERE id = ${id});`,
+    `DELETE FROM transactions WHERE id = ${id};`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
 
 module.exports = defineConfig({
   e2e: {
@@ -12,5 +65,10 @@ module.exports = defineConfig({
     responseTimeout: 10000,
     viewportWidth: 1280,
     viewportHeight: 720,
+    setupNodeEvents(on) {
+      on('task', {
+        restoreReturnDispute,
+      })
+    },
   },
 })

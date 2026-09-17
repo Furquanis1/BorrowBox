@@ -18,6 +18,15 @@ export const requestService = {
   initiateReturn: (id) => apiClient.post(`/transactions/${id}/initiate-return`),
   reportHandback: (id) => apiClient.post(`/transactions/${id}/report-handback`),
   confirmReturn: (id) => apiClient.post(`/transactions/${id}/confirm-return`),
+  disputeReturn: (id) => apiClient.post(`/transactions/${id}/dispute-return`),
+  uploadEvidence: (id, type, file) => {
+    const form = new FormData()
+    form.append('type', type)
+    form.append('file', file)
+    return apiClient.multipart(`/transactions/${id}/evidence`, form)
+  },
+  getEvidence: (id) => apiClient.get(`/transactions/${id}/evidence`),
+  getEvidenceContentUrl: (evidenceId) => `/api/evidence/${evidenceId}/content`,
   requestExtension: (id, data) => apiClient.post(`/transactions/${id}/extension-request`, data),
   acceptExtension: (id) => apiClient.post(`/transactions/${id}/extension-accept`),
   rejectExtension: (id) => apiClient.post(`/transactions/${id}/extension-reject`),

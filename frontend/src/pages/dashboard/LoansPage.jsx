@@ -8,7 +8,7 @@ import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
 
-const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED', 'HANDOVER_DISPUTED'])
+const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 
 const STATE_BADGE = {
   ACTIVE: 'badge-teal',
@@ -16,6 +16,7 @@ const STATE_BADGE = {
   RETURN_REPORTED: 'badge-info',
   COMPLETED: 'badge-neutral',
   HANDOVER_DISPUTED: 'badge-danger',
+  RETURN_DISPUTED: 'badge-danger',
 }
 
 const STATE_LABEL = {
@@ -24,6 +25,7 @@ const STATE_LABEL = {
   RETURN_REPORTED: 'Return reported',
   COMPLETED: 'Completed',
   HANDOVER_DISPUTED: 'Handover disputed',
+  RETURN_DISPUTED: 'Return disputed',
 }
 
 const CONVERSATION_LABEL = {
@@ -32,6 +34,7 @@ const CONVERSATION_LABEL = {
   RETURN_REPORTED: 'Conversation',
   COMPLETED: 'View conversation',
   HANDOVER_DISPUTED: 'View conversation',
+  RETURN_DISPUTED: 'View conversation',
 }
 
 function LoanCard({ loan, currentUserId, onConversation }) {
@@ -81,6 +84,10 @@ function LoanCard({ loan, currentUserId, onConversation }) {
       ) : state === 'HANDOVER_DISPUTED' ? (
         <p className="transaction-card-note">
           Handover disputed. The item was returned to available inventory.
+        </p>
+      ) : state === 'RETURN_DISPUTED' ? (
+        <p className="transaction-card-note">
+          Return disputed. The loan has been frozen for review.
         </p>
       ) : (
         <p className="transaction-card-note">

@@ -19,6 +19,12 @@ package com.borrowbox.entity;
  * immediately released back to AVAILABLE. It has no forward transitions yet:
  * community-manager resolution is later-stage scope.
  *
+ * RETURN_DISPUTED (V2.2.6) means the lender reported the returned item was NOT
+ * received while the transaction was RETURN_REPORTED. Unlike HANDOVER_DISPUTED,
+ * the AssetUnit STAYS BORROWED: the item's return is contested, so the unit is
+ * not released back to AVAILABLE. The transaction is terminal and read-only;
+ * return-dispute resolution is later-stage scope.
+ *
  * DUE_SOON / OVERDUE are derived read-time conditions, never persisted states.
  *
  * RESERVED is deliberately NOT a transaction state: it is a physical
@@ -35,5 +41,6 @@ public enum TransactionStatus {
     RETURN_INITIATED,
     RETURN_REPORTED,
     COMPLETED,
-    HANDOVER_DISPUTED
+    HANDOVER_DISPUTED,
+    RETURN_DISPUTED
 }
