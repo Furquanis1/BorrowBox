@@ -1,6 +1,7 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.EvidenceResponse;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
@@ -11,6 +12,8 @@ import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.Evidence;
+import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
@@ -20,11 +23,17 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
+import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -82,6 +91,18 @@ import java.util.List;
  *  - While an extension negotiation is pending, initiateReturn is rejected; a
  *    handover dispute clears the pending extension fields before recording
  *    HANDOVER_DISPUTED.
+ *
+ * V2.2.6 return disputes + evidence:
+ *  - The lender may dispute a RETURN_REPORTED return ("not received"),
+ *    moving the transaction to the terminal RETURN_DISPUTED state. Unlike
+ *    HANDOVER_DISPUTED the AssetUnit STAYS BORROWED and the reservation handle
+ *    is retained: the item's return is contested, so the unit is not re-lendable.
+ *    RETURN_DISPUTED has no forward transitions in V2.2.6.
+ *  - Return evidence: the borrower must upload both BORROWER_PRE_RETURN and
+ *    BORROWER_RETURN_HANDOVER photos while RETURN_INITIATED before
+ *    reportHandback is accepted. The binary is stored by EvidenceStorageService
+ *    (server media directory); the Evidence row is transaction-scoped and
+ *    visible only to participants. Evidence is immutable.
  */
 @Service
 public class TransactionService {
@@ -103,17 +124,26 @@ public class TransactionService {
     private final AssetUnitRepository assetUnitRepository;
     private final MembershipService membershipService;
     private final TransactionMessageService messageService;
+    private final EvidenceRepository evidenceRepository;
+    private final EvidenceStorageService evidenceStorageService;
+    private final long maxEvidenceBytes;
 
     public TransactionService(TransactionRepository transactionRepository,
                               CommunityListingRepository listingRepository,
                               AssetUnitRepository assetUnitRepository,
                               MembershipService membershipService,
-                              TransactionMessageService messageService) {
+                              TransactionMessageService messageService,
+                              EvidenceRepository evidenceRepository,
+                              EvidenceStorageService evidenceStorageService,
+                              @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
         this.membershipService = membershipService;
         this.messageService = messageService;
+        this.evidenceRepository = evidenceRepository;
+        this.evidenceStorageService = evidenceStorageService;
+        this.maxEvidenceBytes = maxEvidenceBytes;
     }
 
     /**
@@ -565,6 +595,10 @@ public class TransactionService {
      * Borrower reports that the item has been physically handed back while a
      * return is in progress. The unit stays BORROWED until a lender receipt;
      * the transition is borrower-only and guarded against invalid states.
+     *
+     * V2.2.6: reportHandback is accepted only once both return-side evidence
+     * photos (BORROWER_PRE_RETURN and BORROWER_RETURN_HANDOVER) exist for the
+     * transaction.
      */
     @Transactional
     public TransactionResponse reportHandback(Long id, User borrower) {
@@ -572,6 +606,7 @@ public class TransactionService {
         Transaction txn = findForUpdate(id);
         requireBorrower(txn, borrower);
         requireState(txn, TransactionStatus.RETURN_INITIATED);
+        requireReturnEvidenceComplete(txn);
 
         txn.setState(TransactionStatus.RETURN_REPORTED);
         messageService.addSystemEvent(txn, "Handback reported");
@@ -607,6 +642,128 @@ public class TransactionService {
         txn.setReservedAt(null);
         messageService.addSystemEvent(txn, "Loan completed");
         return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.6: lender disputes that the returned item was actually received
+     * while the transaction is RETURN_REPORTED.
+     *
+     * Locked behaviour: the transaction moves to the terminal RETURN_DISPUTED
+     * state and the AssetUnit STAYS BORROWED with the reservation handle
+     * retained, because the item's return is contested and the unit is not
+     * re-lendable. The dispute record stamps returnDisputedAt / returnDisputedBy
+     * from the backend clock. RETURN_DISPUTED has no forward transitions in
+     * V2.2.6; resolution is later-stage scope.
+     */
+    @Transactional
+    public TransactionResponse disputeReturn(Long id, User lender) {
+        requireUser(lender);
+        Transaction txn = findForUpdate(id);
+        requireLender(txn, lender);
+        requireActiveMember(lender.getId(), txn.getCommunity().getId());
+        requireState(txn, TransactionStatus.RETURN_REPORTED);
+
+        LocalDateTime now = LocalDateTime.now();
+        txn.setState(TransactionStatus.RETURN_DISPUTED);
+        txn.setReturnDisputedAt(now);
+        txn.setReturnDisputedBy(lender);
+        messageService.addSystemEvent(txn, "Return disputed");
+        return toResponse(transactionRepository.save(txn));
+    }
+
+    /**
+     * V2.2.6: borrower uploads one return-side evidence photo while the
+     * transaction is RETURN_INITIATED.
+     *
+     * The binary is stored by EvidenceStorageService (server media directory,
+     * UUID-only file name) and only a reference is persisted. If the enclosing
+     * database transaction rolls back, a transaction synchronization deletes
+     * the newly written file so no orphaned binaries are left behind. The
+     * binary payload is never served statically: it is only reachable through
+     * the authenticated, participant-only content endpoint.
+     */
+    @Transactional
+    public EvidenceResponse uploadEvidence(Long transactionId, EvidenceType type, MultipartFile file, User actor) {
+        requireUser(actor);
+        Transaction txn = findForUpdate(transactionId);
+        requireParticipant(txn, actor);
+        requireEvidenceTypeAllowed(type);
+        requireUploader(txn, actor);
+
+        if (file == null || file.isEmpty()) {
+            throw new BusinessRuleViolationException("An evidence photo is required");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new BusinessRuleViolationException("Evidence must be an image file");
+        }
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException ex) {
+            throw new BusinessRuleViolationException("Could not read the uploaded evidence file");
+        }
+        if (bytes.length == 0 || bytes.length > maxEvidenceBytes) {
+            throw new BusinessRuleViolationException(
+                    "Evidence must be between 1 byte and " + maxEvidenceBytes + " bytes");
+        }
+
+        String fileRef = evidenceStorageService.store(bytes);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    if (status == TransactionSynchronization.STATUS_ROLLED_BACK) {
+                        evidenceStorageService.delete(fileRef);
+                    }
+                }
+            });
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Evidence evidence = new Evidence();
+        evidence.setTransaction(txn);
+        evidence.setType(type);
+        evidence.setCapturer(actor);
+        evidence.setFileRef(fileRef);
+        evidence.setContentType(contentType);
+        evidence.setSizeBytes((long) bytes.length);
+        evidence.setCapturedAt(now);
+        messageService.addSystemEvent(txn, "Evidence added: " + type);
+        return toEvidenceResponse(evidenceRepository.save(evidence));
+    }
+
+    /**
+     * V2.2.6: participants list the transaction's evidence (any state).
+     */
+    @Transactional(readOnly = true)
+    public List<EvidenceResponse> listEvidence(Long transactionId, User actor) {
+        requireUser(actor);
+        Transaction txn = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Transaction not found with id: " + transactionId));
+        requireParticipant(txn, actor);
+        return evidenceRepository.findByTransactionIdOrderByCapturedAtAsc(transactionId).stream()
+                .map(this::toEvidenceResponse)
+                .toList();
+    }
+
+    /**
+     * V2.2.6: loads an evidence binary. Reachable only by participants through
+     * the content endpoint; evidence is never statically served.
+     */
+    @Transactional(readOnly = true)
+    public EvidenceContent getEvidenceContent(Long evidenceId, User actor) {
+        requireUser(actor);
+        Evidence evidence = evidenceRepository.findById(evidenceId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Evidence not found with id: " + evidenceId));
+        Transaction txn = evidence.getTransaction();
+        requireParticipant(txn, actor);
+        return new EvidenceContent(evidenceStorageService.load(evidence.getFileRef()), evidence.getContentType());
+    }
+
+    public record EvidenceContent(byte[] bytes, String contentType) {
     }
 
     @Transactional(readOnly = true)
@@ -705,6 +862,57 @@ public class TransactionService {
             throw new BusinessRuleViolationException(
                     "Transaction is not in state " + expected);
         }
+    }
+
+    /**
+     * V2.2.6: only the two return-side moments may be uploaded in this slice;
+     * borrow-side moments (LENDER_PRE_LENDING / LENDER_HANDOVER) are deferred.
+     */
+    private void requireEvidenceTypeAllowed(EvidenceType type) {
+        if (type != EvidenceType.BORROWER_PRE_RETURN
+                && type != EvidenceType.BORROWER_RETURN_HANDOVER) {
+            throw new BusinessRuleViolationException("This evidence moment is not available yet");
+        }
+    }
+
+    /**
+     * V2.2.6: evidence is borrower-captured, and only while the return is
+     * being coordinated (RETURN_INITIATED) before the handback report.
+     */
+    private void requireUploader(Transaction txn, User actor) {
+        requireBorrower(txn, actor);
+        requireState(txn, TransactionStatus.RETURN_INITIATED);
+    }
+
+    /**
+     * V2.2.6: both return-side evidence photos must exist before the borrower
+     * may report the physical handback.
+     */
+    private void requireReturnEvidenceComplete(Transaction txn) {
+        boolean hasPreReturn = !evidenceRepository
+                .findByTransactionIdAndType(txn.getId(), EvidenceType.BORROWER_PRE_RETURN).isEmpty();
+        boolean hasHandover = !evidenceRepository
+                .findByTransactionIdAndType(txn.getId(), EvidenceType.BORROWER_RETURN_HANDOVER).isEmpty();
+        if (!hasPreReturn || !hasHandover) {
+            throw new BusinessRuleViolationException(
+                    "Both return evidence photos are required before reporting the handback");
+        }
+    }
+
+    private EvidenceResponse toEvidenceResponse(Evidence evidence) {
+        User capturer = evidence.getCapturer();
+        return new EvidenceResponse(
+                evidence.getId(),
+                evidence.getTransaction().getId(),
+                evidence.getType(),
+                capturer.getId(),
+                capturer.getFullName(),
+                evidence.getContentType(),
+                evidence.getSizeBytes(),
+                evidence.getCapturedAt(),
+                evidence.getCreatedAt(),
+                "/api/evidence/" + evidence.getId() + "/content"
+        );
     }
 
     /**
@@ -906,6 +1114,7 @@ public class TransactionService {
                 isDueSoon(txn),
                 isOverdue(txn),
                 isHandoverWindowOpen(txn),
+                txn.getReturnDisputedAt(),
                 txn.getCompletedAt(),
                 txn.getCreatedAt(),
                 txn.getUpdatedAt()

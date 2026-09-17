@@ -5,8 +5,13 @@ import Spinner from '../ui/Spinner'
 import { useAuth } from '../../contexts/AuthContext'
 import { requestService } from '../../services'
 
-const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED'])
+const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
+const EVIDENCE_STATES = new Set(['RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
+const EVIDENCE_LABELS = {
+  BORROWER_PRE_RETURN: 'Before return',
+  BORROWER_RETURN_HANDOVER: 'At handover',
+}
 
 function formatTime(iso) {
   if (!iso) return ''
@@ -37,9 +42,14 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const [counterNote, setCounterNote] = useState('')
   const [counterOpen, setCounterOpen] = useState(false)
   const [requestOpen, setRequestOpen] = useState(false)
+  const [evidence, setEvidence] = useState([])
+  const [evidenceLoading, setEvidenceLoading] = useState(false)
+  const [uploadingType, setUploadingType] = useState(null)
   const { user } = useAuth()
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const preRef = useRef(null)
+  const handoverRef = useRef(null)
 
   useEffect(() => {
     setCurrentTxn(transaction)
@@ -72,6 +82,20 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   useEffect(() => {
     if (open && transaction) loadMessages()
   }, [open, transaction?.id, loadMessages])
+
+  const loadEvidence = useCallback(() => {
+    if (!transaction) return Promise.resolve()
+    setEvidenceLoading(true)
+    return requestService
+      .getEvidence(transaction.id)
+      .then(setEvidence)
+      .catch(() => setEvidence([]))
+      .finally(() => setEvidenceLoading(false))
+  }, [transaction])
+
+  useEffect(() => {
+    if (open && transaction && EVIDENCE_STATES.has(transaction.state)) loadEvidence()
+  }, [open, transaction?.id, transaction?.state, loadEvidence])
 
   useEffect(() => {
     if (!loading && messages.length) {
@@ -179,6 +203,39 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     setActionError('')
     try {
       const updated = await requestService.disputeHandover(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not report the problem')
+    } finally {
+      setActionBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  const hasEvidenceType = (type) => evidence.some((item) => item.type === type)
+  const evidenceReady = hasEvidenceType('BORROWER_PRE_RETURN') && hasEvidenceType('BORROWER_RETURN_HANDOVER')
+
+  const handleUploadEvidence = async (type, file) => {
+    if (!file) return
+    setUploadingType(type)
+    setActionError('')
+    try {
+      await requestService.uploadEvidence(transaction.id, type, file)
+      await loadEvidence()
+    } catch (err) {
+      setActionError(err?.message || 'Could not upload the photo')
+    } finally {
+      setUploadingType(null)
+    }
+  }
+
+  const handleDisputeReturn = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.disputeReturn(active.id)
       setCurrentTxn(updated)
       await loadMessages()
       onDataChanged?.()
@@ -354,6 +411,38 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         </div>
       )}
 
+      {state === 'RETURN_DISPUTED' && (
+        <div className="conversation-context">
+          <p className="conversation-return-status">
+            Return disputed. The loan has been frozen for review and can no longer be modified.
+          </p>
+        </div>
+      )}
+
+      {EVIDENCE_STATES.has(state) && (
+        <div className="conversation-evidence">
+          <p className="conversation-return-title">Photos</p>
+          {evidenceLoading ? (
+            <div className="conversation-status">
+              <Spinner />
+            </div>
+          ) : evidence.length ? (
+            <div className="conversation-evidence-grid">
+              {evidence.map((item) => (
+                <figure className="conversation-evidence-item" key={item.id}>
+                  <img src={item.contentUrl} alt={EVIDENCE_LABELS[item.type] || item.type} />
+                  <figcaption>
+                    {EVIDENCE_LABELS[item.type] || item.type} · {item.capturerName}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          ) : (
+            <p className="conversation-return-hint">No photos were captured for this return.</p>
+          )}
+        </div>
+      )}
+
       {!terminal && (
         <div className="conversation-context">
           {actionError && (
@@ -399,8 +488,57 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
           {state === 'RETURN_INITIATED' && isBorrower && (
             <div className="conversation-return-action">
               <p className="conversation-return-title">Return in progress</p>
-              <p className="conversation-return-hint">Tell the lender the item has been physically handed back.</p>
-              <Button variant="primary" size="sm" loading={actionBusy} onClick={handleReportHandback}>
+              <p className="conversation-return-hint">
+                Add a photo of the item before returning it and one at the handover, then tell the lender the item has been handed back.
+              </p>
+              <div className="conversation-window-actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={uploadingType === 'BORROWER_PRE_RETURN'}
+                  disabled={uploadingType !== null}
+                  onClick={() => preRef.current?.click()}
+                >
+                  <i className="bi bi-camera" aria-hidden="true" />
+                  {hasEvidenceType('BORROWER_PRE_RETURN') ? 'Before-return photo added' : 'Add before-return photo'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={uploadingType === 'BORROWER_RETURN_HANDOVER'}
+                  disabled={uploadingType !== null}
+                  onClick={() => handoverRef.current?.click()}
+                >
+                  <i className="bi bi-camera" aria-hidden="true" />
+                  {hasEvidenceType('BORROWER_RETURN_HANDOVER') ? 'Handover photo added' : 'Add handover photo'}
+                </Button>
+              </div>
+              <input
+                ref={preRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  handleUploadEvidence('BORROWER_PRE_RETURN', event.target.files[0])
+                  event.target.value = ''
+                }}
+              />
+              <input
+                ref={handoverRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  handleUploadEvidence('BORROWER_RETURN_HANDOVER', event.target.files[0])
+                  event.target.value = ''
+                }}
+              />
+              {!evidenceReady && (
+                <p className="conversation-return-hint">
+                  Both photos are required before you can report the handback.
+                </p>
+              )}
+              <Button variant="primary" size="sm" loading={actionBusy} onClick={handleReportHandback} disabled={!evidenceReady || uploadingType !== null}>
                 <i className="bi bi-box-arrow-up" aria-hidden="true" />
                 I&apos;ve handed the item back
               </Button>
@@ -410,11 +548,17 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
           {state === 'RETURN_REPORTED' && isLender && (
             <div className="conversation-return-action">
               <p className="conversation-return-title">The borrower reported the item is back.</p>
-              <p className="conversation-return-hint">Confirm you have received it to close the loan.</p>
-              <Button variant="primary" size="sm" loading={actionBusy} onClick={handleConfirmReceipt}>
-                <i className="bi bi-check-lg" aria-hidden="true" />
-                Confirm received
-              </Button>
+              <p className="conversation-return-hint">Confirm you have received it to close the loan, or report a problem.</p>
+              <div className="conversation-window-actions">
+                <Button variant="primary" size="sm" loading={actionBusy} onClick={handleConfirmReceipt}>
+                  <i className="bi bi-check-lg" aria-hidden="true" />
+                  Confirm received
+                </Button>
+                <Button variant="outline" size="sm" loading={actionBusy} onClick={handleDisputeReturn}>
+                  <i className="bi bi-exclamation-triangle" aria-hidden="true" />
+                  Not received
+                </Button>
+              </div>
             </div>
           )}
 

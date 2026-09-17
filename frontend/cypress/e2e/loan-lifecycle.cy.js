@@ -44,6 +44,23 @@ describe('V2.2.3 Loan Lifecycle', () => {
     cy.request({ method: 'POST', url: '/api/auth/login', body: user, failOnStatusCode: true })
   }
 
+  // V2.2.6: system-issued evidence uploads. The browser builds a multipart body;
+  // the binary content is arbitrary (only content-type + size are validated).
+  // `buildTxnId` may be a value or a thunk; the id is read at execution time.
+  const uploadPhoto = (buildTxnId, type) =>
+    cy.wrap(null).then(() => {
+      const id = typeof buildTxnId === 'function' ? buildTxnId() : buildTxnId
+      const form = new FormData()
+      form.append('type', type)
+      form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+      return cy.request({ method: 'POST', url: `/api/transactions/${id}/evidence`, body: form, failOnStatusCode: true })
+    })
+
+  const uploadReturnEvidence = (txnId) => {
+    uploadPhoto(txnId, 'BORROWER_PRE_RETURN')
+    uploadPhoto(txnId, 'BORROWER_RETURN_HANDOVER')
+  }
+
   const footballCounts = () =>
     cy.wrap(null).then(() =>
       cy.request('GET', `/api/communities/${cseId}/listings`).then((res) => {
@@ -70,19 +87,30 @@ describe('V2.2.3 Loan Lifecycle', () => {
       case 'ACTIVE':
         loginViaApi(salah)
         cy.request('POST', `/api/transactions/${txn.id}/initiate-return`)
+        uploadReturnEvidence(txn.id)
         cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
       case 'RETURN_INITIATED':
         loginViaApi(salah)
+        uploadReturnEvidence(txn.id)
         cy.request('POST', `/api/transactions/${txn.id}/report-handback`)
+        loginViaApi(ahmed)
+        cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
+        break
+      case 'RETURN_REPORTED':
         loginViaApi(ahmed)
         cy.request('POST', `/api/transactions/${txn.id}/confirm-return`)
         break
       case 'HANDOVER_DISPUTED':
         // V2.2.4: the unit was already released back to AVAILABLE; nothing to
         // clean up, only ignore so the marker never drifts inventory.
+        break
+      case 'RETURN_DISPUTED':
+        // V2.2.6: the unit is frozen BORROWED; no product API can reverse it.
+        // Restore inventory directly in MySQL.
+        cy.task('restoreReturnDispute', txn.id)
         break
       default:
         break
@@ -185,8 +213,13 @@ describe('V2.2.3 Loan Lifecycle', () => {
     cy.get('.conversation-return-action button').contains('Start return').click()
     cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').should('be.visible')
 
-    // RETURN_INITIATED: the borrower reports the physical handback.
-    cy.get('.conversation-return-action button').contains("I've handed the item back").click()
+    // RETURN_INITIATED: both photos are required; the UI gates the handback report.
+    cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.disabled')
+    cy.get('.conversation-return-action input[type="file"]').eq(0).selectFile('cypress/fixtures/photo.png', { force: true })
+    cy.get('.conversation-return-action button').contains('Before-return photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
+    cy.get('.conversation-return-action input[type="file"]').eq(1).selectFile('cypress/fixtures/photo.png', { force: true })
+    cy.get('.conversation-return-action button').contains('Handover photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
+    cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.enabled').scrollIntoView().click()
     cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').should('be.visible')
     cy.get('.conversation-return-action').should('not.exist')
     cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').should('be.visible')
@@ -278,6 +311,7 @@ describe('V2.2.3 Loan Lifecycle', () => {
 
     // Close the marker so the canonical fixture is restored for later specs.
     post(() => `/api/transactions/${txnId}/initiate-return`)
+    uploadReturnEvidence(() => txnId)
     post(() => `/api/transactions/${txnId}/report-handback`)
     loginViaApi(ahmed)
     post(() => `/api/transactions/${txnId}/confirm-return`)

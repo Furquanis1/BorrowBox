@@ -1,10 +1,11 @@
--- BorrowBox V2.2.5 schema baseline (Community + Membership + Rules + Assets
+-- BorrowBox V2.2.6 schema baseline (Community + Membership + Rules + Assets
 -- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock
--- + Loan Extensions)
+-- + Loan Extensions + Return Disputes + Evidence)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
---   assets, asset_units, community_listings, transactions, transaction_messages
+--   assets, asset_units, community_listings, transactions,
+--   transaction_messages, transaction_evidence
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -141,6 +142,9 @@ CREATE TABLE IF NOT EXISTS community_listings (
 -- extension_offered_due_at, extension_note, extension_requested_at), all
 -- nullable; the fields hold the single pending negotiation and are cleared on
 -- resolution so that the durable history lives in the conversation timeline.
+-- V2.2.6 adds the return-dispute record (return_disputed_at /
+-- return_disputed_by), stamped by the lender's "not received" action while
+-- RETURN_DISPUTED. The disputed AssetUnit stays BORROWED.
 CREATE TABLE IF NOT EXISTS transactions (
     id                       BIGINT       NOT NULL AUTO_INCREMENT,
     community_id             BIGINT       NOT NULL,
@@ -171,6 +175,8 @@ CREATE TABLE IF NOT EXISTS transactions (
     extension_offered_due_at   DATETIME(6) DEFAULT NULL,
     extension_note             VARCHAR(255) DEFAULT NULL,
     extension_requested_at     DATETIME(6) DEFAULT NULL,
+    return_disputed_at       DATETIME(6)  DEFAULT NULL,
+    return_disputed_by       BIGINT       DEFAULT NULL,
     completed_at             DATETIME(6)  DEFAULT NULL,
     created_at               DATETIME(6)  NOT NULL,
     updated_at               DATETIME(6)  NOT NULL,
@@ -182,6 +188,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     CONSTRAINT fk_transactions_lender        FOREIGN KEY (lender_id) REFERENCES users (id),
     CONSTRAINT fk_transactions_reserved_unit FOREIGN KEY (reserved_unit_id) REFERENCES asset_units (id),
     CONSTRAINT fk_transactions_decided_by    FOREIGN KEY (decided_by) REFERENCES users (id),
+    CONSTRAINT fk_transactions_return_disputed_by FOREIGN KEY (return_disputed_by) REFERENCES users (id),
     CONSTRAINT uq_transactions_reserved_unit UNIQUE (reserved_unit_id),
     INDEX idx_transactions_lender_state (lender_id, state),
     INDEX idx_transactions_borrower_state (borrower_id, state),
@@ -205,4 +212,25 @@ CREATE TABLE IF NOT EXISTS transaction_messages (
     CONSTRAINT fk_txn_messages_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
     CONSTRAINT fk_txn_messages_author      FOREIGN KEY (author_id)      REFERENCES users (id),
     INDEX idx_txn_messages_txn_created (transaction_id, created_at)
+) ENGINE=InnoDB;
+
+-- V2.2.6 transaction-scoped evidence: one row per uploaded evidence photo
+-- during the return side of a loan. The binary is stored on the server media
+-- directory; ``file_ref`` is a UUID-only reference never derived from user
+-- input. ``captured_at`` is stamped by the backend clock at upload time;
+-- client clocks are never trusted. Evidence is immutable (no update/delete).
+CREATE TABLE IF NOT EXISTS transaction_evidence (
+    id             BIGINT         NOT NULL AUTO_INCREMENT,
+    transaction_id BIGINT         NOT NULL,
+    type           VARCHAR(30)    NOT NULL,
+    capturer_id    BIGINT         NOT NULL,
+    file_ref       VARCHAR(255)   NOT NULL,
+    content_type   VARCHAR(100)   NOT NULL,
+    size_bytes     BIGINT         NOT NULL,
+    captured_at    DATETIME(6)    NOT NULL,
+    created_at     DATETIME(6)    NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_transaction_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT fk_transaction_evidence_capturer    FOREIGN KEY (capturer_id)    REFERENCES users (id),
+    INDEX idx_txn_evidence_txn_captured (transaction_id, captured_at)
 ) ENGINE=InnoDB;

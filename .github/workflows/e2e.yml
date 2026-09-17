@@ -94,6 +94,11 @@ jobs:
         working-directory: frontend
         env:
           CYPRESS_BASE_URL: http://localhost:3000
+          CYPRESS_DB_HOST: 127.0.0.1
+          CYPRESS_DB_PORT: '3306'
+          CYPRESS_DB_NAME: borrowbox_db
+          CYPRESS_DB_USER: root
+          CYPRESS_DB_PASSWORD: rootpassword
         run: npx cypress run --headless --browser chrome
 
       - name: Upload Cypress Screenshots on Failure

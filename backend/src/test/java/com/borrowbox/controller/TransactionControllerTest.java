@@ -93,6 +93,7 @@ public class TransactionControllerTest {
                 false, false,
                 false, false, false,
                 null,
+                null,
                 LocalDateTime.of(2026, 1, 2, 10, 0),
                 LocalDateTime.of(2026, 1, 2, 10, 0));
     }
@@ -272,6 +273,15 @@ public class TransactionControllerTest {
         when(transactionService.disputeHandover(1L, currentUser)).thenReturn(pendingResponse);
 
         mockMvc.perform(post("/api/transactions/1/dispute-handover"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void disputeReturnDelegates() throws Exception {
+        when(transactionService.disputeReturn(1L, currentUser)).thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/dispute-return"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("PENDING"));
     }

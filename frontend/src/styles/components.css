@@ -1974,6 +1974,53 @@ select,
   border-radius: var(--r-md);
 }
 
+.conversation-window-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+
+.conversation-return-action .conversation-return-hint {
+  margin-bottom: var(--sp-2);
+}
+
+.conversation-evidence {
+  padding-top: var(--sp-3);
+}
+
+.conversation-evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.conversation-evidence-item {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+}
+
+.conversation-evidence-item img {
+  display: block;
+  width: 100%;
+  height: 7rem;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.conversation-evidence-item figcaption {
+  padding: var(--sp-1) var(--sp-2);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .conversation-extension-action {
   display: flex;
   flex-direction: column;

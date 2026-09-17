@@ -139,6 +139,14 @@ public class Transaction {
     @Column(name = "extension_requested_at")
     private LocalDateTime extensionRequestedAt;
 
+    @Column(name = "return_disputed_at")
+    private LocalDateTime returnDisputedAt;
+
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "return_disputed_by")
+    private User returnDisputedBy;
+
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
@@ -393,6 +401,22 @@ public class Transaction {
 
     public void setExtensionRequestedAt(LocalDateTime extensionRequestedAt) {
         this.extensionRequestedAt = extensionRequestedAt;
+    }
+
+    public LocalDateTime getReturnDisputedAt() {
+        return returnDisputedAt;
+    }
+
+    public void setReturnDisputedAt(LocalDateTime returnDisputedAt) {
+        this.returnDisputedAt = returnDisputedAt;
+    }
+
+    public User getReturnDisputedBy() {
+        return returnDisputedBy;
+    }
+
+    public void setReturnDisputedBy(User returnDisputedBy) {
+        this.returnDisputedBy = returnDisputedBy;
     }
 
     public LocalDateTime getCompletedAt() {

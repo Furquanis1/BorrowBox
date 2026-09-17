@@ -2,6 +2,7 @@ package com.borrowbox.integration;
 
 import com.borrowbox.config.SeedDataInitializer;
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.EvidenceResponse;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.ListingCreateRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
@@ -13,6 +14,7 @@ import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
@@ -31,10 +33,17 @@ import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,6 +54,8 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -74,6 +85,8 @@ public class TransactionIntegrationTest {
     @Autowired private AssetUnitRepository assetUnitRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
+    @Autowired private PlatformTransactionManager platformTransactionManager;
+    @Value("${borrowbox.media.dir}") private String mediaDir;
 
     // ── Helpers ───────────────────────────────────────────────────────
 
@@ -391,6 +404,10 @@ public class TransactionIntegrationTest {
         assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
 
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
@@ -430,6 +447,10 @@ public class TransactionIntegrationTest {
         assertThatThrownBy(() -> transactionService.confirmReturn(returned.id(), ahmed))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
 
@@ -502,6 +523,10 @@ public class TransactionIntegrationTest {
 
         // The borrower reports the physical handback; the lender can then confirm
         // receipt. Messaging stays open through RETURN_REPORTED.
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+        transactionService.uploadEvidence(
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
         transactionMessageService.sendMessage(reported.id(), ahmed, "Thanks, I will confirm shortly");
@@ -509,7 +534,7 @@ public class TransactionIntegrationTest {
         TransactionResponse completed = transactionService.confirmReturn(reported.id(), ahmed);
         assertThat(completed.state()).isEqualTo(TransactionStatus.COMPLETED);
 
-        // The completed archive carries the full timeline, including the five
+        // The completed archive carries the full timeline, including the seven
         // SYSTEM markers produced by the lifecycle transitions.
         List<TransactionMessageResponse> timeline = transactionMessageService.listMessages(completed.id(), ahmed);
         List<String> systemBodies = timeline.stream()
@@ -518,6 +543,7 @@ public class TransactionIntegrationTest {
                 .toList();
         assertThat(systemBodies).containsExactly(
                 "Handover scheduled", "Loan started", "Return initiated",
+                "Evidence added: BORROWER_PRE_RETURN", "Evidence added: BORROWER_RETURN_HANDOVER",
                 "Handback reported", "Loan completed");
         assertThat(timeline).allSatisfy(message -> assertThat(message.createdAt()).isNotNull());
 
@@ -529,7 +555,7 @@ public class TransactionIntegrationTest {
                 });
 
         // COMPLETED is a read-only archive: reads allowed, writes rejected.
-        assertThat(transactionMessageService.listMessages(completed.id(), salah)).hasSize(11);
+        assertThat(transactionMessageService.listMessages(completed.id(), salah)).hasSize(13);
         assertThatThrownBy(() -> transactionMessageService.sendMessage(completed.id(), salah, "hi"))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
@@ -863,5 +889,145 @@ public class TransactionIntegrationTest {
         assertThat(countOf(football, AssetUnitStatus.RESERVED))
                 .as("race cleanup restores the seeded reservation count")
                 .isEqualTo(1);
+    }
+
+    // ── V2.2.6 return disputes + evidence ─────────────────────────────
+
+    private MockMultipartFile photo(String name, byte[] content) {
+        return new MockMultipartFile("file", name, "image/png", content);
+    }
+
+    private TransactionResponse activateToReturnReported(Asset football, User ahmed, User salah) {
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+        return transactionService.reportHandback(initiated.id(), salah);
+    }
+
+    private long mediaFileCount() {
+        Path dir = Path.of(mediaDir);
+        if (!Files.isDirectory(dir)) {
+            return 0;
+        }
+        try (Stream<Path> entries = Files.list(dir)) {
+            return entries.count();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Could not list the media directory", ex);
+        }
+    }
+
+    @Test
+    @Transactional
+    void disputeReturnMarksTerminalAndKeepsUnitBorrowed() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse reported = activateToReturnReported(football, ahmed, salah);
+        assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
+
+        TransactionResponse disputed = transactionService.disputeReturn(reported.id(), ahmed);
+
+        assertThat(disputed.state()).isEqualTo(TransactionStatus.RETURN_DISPUTED);
+        assertThat(disputed.returnDisputedAt()).isNotNull();
+        assertThat(disputed.reservationHeld()).isTrue();
+        assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
+
+        List<TransactionMessageResponse> timeline =
+                transactionMessageService.listMessages(disputed.id(), salah);
+        assertThat(timeline).extracting(TransactionMessageResponse::body)
+                .contains("Return disputed")
+                .doesNotContain("Loan completed");
+    }
+
+    @Test
+    @Transactional
+    void reportHandbackRequiresBothReturnEvidencePhotos() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+
+        assertThatThrownBy(() -> transactionService.reportHandback(initiated.id(), salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Both return evidence photos are required before reporting the handback");
+
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+        assertThatThrownBy(() -> transactionService.reportHandback(initiated.id(), salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Both return evidence photos are required before reporting the handback");
+
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+        assertThat(transactionService.reportHandback(initiated.id(), salah).state())
+                .isEqualTo(TransactionStatus.RETURN_REPORTED);
+    }
+
+    @Test
+    @Transactional
+    void evidenceVisibleOnlyToParticipants() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        User youssef = seedUser("youssef@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+        EvidenceResponse uploaded = transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1, 2, 3}), salah);
+
+        List<EvidenceResponse> fromBorrower = transactionService.listEvidence(initiated.id(), salah);
+        List<EvidenceResponse> fromLender = transactionService.listEvidence(initiated.id(), ahmed);
+        assertThat(fromBorrower).hasSize(1);
+        assertThat(fromBorrower.get(0).id()).isEqualTo(uploaded.id());
+        assertThat(fromLender).hasSize(1);
+
+        assertThatThrownBy(() -> transactionService.listEvidence(initiated.id(), youssef))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> transactionService.getEvidenceContent(uploaded.id(), youssef))
+                .isInstanceOf(UnauthorizedException.class);
+
+        TransactionService.EvidenceContent content =
+                transactionService.getEvidenceContent(uploaded.id(), salah);
+        assertThat(content.contentType()).isEqualTo("image/png");
+        assertThat(content.bytes()).containsExactly(1, 2, 3);
+    }
+
+    @Test
+    void uploadedEvidenceFilesAreDeletedWhenTransactionRollsBack() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        long before = mediaFileCount();
+        AtomicLong during = new AtomicLong();
+
+        TransactionTemplate template = new TransactionTemplate(platformTransactionManager);
+        template.execute(status -> {
+            TransactionResponse active = activateToActive(football, ahmed, salah);
+            TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+            transactionService.uploadEvidence(
+                    initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+            transactionService.uploadEvidence(
+                    initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+            during.set(mediaFileCount());
+            status.setRollbackOnly();
+            return null;
+        });
+
+        assertThat(during.get()).as("both files exist while the transaction is active")
+                .isEqualTo(before + 2);
+        assertThat(mediaFileCount()).as("rolled-back uploads leave no orphaned files")
+                .isEqualTo(before);
     }
 }
