@@ -17,6 +17,7 @@ import com.borrowbox.repository.AssetRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
+import com.borrowbox.repository.WaitlistEntryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +55,9 @@ public class CommunityListingServiceTest {
     @Mock
     private MembershipService membershipService;
 
+    @Mock
+    private WaitlistEntryRepository waitlistEntryRepository;
+
     private CommunityListingService listingService;
 
     private User owner;
@@ -64,7 +68,7 @@ public class CommunityListingServiceTest {
     void setUp() {
         listingService = new CommunityListingService(
                 listingRepository, assetRepository, communityRepository,
-                assetUnitRepository, membershipService);
+                assetUnitRepository, membershipService, waitlistEntryRepository);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);

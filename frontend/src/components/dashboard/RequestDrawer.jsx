@@ -2,14 +2,16 @@ import React, { useState } from 'react'
 import Drawer from '../ui/Drawer'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
-import { requestService } from '../../services'
+import { requestService, waitlistService } from '../../services'
 
 /**
- * Drawer for requesting a listed item from a community. The borrower states a
- * purpose and a requested duration; the lender then approves, rejects or
- * counter-offers from their lend-request inbox.
+ * Drawer for requesting a listed item from a community. Supports two modes:
+ *  - 'request' (default): creates a normal PENDING transaction.
+ *  - 'waitlist': joins the per-asset waitlist (availableUnits === 0).
+ *
+ * In both modes the borrower states a purpose and a requested duration.
  */
-export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
+export default function RequestDrawer({ open, onClose, listing, onSubmitted, mode = 'request' }) {
   const [purpose, setPurpose] = useState('')
   const [duration, setDuration] = useState(3)
   const [note, setNote] = useState('')
@@ -17,6 +19,8 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
   const [busy, setBusy] = useState(false)
 
   if (!listing) return null
+
+  const isWaitlist = mode === 'waitlist'
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -32,8 +36,13 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
     }
     setBusy(true)
     try {
-      const created = await requestService.create(listing.id, trimmedPurpose, Number(duration))
-      onSubmitted?.(created)
+      if (isWaitlist) {
+        const joined = await waitlistService.join(listing.id, trimmedPurpose, Number(duration))
+        onSubmitted?.(joined)
+      } else {
+        const created = await requestService.create(listing.id, trimmedPurpose, Number(duration))
+        onSubmitted?.(created)
+      }
     } catch (err) {
       setError(err?.message || 'Could not send the request.')
     } finally {
@@ -41,13 +50,30 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
     }
   }
 
+  const drawerTitle = isWaitlist
+    ? `Join waitlist for "${listing.title}"`
+    : `Request "${listing.title}"`
+
   return (
-    <Drawer open={open} onClose={onClose} title={`Request "${listing.title}"`} className="request-drawer">
+    <Drawer open={open} onClose={onClose} title={drawerTitle} className="request-drawer">
       <form className="request-drawer-form" onSubmit={handleSubmit} noValidate>
         <div className="request-drawer-summary">
-          <span className="badge badge-teal">{listing.availableUnits} available</span>
+          {isWaitlist ? (
+            <span className="badge badge-info">
+              {listing.waitingCount || 0} waiting
+            </span>
+          ) : (
+            <span className="badge badge-teal">{listing.availableUnits} available</span>
+          )}
           <span className="badge badge-neutral">{listing.communityName}</span>
         </div>
+
+        {isWaitlist && (
+          <p className="request-drawer-hint">
+            No units are available right now. You&apos;ll be queued and automatically
+            promoted when a unit is released.
+          </p>
+        )}
 
         <Input
           id="request-purpose"
@@ -69,14 +95,16 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
           onChange={(event) => setDuration(event.target.value)}
         />
 
-        <Input
-          id="request-note"
-          label="Note to the owner (optional)"
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          placeholder="Anything the owner should know"
-          autoComplete="off"
-        />
+        {!isWaitlist && (
+          <Input
+            id="request-note"
+            label="Note to the owner (optional)"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Anything the owner should know"
+            autoComplete="off"
+          />
+        )}
 
         {error && (
           <p className="field-error" role="alert">
@@ -86,8 +114,8 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted }) {
 
         <div className="request-drawer-actions">
           <Button type="submit" loading={busy} block>
-            <i className="bi bi-send" aria-hidden="true" />
-            Send request
+            <i className={isWaitlist ? 'bi bi-clock-history' : 'bi bi-send'} aria-hidden="true" />
+            {isWaitlist ? 'Join waitlist' : 'Send request'}
           </Button>
         </div>
       </form>

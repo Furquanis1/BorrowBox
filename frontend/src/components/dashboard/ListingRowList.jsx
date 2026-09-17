@@ -1,12 +1,13 @@
 import React from 'react'
 import Button from '../ui/Button'
 
-export default function ListingRowList({ listings, myAssetIds = [], onRequest }) {
+export default function ListingRowList({ listings, myAssetIds = [], onRequest, onJoinWaitlist }) {
   return (
     <ul className="explore-listing-list">
       {listings.map((listing) => {
         const isMine = myAssetIds.includes(Number(listing.assetId))
         const canRequest = Boolean(onRequest) && !isMine && listing.availableUnits > 0
+        const canJoinWaitlist = Boolean(onJoinWaitlist) && !isMine && listing.availableUnits === 0
         return (
           <li key={listing.id} className="explore-listing-row">
             <div className="explore-listing-row-main">
@@ -19,6 +20,9 @@ export default function ListingRowList({ listings, myAssetIds = [], onRequest })
               <span>{listing.availableUnits} available</span>
               <span>{listing.borrowedUnits} borrowed</span>
               <span>{listing.totalUnits} total</span>
+              {listing.waitingCount > 0 && (
+                <span className="badge badge-info">{listing.waitingCount} waiting</span>
+              )}
               {canRequest && (
                 <Button
                   variant="outline"
@@ -28,6 +32,17 @@ export default function ListingRowList({ listings, myAssetIds = [], onRequest })
                 >
                   <i className="bi bi-send" aria-hidden="true" />
                   Request
+                </Button>
+              )}
+              {canJoinWaitlist && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onJoinWaitlist(listing)}
+                  className="join-waitlist-button"
+                >
+                  <i className="bi bi-clock-history" aria-hidden="true" />
+                  Join waitlist
                 </Button>
               )}
             </div>

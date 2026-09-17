@@ -1,11 +1,11 @@
--- BorrowBox V2.2.6 schema baseline (Community + Membership + Rules + Assets
+-- BorrowBox V2.2.7 schema baseline (Community + Membership + Rules + Assets
 -- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock
--- + Loan Extensions + Return Disputes + Evidence)
+-- + Loan Extensions + Return Disputes + Evidence + Queueing/Waitlist)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
 --   assets, asset_units, community_listings, transactions,
---   transaction_messages, transaction_evidence
+--   transaction_messages, transaction_evidence, waitlist_entries
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -233,4 +233,38 @@ CREATE TABLE IF NOT EXISTS transaction_evidence (
     CONSTRAINT fk_transaction_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
     CONSTRAINT fk_transaction_evidence_capturer    FOREIGN KEY (capturer_id)    REFERENCES users (id),
     INDEX idx_txn_evidence_txn_captured (transaction_id, captured_at)
+) ENGINE=InnoDB;
+
+-- V2.2.7 queueing/waitlist: one row per (asset, borrower) queue position for a
+-- shared Asset across all communities that list it. The queue is per Asset and
+-- entered through a specific CommunityListing; listing_id pins the community
+-- the borrower queued in (community_id is derivable from listing_id and is NOT
+-- duplicated). created_at is server-stamped at insert and, together with id, is
+-- the authoritative queue order — client timestamps never determine position.
+-- status is WAITING | PROMOTED | LEFT (V2.2.7):
+--   WAITING   live and eligible for promotion.
+--   PROMOTED  promotion succeeded: a normal PENDING transaction was created and
+--             the entry is terminal audit (promoted_at stamped by the server).
+--   LEFT      only when promotion skips an ineligible head (unlisted / archived
+--             / no longer an active member / became owner); permanent, never
+--             revived. A voluntary leave hard-deletes the WAITING row instead.
+-- UNIQUE(asset_id, borrower_id) is the authoritative guard for one live
+-- position per Asset.
+CREATE TABLE IF NOT EXISTS waitlist_entries (
+    id                       BIGINT       NOT NULL AUTO_INCREMENT,
+    asset_id                 BIGINT       NOT NULL,
+    listing_id               BIGINT       NOT NULL,
+    borrower_id              BIGINT       NOT NULL,
+    purpose                  VARCHAR(255) NOT NULL,
+    requested_duration_days  INT          NOT NULL,
+    status                   VARCHAR(20)  NOT NULL DEFAULT 'WAITING',
+    created_at               DATETIME(6)  NOT NULL,
+    promoted_at              DATETIME(6)  DEFAULT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_waitlist_entries_asset     FOREIGN KEY (asset_id)     REFERENCES assets (id),
+    CONSTRAINT fk_waitlist_entries_listing   FOREIGN KEY (listing_id)   REFERENCES community_listings (id),
+    CONSTRAINT fk_waitlist_entries_borrower  FOREIGN KEY (borrower_id)  REFERENCES users (id),
+    CONSTRAINT uq_waitlist_asset_borrower UNIQUE (asset_id, borrower_id),
+    INDEX idx_waitlist_asset_status_created (asset_id, status, created_at),
+    INDEX idx_waitlist_borrower_status (borrower_id, status)
 ) ENGINE=InnoDB;

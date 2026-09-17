@@ -53,6 +53,21 @@ function restoreReturnDispute(txnId) {
   return true
 }
 
+/**
+ * Removes waitlist rows created by the waitlist spec so the canonical seeded
+ * fixture (empty waitlists) survives for later specs. No product API deletes
+ * arbitrary waitlist entries, so the suite cleans the table directly. The
+ * marker must be a purpose prefix the spec guaranteed unique.
+ */
+function restoreWaitlist(marker) {
+  if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
+    throw new Error(`Invalid waitlist marker: ${marker}`)
+  }
+  const sql = `DELETE FROM waitlist_entries WHERE purpose LIKE '${marker}%';`
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
 module.exports = defineConfig({
   e2e: {
     baseUrl: process.env.CYPRESS_BASE_URL || 'http://localhost:3000',
@@ -68,6 +83,7 @@ module.exports = defineConfig({
     setupNodeEvents(on) {
       on('task', {
         restoreReturnDispute,
+        restoreWaitlist,
       })
     },
   },

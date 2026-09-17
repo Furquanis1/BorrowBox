@@ -11,6 +11,7 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.CommunityStatus;
 import com.borrowbox.entity.ListingStatus;
 import com.borrowbox.entity.User;
+import com.borrowbox.entity.WaitlistStatus;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
@@ -18,6 +19,7 @@ import com.borrowbox.repository.AssetRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
+import com.borrowbox.repository.WaitlistEntryRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,17 +47,20 @@ public class CommunityListingService {
     private final CommunityRepository communityRepository;
     private final AssetUnitRepository assetUnitRepository;
     private final MembershipService membershipService;
+    private final WaitlistEntryRepository waitlistEntryRepository;
 
     public CommunityListingService(CommunityListingRepository listingRepository,
                                    AssetRepository assetRepository,
                                    CommunityRepository communityRepository,
                                    AssetUnitRepository assetUnitRepository,
-                                   MembershipService membershipService) {
+                                   MembershipService membershipService,
+                                   WaitlistEntryRepository waitlistEntryRepository) {
         this.listingRepository = listingRepository;
         this.assetRepository = assetRepository;
         this.communityRepository = communityRepository;
         this.assetUnitRepository = assetUnitRepository;
         this.membershipService = membershipService;
+        this.waitlistEntryRepository = waitlistEntryRepository;
     }
 
     public record ListingResult(ListingResponse response, boolean created) {
@@ -216,6 +221,10 @@ public class CommunityListingService {
         long totalUnits = assetUnitRepository.countByAssetIdAndStatusNot(assetId, AssetUnitStatus.ARCHIVED);
         long availableUnits = assetUnitRepository.countByAssetIdAndStatus(assetId, AssetUnitStatus.AVAILABLE);
         long borrowedUnits = assetUnitRepository.countByAssetIdAndStatus(assetId, AssetUnitStatus.BORROWED);
+        // V2.2.7: per-Asset waitlist, so the count is identical across every
+        // community listing the same asset. Count only; never waiter identities.
+        long waitingCount = waitlistEntryRepository.countByAssetIdAndStatus(
+                assetId, WaitlistStatus.WAITING);
         Category category = asset.getCategory();
         return new ListingResponse(
                 listing.getId(),
@@ -230,7 +239,8 @@ public class CommunityListingService {
                 category != null ? category.getName() : null,
                 totalUnits,
                 availableUnits,
-                borrowedUnits
+                borrowedUnits,
+                waitingCount
         );
     }
 }

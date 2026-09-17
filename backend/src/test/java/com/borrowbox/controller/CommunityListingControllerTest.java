@@ -73,7 +73,7 @@ public class CommunityListingControllerTest {
                 701L, 500L, 900L, "CSE Department", ListingStatus.LISTED,
                 LocalDateTime.of(2026, 1, 1, 9, 0),
                 "Football", "Match-size football", null, null,
-                2L, 1L, 1L);
+                2L, 1L, 1L, 0L);
     }
 
     @Test
@@ -121,7 +121,7 @@ public class CommunityListingControllerTest {
                 701L, 500L, 900L, "CSE Department", ListingStatus.UNLISTED,
                 LocalDateTime.of(2026, 1, 1, 9, 0),
                 "Football", "Match-size football", null, null,
-                2L, 1L, 1L);
+                2L, 1L, 1L, 0L);
         when(listingService.unlist(500L, 900L, currentUser)).thenReturn(unlisted);
 
         mockMvc.perform(delete("/api/assets/500/listings/900"))

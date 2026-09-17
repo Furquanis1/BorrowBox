@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { useAsync } from '../../hooks/useAsync'
-import { requestService } from '../../services'
+import { requestService, waitlistService } from '../../services'
 import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
@@ -204,6 +204,33 @@ function TransactionCard({
   )
 }
 
+function WaitlistCard({ entry, busy, onLeave }) {
+  return (
+    <li className="transaction-card waitlist-card">
+      <div className="transaction-card-head">
+        <div className="transaction-card-main">
+          <h3>{entry.assetTitle}</h3>
+          <p className="transaction-card-subline">{entry.communityName}</p>
+          <p className="transaction-card-terms">
+            &ldquo;{entry.purpose}&rdquo; · {entry.requestedDurationDays} days requested
+          </p>
+        </div>
+        <span className="badge badge-info">Position #{entry.position}</span>
+      </div>
+      <p className="transaction-card-note">
+        Waiting since {new Date(entry.createdAt).toLocaleDateString()}. You&apos;ll be promoted
+        automatically when a unit is released.
+      </p>
+      <div className="transaction-card-actions">
+        <Button variant="outline" size="sm" loading={busy === 'leave'} onClick={() => onLeave()}>
+          <i className="bi bi-x-lg" aria-hidden="true" />
+          Leave waitlist
+        </Button>
+      </div>
+    </li>
+  )
+}
+
 const EmptyRequests = ({ title, description, icon }) => (
   <EmptyState icon={icon} title={title} description={description} />
 )
@@ -217,13 +244,19 @@ export default function RequestsPage() {
 
   const fetchIncoming = useCallback(() => requestService.getLendRequests(), [])
   const fetchMine = useCallback(() => requestService.getMine(), [])
+  const fetchWaitlist = useCallback(() => waitlistService.getMine(), [])
 
   const incomingState = useAsync(fetchIncoming, [])
   const mineState = useAsync(fetchMine, [])
+  const waitlistState = useAsync(fetchWaitlist, [])
 
   const refreshAll = async () => {
     triggerRefresh()
-    await Promise.allSettled([incomingState.reload(), mineState.reload()])
+    await Promise.allSettled([
+      incomingState.reload(),
+      mineState.reload(),
+      waitlistState.reload(),
+    ])
   }
 
   const run = async (task, successMessage) => {
@@ -241,11 +274,18 @@ export default function RequestsPage() {
 
   const incoming = (incomingState.data || []).filter((t) => REQUEST_STATES.has(t.state))
   const mine = (mineState.data || []).filter((t) => REQUEST_STATES.has(t.state))
-  const loading = incomingState.loading || mineState.loading
-  const loadError = incomingState.error || mineState.error
+  const waiting = waitlistState.data || []
+  const loading = incomingState.loading || mineState.loading || waitlistState.loading
+  const loadError = incomingState.error || mineState.error || waitlistState.error
 
   const requestCards = tab === 'incoming' ? incoming : mine
   const role = tab === 'incoming' ? 'lender' : 'mine'
+
+  const handleLeave = (entryId) =>
+    run(
+      { key: 'leave', run: () => waitlistService.leave(entryId) },
+      'You left the waitlist.'
+    )
 
   const handleCounterSubmitted = async () => {
     setCounterTarget(null)
@@ -253,7 +293,7 @@ export default function RequestsPage() {
     await refreshAll()
   }
 
-  if (loading && requestCards.length === 0) {
+  if (loading && requestCards.length === 0 && waiting.length === 0) {
     return (
       <div className="requests-page request-inbox">
         <Spinner />
@@ -261,7 +301,7 @@ export default function RequestsPage() {
     )
   }
 
-  if (loadError && requestCards.length === 0) {
+  if (loadError && requestCards.length === 0 && waiting.length === 0) {
     return (
       <div className="requests-page request-inbox">
         <EmptyRequests
@@ -301,9 +341,38 @@ export default function RequestsPage() {
           My requests
           <span className="requests-tab-count">{mine.length}</span>
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'waiting'}
+          className={`requests-tab${tab === 'waiting' ? ' active' : ''}`}
+          onClick={() => setTab('waiting')}
+        >
+          Waiting
+          <span className="requests-tab-count">{waiting.length}</span>
+        </button>
       </div>
 
-      {requestCards.length === 0 ? (
+      {tab === 'waiting' ? (
+        waiting.length === 0 ? (
+          <EmptyRequests
+            icon="bi-clock-history"
+            title="Not waiting on anything"
+            description="Join a waitlist from a community Explore page when an item has no available units."
+          />
+        ) : (
+          <ul className="transaction-list">
+            {waiting.map((entry) => (
+              <WaitlistCard
+                key={entry.id}
+                entry={entry}
+                busy={busy}
+                onLeave={() => handleLeave(entry.id)}
+              />
+            ))}
+          </ul>
+        )
+      ) : requestCards.length === 0 ? (
         tab === 'incoming' ? (
           <EmptyRequests
             icon="bi-inbox"
