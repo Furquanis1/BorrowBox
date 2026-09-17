@@ -16,6 +16,7 @@ export default function ExplorePage() {
   const { showToast, triggerRefresh } = useApp()
   const community = communities.find((c) => String(c.id) === String(communityId)) || null
   const [requestListing, setRequestListing] = useState(null)
+  const [waitlistListing, setWaitlistListing] = useState(null)
 
   const fetchListings = useCallback(() => {
     if (!community) return Promise.resolve([])
@@ -35,6 +36,19 @@ export default function ExplorePage() {
   const handleRequested = async () => {
     setRequestListing(null)
     showToast('Request sent. The owner will see it in their lend requests.')
+    triggerRefresh()
+    try {
+      await reload()
+    } catch (err) {
+      showToast(err?.message || 'Failed to refresh listings', 'error')
+    }
+  }
+
+  const handleWaitlistJoined = async (joined) => {
+    setWaitlistListing(null)
+    showToast(
+      `You are #${joined.position} in the waitlist. You'll be promoted when a unit is released.`
+    )
     triggerRefresh()
     try {
       await reload()
@@ -73,6 +87,7 @@ export default function ExplorePage() {
             listings={listings}
             myAssetIds={myAssetIds || []}
             onRequest={(listing) => setRequestListing(listing)}
+            onJoinWaitlist={(listing) => setWaitlistListing(listing)}
           />
         </section>
       )}
@@ -82,6 +97,15 @@ export default function ExplorePage() {
         onClose={() => setRequestListing(null)}
         listing={requestListing}
         onSubmitted={handleRequested}
+        mode="request"
+      />
+
+      <RequestDrawer
+        open={!!waitlistListing}
+        onClose={() => setWaitlistListing(null)}
+        listing={waitlistListing}
+        onSubmitted={handleWaitlistJoined}
+        mode="waitlist"
       />
     </div>
   )

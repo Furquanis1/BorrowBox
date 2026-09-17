@@ -71,6 +71,9 @@ public class TransactionServiceTest {
     @Mock
     private EvidenceStorageService evidenceStorageService;
 
+    @Mock
+    private WaitlistService waitlistService;
+
     private TransactionService transactionService;
 
     private User owner;
@@ -85,7 +88,7 @@ public class TransactionServiceTest {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
                 membershipService, messageService, evidenceRepository,
-                evidenceStorageService, 5_242_880L);
+                evidenceStorageService, waitlistService, 5_242_880L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -371,6 +374,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isFalse();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
         verify(assetUnitRepository).save(unit);
+        verify(waitlistService).promoteForAsset(500L);
     }
 
     // ── counter-offer ─────────────────────────────────────────────────
@@ -473,6 +477,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isFalse();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
         verify(assetUnitRepository).save(unit);
+        verify(waitlistService).promoteForAsset(500L);
     }
 
     @Test
@@ -770,6 +775,7 @@ public class TransactionServiceTest {
         assertThat(txn.getReservedUnit()).isNull();
         verify(assetUnitRepository).save(unit);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan completed"));
+        verify(waitlistService).promoteForAsset(500L);
     }
 
     @Test
@@ -935,6 +941,7 @@ public class TransactionServiceTest {
         assertThat(txn.getReservedAt()).isNull();
         assertThat(response.reservationHeld()).isFalse();
         verify(assetUnitRepository).save(unit);
+        verify(waitlistService).promoteForAsset(500L);
     }
 
     @Test

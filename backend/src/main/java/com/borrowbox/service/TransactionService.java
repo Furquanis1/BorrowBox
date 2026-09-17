@@ -103,6 +103,13 @@ import java.util.List;
  *    reportHandback is accepted. The binary is stored by EvidenceStorageService
  *    (server media directory); the Evidence row is transaction-scoped and
  *    visible only to participants. Evidence is immutable.
+ *
+ * V2.2.7 queueing / waitlist:
+ *  - Every transition that releases an AssetUnit to AVAILABLE (reject, cancel,
+ *    disputeHandover, confirmReturn) immediately attempts synchronous waitlist
+ *    promotion in the same transaction through WaitlistService.promoteForAsset.
+ *  - RETURN_DISPUTED deliberately does NOT release the unit and does NOT
+ *    trigger promotion.
  */
 @Service
 public class TransactionService {
@@ -126,6 +133,7 @@ public class TransactionService {
     private final TransactionMessageService messageService;
     private final EvidenceRepository evidenceRepository;
     private final EvidenceStorageService evidenceStorageService;
+    private final WaitlistService waitlistService;
     private final long maxEvidenceBytes;
 
     public TransactionService(TransactionRepository transactionRepository,
@@ -135,6 +143,7 @@ public class TransactionService {
                               TransactionMessageService messageService,
                               EvidenceRepository evidenceRepository,
                               EvidenceStorageService evidenceStorageService,
+                              WaitlistService waitlistService,
                               @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
@@ -143,6 +152,7 @@ public class TransactionService {
         this.messageService = messageService;
         this.evidenceRepository = evidenceRepository;
         this.evidenceStorageService = evidenceStorageService;
+        this.waitlistService = waitlistService;
         this.maxEvidenceBytes = maxEvidenceBytes;
     }
 
@@ -261,6 +271,9 @@ public class TransactionService {
         txn.setDecidedBy(lender);
         txn.setDecisionNote(note(request));
         releaseReservation(txn);
+        // V2.2.7: a freed unit immediately promotes the next waiter in the same
+        // transaction. No-op when nobody is waiting or nothing became available.
+        waitlistService.promoteForAsset(txn.getAsset().getId());
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -350,6 +363,9 @@ public class TransactionService {
 
         txn.setState(TransactionStatus.CANCELLED);
         releaseReservation(txn);
+        // V2.2.7: a freed unit immediately promotes the next waiter in the same
+        // transaction. No-op when nobody is waiting or nothing became available.
+        waitlistService.promoteForAsset(txn.getAsset().getId());
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -446,6 +462,9 @@ public class TransactionService {
         clearExtensionNegotiation(txn);
         txn.setState(TransactionStatus.HANDOVER_DISPUTED);
         messageService.addSystemEvent(txn, "Handover disputed");
+        // V2.2.7: the released unit immediately promotes the next waiter in the
+        // same transaction. No-op when nobody is waiting or nothing was released.
+        waitlistService.promoteForAsset(txn.getAsset().getId());
         return toResponse(transactionRepository.save(txn));
     }
 
@@ -641,6 +660,9 @@ public class TransactionService {
         txn.setReservedUnit(null);
         txn.setReservedAt(null);
         messageService.addSystemEvent(txn, "Loan completed");
+        // V2.2.7: the returned unit immediately promotes the next waiter in the
+        // same transaction. No-op when nobody is waiting.
+        waitlistService.promoteForAsset(txn.getAsset().getId());
         return toResponse(transactionRepository.save(txn));
     }
 

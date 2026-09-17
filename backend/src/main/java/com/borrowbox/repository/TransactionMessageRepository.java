@@ -1,5 +1,6 @@
 package com.borrowbox.repository;
 
+import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.TransactionMessage;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -14,4 +15,6 @@ public interface TransactionMessageRepository extends JpaRepository<TransactionM
      * chronicle-ascending (server-provided createdAt).
      */
     List<TransactionMessage> findByTransactionIdOrderByCreatedAtAsc(Long transactionId);
+
+    List<TransactionMessage> findByTransactionIdAndKind(Long transactionId, MessageKind kind);
 }

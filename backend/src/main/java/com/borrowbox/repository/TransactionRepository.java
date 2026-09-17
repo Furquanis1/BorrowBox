@@ -1,6 +1,7 @@
 package com.borrowbox.repository;
 
 import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -27,4 +28,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
     List<Transaction> findByLenderIdOrderByIdDesc(Long lenderId);
 
     Optional<Transaction> findByReservedUnitId(Long reservedUnitId);
+
+    Optional<Transaction> findByAssetIdAndBorrowerIdAndStateIn(
+            Long assetId, Long borrowerId, List<TransactionStatus> states);
+
+    List<Transaction> findByAssetIdOrderByIdDesc(Long assetId);
 }
