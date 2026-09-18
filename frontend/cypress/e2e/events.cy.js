@@ -44,6 +44,7 @@ describe('V2.2.8 Transaction Events & Global Event Envelope', () => {
   const get = (buildPath) => cy.wrap(null).then(() => cy.request('GET', buildPath()))
 
   before(() => {
+    cy.task('purgeEvents')
     loginViaApi(ahmed)
     cy.request('GET', '/api/communities').then((res) => {
       cseId = res.body.find((c) => c.name === 'CSE Department').id

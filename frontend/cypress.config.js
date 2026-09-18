@@ -91,6 +91,23 @@ function restoreEvents(marker) {
 /**
  * Comprehensive cleanup task for events tests - simplified version
  */
+/**
+ * Wipes all transaction event rows so the events spec always starts from an
+ * empty event database regardless of which specs ran before it. Only the V2.2.8
+ * event tables are touched; no other spec reads them and events.cy.js rebuilds
+ * its own fixtures, so a full clean is safe and deterministic.
+ */
+function purgeEvents() {
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    'DELETE FROM transaction_event_deliveries;',
+    'DELETE FROM transaction_events;',
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
 function cleanupEventsDb(marker) {
   if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
     throw new Error(`Invalid events marker: ${marker}`)
@@ -127,6 +144,7 @@ module.exports = defineConfig({
         restoreWaitlist,
         restoreEvents,
         cleanupEventsDb,
+        purgeEvents,
       })
     },
   },
