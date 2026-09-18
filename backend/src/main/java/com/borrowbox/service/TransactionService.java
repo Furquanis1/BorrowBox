@@ -25,6 +25,8 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
+import com.borrowbox.service.TransactionEventService;
+import com.borrowbox.entity.TransactionEventType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -134,6 +136,7 @@ public class TransactionService {
     private final EvidenceRepository evidenceRepository;
     private final EvidenceStorageService evidenceStorageService;
     private final WaitlistService waitlistService;
+    private final TransactionEventService eventService;
     private final long maxEvidenceBytes;
 
     public TransactionService(TransactionRepository transactionRepository,
@@ -144,6 +147,7 @@ public class TransactionService {
                               EvidenceRepository evidenceRepository,
                               EvidenceStorageService evidenceStorageService,
                               WaitlistService waitlistService,
+                              TransactionEventService eventService,
                               @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
@@ -153,6 +157,7 @@ public class TransactionService {
         this.evidenceRepository = evidenceRepository;
         this.evidenceStorageService = evidenceStorageService;
         this.waitlistService = waitlistService;
+        this.eventService = eventService;
         this.maxEvidenceBytes = maxEvidenceBytes;
     }
 
@@ -250,7 +255,9 @@ public class TransactionService {
         txn.setDecidedAt(now);
         txn.setDecidedBy(lender);
         txn.setDecisionNote(note(request));
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_APPROVED, lender, null);
+        return response;
     }
 
     /**
@@ -274,7 +281,9 @@ public class TransactionService {
         // V2.2.7: a freed unit immediately promotes the next waiter in the same
         // transaction. No-op when nobody is waiting or nothing became available.
         waitlistService.promoteForAsset(txn.getAsset().getId());
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_REJECTED, lender, null);
+        return response;
     }
 
     /**
@@ -329,7 +338,9 @@ public class TransactionService {
         txn.setAgreedAt(now);
         txn.setDecidedAt(now);
         txn.setDecidedBy(borrower);
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_APPROVED, borrower, null);
+        return response;
     }
 
     /**
@@ -366,7 +377,9 @@ public class TransactionService {
         // V2.2.7: a freed unit immediately promotes the next waiter in the same
         // transaction. No-op when nobody is waiting or nothing became available.
         waitlistService.promoteForAsset(txn.getAsset().getId());
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_CANCELLED, actor, null);
+        return response;
     }
 
     /**
@@ -382,7 +395,9 @@ public class TransactionService {
 
         txn.setState(TransactionStatus.AWAITING_HANDOVER);
         messageService.addSystemEvent(txn, "Handover scheduled");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_SCHEDULED, actor, null);
+        return response;
     }
 
     /**
@@ -414,7 +429,9 @@ public class TransactionService {
         unit.setStatus(AssetUnitStatus.BORROWED);
         assetUnitRepository.save(unit);
         messageService.addSystemEvent(txn, "Loan started");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_STARTED, lender, null);
+        return response;
     }
 
     /**
@@ -437,7 +454,9 @@ public class TransactionService {
 
         txn.setBorrowerConfirmedAt(LocalDateTime.now());
         messageService.addSystemEvent(txn, "Borrower confirmed receipt");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_CONFIRMED, borrower, null);
+        return response;
     }
 
     /**
@@ -465,7 +484,9 @@ public class TransactionService {
         // V2.2.7: the released unit immediately promotes the next waiter in the
         // same transaction. No-op when nobody is waiting or nothing was released.
         waitlistService.promoteForAsset(txn.getAsset().getId());
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_DISPUTED, borrower, null);
+        return response;
     }
 
     /**
@@ -491,7 +512,12 @@ public class TransactionService {
         txn.setExtensionNote(trimToNull(request.note()));
         txn.setExtensionRequestedAt(now);
         messageService.addSystemEvent(txn, "Extension requested");
-        return toResponse(transactionRepository.save(txn));
+        String payload = request.newDueAt() != null
+                ? String.format("{\"newDueAt\":\"%s\"}", request.newDueAt().toString())
+                : null;
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REQUESTED, borrower, payload);
+        return response;
     }
 
     /**
@@ -510,7 +536,9 @@ public class TransactionService {
         txn.setDueAt(txn.getExtensionRequestedDueAt());
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension approved");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_APPROVED, lender, null);
+        return response;
     }
 
     /**
@@ -527,7 +555,9 @@ public class TransactionService {
 
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension rejected");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REJECTED, lender, null);
+        return response;
     }
 
     /**
@@ -550,7 +580,12 @@ public class TransactionService {
         txn.setExtensionOfferedDueAt(request.newDueAt());
         txn.setExtensionNote(trimToNull(request.note()));
         messageService.addSystemEvent(txn, "Extension countered");
-        return toResponse(transactionRepository.save(txn));
+        String payload = request.newDueAt() != null
+                ? String.format("{\"offeredDueAt\":\"%s\"}", request.newDueAt().toString())
+                : null;
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTERED, lender, payload);
+        return response;
     }
 
     /**
@@ -569,7 +604,9 @@ public class TransactionService {
         txn.setDueAt(txn.getExtensionOfferedDueAt());
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension counter accepted");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_ACCEPTED, borrower, null);
+        return response;
     }
 
     /**
@@ -586,7 +623,9 @@ public class TransactionService {
 
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension counter rejected");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_REJECTED, borrower, null);
+        return response;
     }
 
     /**
@@ -607,7 +646,9 @@ public class TransactionService {
 
         txn.setState(TransactionStatus.RETURN_INITIATED);
         messageService.addSystemEvent(txn, "Return initiated");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_INITIATED, borrower, null);
+        return response;
     }
 
     /**
@@ -629,7 +670,9 @@ public class TransactionService {
 
         txn.setState(TransactionStatus.RETURN_REPORTED);
         messageService.addSystemEvent(txn, "Handback reported");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_REPORTED, borrower, null);
+        return response;
     }
 
     /**
@@ -663,7 +706,9 @@ public class TransactionService {
         // V2.2.7: the returned unit immediately promotes the next waiter in the
         // same transaction. No-op when nobody is waiting.
         waitlistService.promoteForAsset(txn.getAsset().getId());
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_COMPLETED, lender, null);
+        return response;
     }
 
     /**
@@ -690,7 +735,9 @@ public class TransactionService {
         txn.setReturnDisputedAt(now);
         txn.setReturnDisputedBy(lender);
         messageService.addSystemEvent(txn, "Return disputed");
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_DISPUTED, lender, null);
+        return response;
     }
 
     /**

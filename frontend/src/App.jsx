@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { CommunityProvider } from './contexts/CommunityContext'
 import { AppProvider } from './contexts/AppContext'
+import { EventProvider } from './contexts/EventContext'
 import PublicLayout from './components/layout/PublicLayout'
 import AppShell from './components/layout/AppShell'
 import CommunityPageLayout from './components/layout/CommunityPageLayout'
@@ -79,8 +80,9 @@ export default function App() {
     <AuthProvider>
       <CommunityProvider>
         <AppProvider>
-          <Router>
-            <Routes>
+          <EventProvider>
+            <Router>
+              <Routes>
               <Route element={<PublicLayout />}>
                 <Route path="/" element={<LandingPage />} />
                 <Route
@@ -164,8 +166,9 @@ export default function App() {
             </Routes>
             <Toast />
           </Router>
-        </AppProvider>
-      </CommunityProvider>
-    </AuthProvider>
+        </EventProvider>
+      </AppProvider>
+    </CommunityProvider>
+  </AuthProvider>
   )
 }

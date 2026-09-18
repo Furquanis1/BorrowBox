@@ -10,6 +10,7 @@ import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.ListingStatus;
 import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionEventType;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.WaitlistEntry;
@@ -21,6 +22,7 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.WaitlistEntryRepository;
+import com.borrowbox.service.TransactionEventService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,6 +63,9 @@ public class WaitlistServiceTest {
     @Mock
     private TransactionMessageService messageService;
 
+    @Mock
+    private TransactionEventService eventService;
+
     private WaitlistService waitlistService;
 
     private User owner;
@@ -78,7 +83,7 @@ public class WaitlistServiceTest {
     void setUp() {
         waitlistService = new WaitlistService(
                 waitlistEntryRepository, listingRepository, assetUnitRepository,
-                transactionRepository, membershipService, messageService);
+                transactionRepository, membershipService, messageService, eventService);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -340,6 +345,7 @@ WaitlistEntry mine = entry(10L, cseListing, salah, WaitlistStatus.WAITING);
         verify(waitlistEntryRepository).save(head);
         verify(transactionRepository).saveAndFlush(any(Transaction.class));
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Promoted from waitlist"));
+        verify(eventService).createEventAndDeliveries(any(Transaction.class), eq(TransactionEventType.WAITLIST_PROMOTED), eq(null), eq(null));
     }
 
     @Test
@@ -351,9 +357,9 @@ WaitlistEntry mine = entry(10L, cseListing, salah, WaitlistStatus.WAITING);
         verify(waitlistEntryRepository, org.mockito.Mockito.never()).findFirstWaitingForUpdate(anyLong());
     }
 
-    @Test
+@Test
     void promoteSkipsIneligibleHeadAndPromotesNext() {
-AssetUnit free = new AssetUnit();
+        AssetUnit free = new AssetUnit();
         free.setId(779L);
         free.setStatus(AssetUnitStatus.AVAILABLE);
         when(assetUnitRepository.findFirstByAssetIdAndStatusForUpdate(500L))
@@ -376,6 +382,7 @@ AssetUnit free = new AssetUnit();
         assertThat(next.getStatus()).isEqualTo(WaitlistStatus.PROMOTED);
         verify(waitlistEntryRepository).save(ineligible);
         verify(waitlistEntryRepository).save(next);
+        verify(eventService).createEventAndDeliveries(any(Transaction.class), eq(TransactionEventType.WAITLIST_PROMOTED), eq(null), eq(null));
     }
 
     @Test
@@ -418,6 +425,7 @@ AssetUnit free = new AssetUnit();
         // head is now PROMOTED and locked; the loop reads again, needs a unit →
         // optional empty → returns. No second transaction, no double allocation.
         assertThat(head.getStatus()).isEqualTo(WaitlistStatus.PROMOTED);
+        verify(eventService).createEventAndDeliveries(any(Transaction.class), eq(TransactionEventType.WAITLIST_PROMOTED), eq(null), eq(null));
     }
 
     @Test

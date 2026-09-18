@@ -68,6 +68,47 @@ function restoreWaitlist(marker) {
   return true
 }
 
+function restoreEvents(marker) {
+  if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
+    throw new Error(`Invalid events marker: ${marker}`)
+  }
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
+    `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
+    `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
+/**
+ * Comprehensive cleanup for events tests: cancels/rejects all marker transactions
+ * and releases their units. Handles both lender and borrower perspectives.
+ */
+/**
+ * Comprehensive cleanup task for events tests - simplified version
+ */
+function cleanupEventsDb(marker) {
+  if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
+    throw new Error(`Invalid events marker: ${marker}`)
+  }
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
+    `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
+    `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM transaction_evidence WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM transaction_messages WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
 module.exports = defineConfig({
   e2e: {
     baseUrl: process.env.CYPRESS_BASE_URL || 'http://localhost:3000',
@@ -84,6 +125,8 @@ module.exports = defineConfig({
       on('task', {
         restoreReturnDispute,
         restoreWaitlist,
+        restoreEvents,
+        cleanupEventsDb,
       })
     },
   },

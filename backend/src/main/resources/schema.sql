@@ -1,11 +1,13 @@
--- BorrowBox V2.2.7 schema baseline (Community + Membership + Rules + Assets
+-- BorrowBox V2.2.8 schema baseline (Community + Membership + Rules + Assets
 -- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock
--- + Loan Extensions + Return Disputes + Evidence + Queueing/Waitlist)
+-- + Loan Extensions + Return Disputes + Evidence + Queueing/Waitlist
+-- + Transaction Events)
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
 --   assets, asset_units, community_listings, transactions,
---   transaction_messages, transaction_evidence, waitlist_entries
+--   transaction_messages, transaction_evidence, waitlist_entries,
+--   transaction_events, transaction_event_deliveries
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -267,4 +269,42 @@ CREATE TABLE IF NOT EXISTS waitlist_entries (
     CONSTRAINT uq_waitlist_asset_borrower UNIQUE (asset_id, borrower_id),
     INDEX idx_waitlist_asset_status_created (asset_id, status, created_at),
     INDEX idx_waitlist_borrower_status (borrower_id, status)
+) ENGINE=InnoDB;
+
+-- V2.2.8 transaction events: structured semantic events with per-recipient delivery state.
+-- Separate from transaction_messages (SYSTEM conversation history).
+-- Created atomically in the same transaction as the underlying transaction state mutation.
+-- actor_id is nullable for system-generated events (e.g., waitlist promotion).
+-- payload is nullable JSON for structured event data (e.g., extension details).
+CREATE TABLE IF NOT EXISTS transaction_events (
+    id                       BIGINT       NOT NULL AUTO_INCREMENT,
+    transaction_id           BIGINT       NOT NULL,
+    event_type               VARCHAR(40)  NOT NULL,
+    actor_id                 BIGINT       DEFAULT NULL,
+    payload                  JSON         DEFAULT NULL,
+    created_at               DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_txn_events_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT fk_txn_events_actor       FOREIGN KEY (actor_id)       REFERENCES users (id),
+    INDEX idx_txn_events_txn_created (transaction_id, created_at),
+    INDEX idx_txn_events_type (event_type)
+) ENGINE=InnoDB;
+
+-- V2.2.8 per-recipient delivery of transaction events.
+-- Tracks read/dismiss state per recipient.
+-- UNIQUE(event_id, recipient_id) ensures exactly one delivery per recipient per event.
+-- Status: UNREAD -> READ (open), UNREAD -> DISMISSED (later), DISMISSED -> READ (open from panel).
+CREATE TABLE IF NOT EXISTS transaction_event_deliveries (
+    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    event_id        BIGINT       NOT NULL,
+    recipient_id    BIGINT       NOT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'UNREAD',
+    read_at         DATETIME(6)  DEFAULT NULL,
+    dismissed_at    DATETIME(6)  DEFAULT NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_txn_event_deliveries_event     FOREIGN KEY (event_id)     REFERENCES transaction_events (id),
+    CONSTRAINT fk_txn_event_deliveries_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),
+    CONSTRAINT uq_txn_event_delivery UNIQUE (event_id, recipient_id),
+    INDEX idx_txn_event_deliveries_recipient_status (recipient_id, status)
 ) ENGINE=InnoDB;
