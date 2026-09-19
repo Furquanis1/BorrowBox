@@ -41,8 +41,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * V2.2.1 deterministic, idempotent development seed.
@@ -390,12 +392,21 @@ public class SeedDataInitializer implements ApplicationRunner {
      * receipt-of-return are attributed to the lender, receipt-of-item and
      * return initiation/reporting to the borrower.
      *
-     * Idempotency key is (asset, borrower, COMPLETED): once present the fixture
-     * is never duplicated. A completed transaction holds no reservation, so
-     * reservedUnit stays NULL and no asset-unit status is ever touched.
-     * Events are created WITHOUT deliveries so /api/me/events stays clean.
+     * Idempotency key is (asset, borrower, COMPLETED): once the transaction is
+     * present it is never duplicated and none of its fields are rewritten. A
+     * completed transaction holds no reservation, so reservedUnit stays NULL
+     * and no asset-unit status is ever touched. Events are created WITHOUT
+     * deliveries so /api/me/events stays clean.
      *
-     * All lifecycle timestamps derive from the fixed SEED_BASE constant.
+     * Reconciliation: the transaction is the stable fixture identity, but its
+     * lifecycle rows are reconciled independently so the fixture self-heals when
+     * only its dependent rows are removed (for example the e2e event purge).
+     * Missing lifecycle events and SYSTEM messages are recreated one-by-one;
+     * existing rows are left untouched and never duplicated. See
+     * {@link #reconcileCompletedLifecycle}.
+     *
+     * All lifecycle timestamps derive from the fixed SEED_BASE constant; the
+     * seed never reads the application clock for these fixtures.
      */
     private void completedFixture(Asset asset, Community community,
                                   User borrower, User lender,
@@ -407,8 +418,10 @@ public class SeedDataInitializer implements ApplicationRunner {
                                   LocalDateTime returnInitiatedAt,
                                   LocalDateTime returnReportedAt,
                                   LocalDateTime completedAt) {
-        if (transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
-                asset.getId(), borrower.getId(), List.of(TransactionStatus.COMPLETED)).isPresent()) {
+        Transaction existing = transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
+                asset.getId(), borrower.getId(), List.of(TransactionStatus.COMPLETED)).orElse(null);
+        if (existing != null) {
+            reconcileCompletedLifecycle(existing, borrower, lender);
             return;
         }
         CommunityListing listing = communityListingRepository
@@ -444,19 +457,64 @@ public class SeedDataInitializer implements ApplicationRunner {
         txn.setCompletedAt(completedAt);
         Transaction saved = transactionRepository.save(txn);
 
-        seedLifecycleEvent(saved, TransactionEventType.REQUEST_APPROVED, lender);
-        seedLifecycleEvent(saved, TransactionEventType.HANDOVER_SCHEDULED, lender);
-        seedSystemMessage(saved, "Handover scheduled");
-        seedLifecycleEvent(saved, TransactionEventType.LOAN_STARTED, lender);
-        seedSystemMessage(saved, "Loan started");
-        seedLifecycleEvent(saved, TransactionEventType.HANDOVER_CONFIRMED, borrower);
-        seedSystemMessage(saved, "Borrower confirmed receipt");
-        seedLifecycleEvent(saved, TransactionEventType.RETURN_INITIATED, borrower);
-        seedSystemMessage(saved, "Return initiated");
-        seedLifecycleEvent(saved, TransactionEventType.RETURN_REPORTED, borrower);
-        seedSystemMessage(saved, "Handback reported");
-        seedLifecycleEvent(saved, TransactionEventType.LOAN_COMPLETED, lender);
-        seedSystemMessage(saved, "Loan completed");
+        reconcileCompletedLifecycle(saved, borrower, lender);
+    }
+
+    /**
+     * Reconciles one completed fixture's dependent lifecycle rows.
+     * <p>
+     * Identity is stable and deterministic: events by (transaction, eventType)
+     * and SYSTEM messages by (transaction, SYSTEM kind, body). Every required
+     * row that is absent is recreated through the same creation path used for a
+     * brand-new fixture, so reconstructed rows carry the same actor mapping,
+     * body text and entity-managed timestamps as the originals. Present rows are
+     * never modified or duplicated, and no TransactionEventDelivery rows are
+     * ever created. Running the seed repeatedly therefore converges to exactly
+     * one transaction with exactly one of each lifecycle row, in any order of
+     * prior partial deletion.
+     */
+    private void reconcileCompletedLifecycle(Transaction txn, User borrower, User lender) {
+        Set<TransactionEventType> existingEventTypes = new HashSet<>();
+        for (TransactionEvent event : transactionEventRepository
+                .findByTransactionIdOrderByCreatedAtAsc(txn.getId())) {
+            existingEventTypes.add(event.getEventType());
+        }
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.REQUEST_APPROVED, lender);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.HANDOVER_SCHEDULED, lender);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.LOAN_STARTED, lender);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.HANDOVER_CONFIRMED, borrower);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.RETURN_INITIATED, borrower);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.RETURN_REPORTED, borrower);
+        seedLifecycleEventIfMissing(txn, existingEventTypes, TransactionEventType.LOAN_COMPLETED, lender);
+
+        Set<String> existingSystemBodies = new HashSet<>();
+        for (TransactionMessage message : transactionMessageRepository
+                .findByTransactionIdAndKind(txn.getId(), MessageKind.SYSTEM)) {
+            existingSystemBodies.add(message.getBody());
+        }
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Handover scheduled");
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Loan started");
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Borrower confirmed receipt");
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Return initiated");
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Handback reported");
+        seedSystemMessageIfMissing(txn, existingSystemBodies, "Loan completed");
+    }
+
+    private void seedLifecycleEventIfMissing(Transaction txn, Set<TransactionEventType> existing,
+                                             TransactionEventType eventType, User actor) {
+        if (existing.contains(eventType)) {
+            return;
+        }
+        seedLifecycleEvent(txn, eventType, actor);
+        existing.add(eventType);
+    }
+
+    private void seedSystemMessageIfMissing(Transaction txn, Set<String> existing, String body) {
+        if (existing.contains(body)) {
+            return;
+        }
+        seedSystemMessage(txn, body);
+        existing.add(body);
     }
 
     private void seedLifecycleEvent(Transaction txn, TransactionEventType eventType, User actor) {

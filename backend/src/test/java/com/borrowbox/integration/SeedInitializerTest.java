@@ -451,7 +451,127 @@ public class SeedInitializerTest {
         assertThat(messagesAfterSecond).isEqualTo(messagesAfterFirst);
     }
 
+    // ── V2.3.1 reconciliation of partially deleted fixtures ─────────────
+
+    /**
+     * Reproduces the exact order-dependent failure: the completed transaction
+     * survives an external event purge while its transaction_events rows are
+     * gone. Re-running the seed must restore every lifecycle event exactly once,
+     * create no deliveries, keep the SYSTEM messages singular, and stay a no-op
+     * on a second run.
+     */
+    @Test
+    void v231SeedRecreatesDeletedLifecycleEventsWithoutDuplicates() {
+        seedDataInitializer.seed();
+
+        Transaction football = seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com");
+        List<TransactionEventType> lifecycle = List.of(
+                TransactionEventType.REQUEST_APPROVED,
+                TransactionEventType.HANDOVER_SCHEDULED,
+                TransactionEventType.LOAN_STARTED,
+                TransactionEventType.HANDOVER_CONFIRMED,
+                TransactionEventType.RETURN_INITIATED,
+                TransactionEventType.RETURN_REPORTED,
+                TransactionEventType.LOAN_COMPLETED);
+        assertThat(eventsFor(football)).extracting(TransactionEvent::getEventType)
+                .containsExactlyElementsOf(lifecycle);
+
+        // The e2e purge deletes every transaction_events row but leaves the
+        // completed transaction behind.
+        transactionEventRepository.deleteAll(eventsFor(football));
+        transactionEventRepository.flush();
+        assertThat(eventsFor(football)).isEmpty();
+        assertThat(transactionRepository.findById(football.getId())).isPresent();
+
+        seedDataInitializer.seed();
+
+        List<TransactionEvent> restored = eventsFor(football);
+        assertThat(restored).extracting(TransactionEvent::getEventType)
+                .containsExactlyElementsOf(lifecycle);
+        assertThat(restored).extracting(TransactionEvent::getEventType).doesNotHaveDuplicates();
+
+        List<TransactionMessage> systemMessages = systemMessagesFor(football);
+        assertThat(systemMessages).extracting(TransactionMessage::getBody)
+                .containsExactly(
+                        "Handover scheduled",
+                        "Loan started",
+                        "Borrower confirmed receipt",
+                        "Return initiated",
+                        "Handback reported",
+                        "Loan completed");
+
+        for (TransactionEvent event : restored) {
+            assertThat(transactionEventDeliveryRepository.findByEventId(event.getId()))
+                    .as("deliveries for restored event %s", event.getEventType())
+                    .isEmpty();
+        }
+
+        long eventCount = restored.size();
+        long messageCount = systemMessages.size();
+
+        seedDataInitializer.seed();
+
+        assertThat(eventsFor(football)).hasSize((int) eventCount);
+        assertThat(eventsFor(football)).extracting(TransactionEvent::getEventType).doesNotHaveDuplicates();
+        assertThat(systemMessagesFor(football)).hasSize((int) messageCount);
+    }
+
+    /**
+     * Partial deletion: only the missing event/message is recreated, existing
+     * rows keep their identity, and the audit actor/text mapping is preserved.
+     */
+    @Test
+    void v231SeedRecreatesOnlyMissingLifecycleRows() {
+        seedDataInitializer.seed();
+
+        Transaction football = seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com");
+
+        TransactionEvent missingEvent = eventsFor(football).stream()
+                .filter(e -> e.getEventType() == TransactionEventType.RETURN_REPORTED)
+                .findFirst()
+                .orElseThrow();
+        transactionEventRepository.delete(missingEvent);
+        transactionEventRepository.flush();
+
+        TransactionMessage missingMessage = systemMessagesFor(football).stream()
+                .filter(m -> "Handback reported".equals(m.getBody()))
+                .findFirst()
+                .orElseThrow();
+        transactionMessageRepository.delete(missingMessage);
+        transactionMessageRepository.flush();
+
+        List<Long> survivingEventIds = eventsFor(football).stream()
+                .map(TransactionEvent::getId)
+                .toList();
+
+        seedDataInitializer.seed();
+
+        List<TransactionEvent> afterReconcile = eventsFor(football);
+        assertThat(afterReconcile).extracting(TransactionEvent::getEventType)
+                .contains(TransactionEventType.RETURN_REPORTED)
+                .doesNotHaveDuplicates();
+        assertThat(afterReconcile.stream().map(TransactionEvent::getId).toList())
+                .containsAll(survivingEventIds);
+        assertThat(systemMessagesFor(football)).extracting(TransactionMessage::getBody)
+                .contains("Handback reported")
+                .doesNotHaveDuplicates();
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────
+
+    private List<TransactionEvent> eventsFor(Transaction txn) {
+        return transactionEventRepository
+                .findByTransactionIdOrderByCreatedAtAsc(txn.getId()).stream()
+                .sorted(Comparator.comparing(TransactionEvent::getId))
+                .toList();
+    }
+
+    private List<TransactionMessage> systemMessagesFor(Transaction txn) {
+        return transactionMessageRepository
+                .findByTransactionIdAndKind(txn.getId(), MessageKind.SYSTEM).stream()
+                .sorted(Comparator.comparing(TransactionMessage::getId))
+                .toList();
+    }
 
     private Asset findAssetByOwnerAndTitle(User owner, String title) {
         return assetRepository.findByOwnerId(owner.getId()).stream()

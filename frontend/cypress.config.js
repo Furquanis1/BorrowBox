@@ -92,10 +92,12 @@ function restoreEvents(marker) {
  * Comprehensive cleanup task for events tests - simplified version
  */
 /**
- * Wipes all transaction event rows so the events spec always starts from an
- * empty event database regardless of which specs ran before it. Only the V2.2.8
- * event tables are touched; no other spec reads them and events.cy.js rebuilds
- * its own fixtures, so a full clean is safe and deterministic.
+ * Intentionally wipes all transaction event rows so the events spec always
+ * starts from an empty event database regardless of which specs ran before it.
+ * Only the V2.2.8 event tables are touched. The V2.3.1 seeded transaction rows
+ * are deliberately left in the database: the seed reconciles its own missing
+ * lifecycle events and SYSTEM messages on the next run (without creating any
+ * deliveries), so purging here does not leave the backend seed tests broken.
  */
 function purgeEvents() {
   const sql = [
