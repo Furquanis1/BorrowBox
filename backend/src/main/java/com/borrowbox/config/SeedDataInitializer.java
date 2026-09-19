@@ -14,7 +14,11 @@ import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.MembershipVerificationMethod;
+import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionEvent;
+import com.borrowbox.entity.TransactionEventType;
+import com.borrowbox.entity.TransactionMessage;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.UserStatus;
@@ -23,6 +27,8 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.TransactionEventRepository;
+import com.borrowbox.repository.TransactionMessageRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +67,14 @@ import java.util.Map;
 @Component
 public class SeedDataInitializer implements ApplicationRunner {
 
+    /**
+     * V2.3.1 fixed deterministic base timestamp. Every lifecycle timestamp of
+     * the completed seed fixtures (approval, handover, start, return, receipt)
+     * is derived from this constant, never from the application clock, so the
+     * seed is reproducible and the on-time / late classification is stable.
+     */
+    private static final LocalDateTime SEED_BASE = LocalDateTime.of(2026, 8, 1, 9, 0, 0);
+
     private final UserRepository userRepository;
     private final CommunityRepository communityRepository;
     private final MembershipRepository membershipRepository;
@@ -68,6 +82,8 @@ public class SeedDataInitializer implements ApplicationRunner {
     private final AssetUnitRepository assetUnitRepository;
     private final CommunityListingRepository communityListingRepository;
     private final TransactionRepository transactionRepository;
+    private final TransactionEventRepository transactionEventRepository;
+    private final TransactionMessageRepository transactionMessageRepository;
     private final PasswordEncoder passwordEncoder;
 
     public SeedDataInitializer(UserRepository userRepository,
@@ -77,6 +93,8 @@ public class SeedDataInitializer implements ApplicationRunner {
                                AssetUnitRepository assetUnitRepository,
                                CommunityListingRepository communityListingRepository,
                                TransactionRepository transactionRepository,
+                               TransactionEventRepository transactionEventRepository,
+                               TransactionMessageRepository transactionMessageRepository,
                                PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.communityRepository = communityRepository;
@@ -85,6 +103,8 @@ public class SeedDataInitializer implements ApplicationRunner {
         this.assetUnitRepository = assetUnitRepository;
         this.communityListingRepository = communityListingRepository;
         this.transactionRepository = transactionRepository;
+        this.transactionEventRepository = transactionEventRepository;
+        this.transactionMessageRepository = transactionMessageRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -159,6 +179,33 @@ public class SeedDataInitializer implements ApplicationRunner {
         // Salah reserves Ahmed's Football in CSE; the fixture unit flips to
         // RESERVED (the seed never deletes or rewrites existing rows).
         backingFootballTransaction(ahmedFootball, salah, ahmed, cse);
+
+        // V2.3.1: two deterministic completed transactions exercising the full
+        // happy-path lifecycle. No asset-unit statuses are changed and no
+        // seeded events receive deliveries, so EventPanel stays clean.
+        // Fixture A (ON TIME): Karim borrowed Ahmed's Football in the
+        // Engineering Office and returned it before the agreed due date.
+        completedFixture(ahmedFootball, office, karim, ahmed,
+                "Football match practice", 3,
+                SEED_BASE.minusDays(11).withHour(8),
+                SEED_BASE.minusDays(10).withHour(9),
+                SEED_BASE.minusDays(10).withHour(10),
+                SEED_BASE.minusDays(10).withHour(10).withMinute(30),
+                SEED_BASE.minusDays(8).withHour(11),
+                SEED_BASE.minusDays(8).withHour(12),
+                SEED_BASE.minusDays(8).withHour(12).withMinute(30));
+        // Fixture B (LATE): Omar (a MANAGER) borrowed Youssef's Cordless Drill
+        // in Hostel Block B and returned it after the due date. Managers must
+        // run through exactly the same trust derivation as ordinary members.
+        completedFixture(youssefDrill, hostel, omar, youssef,
+                "Wall drilling task", 4,
+                SEED_BASE.minusDays(15).withHour(8),
+                SEED_BASE.minusDays(14).withHour(9),
+                SEED_BASE.minusDays(14).withHour(10),
+                SEED_BASE.minusDays(14).withHour(10).withMinute(30),
+                SEED_BASE.minusDays(9).withHour(11),
+                SEED_BASE.minusDays(9).withHour(12),
+                SEED_BASE.minusDays(9).withHour(12).withMinute(30));
     }
 
     private User user(String fullName, String email, String rawPassword) {
@@ -331,6 +378,103 @@ public class SeedDataInitializer implements ApplicationRunner {
         txn.setDecidedAt(now);
         txn.setDecidedBy(lender);
         transactionRepository.save(txn);
+    }
+
+    /**
+     * V2.3.1: seeds one completed transaction and its full happy-path lifecycle
+     * (REQUEST_APPROVED, HANDOVER_SCHEDULED, LOAN_STARTED, HANDOVER_CONFIRMED,
+     * RETURN_INITIATED, RETURN_REPORTED, LOAN_COMPLETED) plus the exact SYSTEM
+     * message rows the production lifecycle emits.
+     *
+     * Actors match TransactionService exactly: approval/scheduling/loan-start/
+     * receipt-of-return are attributed to the lender, receipt-of-item and
+     * return initiation/reporting to the borrower.
+     *
+     * Idempotency key is (asset, borrower, COMPLETED): once present the fixture
+     * is never duplicated. A completed transaction holds no reservation, so
+     * reservedUnit stays NULL and no asset-unit status is ever touched.
+     * Events are created WITHOUT deliveries so /api/me/events stays clean.
+     *
+     * All lifecycle timestamps derive from the fixed SEED_BASE constant.
+     */
+    private void completedFixture(Asset asset, Community community,
+                                  User borrower, User lender,
+                                  String purpose, int agreedDurationDays,
+                                  LocalDateTime approvedAt,
+                                  LocalDateTime scheduledAt,
+                                  LocalDateTime startedAt,
+                                  LocalDateTime borrowerConfirmedAt,
+                                  LocalDateTime returnInitiatedAt,
+                                  LocalDateTime returnReportedAt,
+                                  LocalDateTime completedAt) {
+        if (transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
+                asset.getId(), borrower.getId(), List.of(TransactionStatus.COMPLETED)).isPresent()) {
+            return;
+        }
+        CommunityListing listing = communityListingRepository
+                .findByAssetIdAndCommunityId(asset.getId(), community.getId())
+                .orElse(null);
+        if (listing == null) {
+            return;
+        }
+
+        LocalDateTime dueAt = startedAt.plusDays(agreedDurationDays);
+
+        Transaction txn = new Transaction();
+        txn.setCommunity(community);
+        txn.setListing(listing);
+        txn.setAsset(asset);
+        txn.setBorrower(borrower);
+        txn.setLender(lender);
+        txn.setReservedUnit(null);
+        txn.setReservedAt(null);
+        txn.setState(TransactionStatus.COMPLETED);
+        txn.setPurpose(purpose);
+        txn.setRequestedDurationDays(agreedDurationDays);
+        txn.setAgreedPurpose(purpose);
+        txn.setAgreedDurationDays(agreedDurationDays);
+        txn.setAgreedAt(approvedAt.minusMinutes(15));
+        txn.setDecidedAt(approvedAt);
+        txn.setDecidedBy(lender);
+        txn.setDecisionNote("Approved");
+        txn.setStartedAt(startedAt);
+        txn.setDueAt(dueAt);
+        txn.setOriginalDueAt(dueAt);
+        txn.setBorrowerConfirmedAt(borrowerConfirmedAt);
+        txn.setCompletedAt(completedAt);
+        Transaction saved = transactionRepository.save(txn);
+
+        seedLifecycleEvent(saved, TransactionEventType.REQUEST_APPROVED, lender);
+        seedLifecycleEvent(saved, TransactionEventType.HANDOVER_SCHEDULED, lender);
+        seedSystemMessage(saved, "Handover scheduled");
+        seedLifecycleEvent(saved, TransactionEventType.LOAN_STARTED, lender);
+        seedSystemMessage(saved, "Loan started");
+        seedLifecycleEvent(saved, TransactionEventType.HANDOVER_CONFIRMED, borrower);
+        seedSystemMessage(saved, "Borrower confirmed receipt");
+        seedLifecycleEvent(saved, TransactionEventType.RETURN_INITIATED, borrower);
+        seedSystemMessage(saved, "Return initiated");
+        seedLifecycleEvent(saved, TransactionEventType.RETURN_REPORTED, borrower);
+        seedSystemMessage(saved, "Handback reported");
+        seedLifecycleEvent(saved, TransactionEventType.LOAN_COMPLETED, lender);
+        seedSystemMessage(saved, "Loan completed");
+    }
+
+    private void seedLifecycleEvent(Transaction txn, TransactionEventType eventType, User actor) {
+        TransactionEvent event = new TransactionEvent();
+        event.setTransaction(txn);
+        event.setEventType(eventType);
+        event.setActor(actor);
+        event.setPayload(null);
+        transactionEventRepository.save(event);
+    }
+
+    private void seedSystemMessage(Transaction txn, String body) {
+        TransactionMessage message = new TransactionMessage();
+        message.setTransaction(txn);
+        message.setAuthor(null);
+        message.setKind(MessageKind.SYSTEM);
+        message.setBody(body);
+        transactionMessageRepository.save(message);
     }
 
     private Map<String, Object> mapOf(Object... entries) {

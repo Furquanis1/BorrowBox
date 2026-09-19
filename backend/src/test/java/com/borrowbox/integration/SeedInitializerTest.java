@@ -7,6 +7,9 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.TransactionEventDeliveryRepository;
+import com.borrowbox.repository.TransactionEventRepository;
+import com.borrowbox.repository.TransactionMessageRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -38,6 +42,9 @@ public class SeedInitializerTest {
     @Autowired private AssetUnitRepository assetUnitRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
+    @Autowired private TransactionEventRepository transactionEventRepository;
+    @Autowired private TransactionEventDeliveryRepository transactionEventDeliveryRepository;
+    @Autowired private TransactionMessageRepository transactionMessageRepository;
 
     // ── Idempotency ──────────────────────────────────────────────────
 
@@ -269,6 +276,179 @@ public class SeedInitializerTest {
                 .isEqualTo(CommunityAdmissionMode.MANAGER_APPROVAL);
         assertThat(byName.get("Engineering Office").getAdmissionMode())
                 .isEqualTo(CommunityAdmissionMode.LOCATION_VERIFIED);
+    }
+
+    // ── V2.3.1 completed trust-ledger fixtures ──────────────────────────
+
+    /**
+     * Resolves a seeded completed fixture by its natural key (asset, borrower).
+     * The shared MySQL test database may hold unrelated committed rows, so all
+     * V2.3.1 assertions are scoped to the two fixtures the seed owns.
+     */
+    private Transaction seededCompletedFixture(String ownerEmail, String assetTitle, String borrowerEmail) {
+        User owner = userRepository.findByEmail(ownerEmail).orElseThrow();
+        User borrower = userRepository.findByEmail(borrowerEmail).orElseThrow();
+        Asset asset = findAssetByOwnerAndTitle(owner, assetTitle);
+        return transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
+                        asset.getId(), borrower.getId(), List.of(TransactionStatus.COMPLETED))
+                .orElseThrow(() -> new AssertionError(
+                        "no completed fixture for " + assetTitle + " / " + borrowerEmail));
+    }
+
+    @Test
+    void v231SeedsExactlyOneCompletedFixturePerPair() {
+        seedDataInitializer.seed();
+
+        User karim = userRepository.findByEmail("karim@example.com").orElseThrow();
+        User omar = userRepository.findByEmail("omar@example.com").orElseThrow();
+        Asset football = findAssetByOwnerAndTitle(
+                userRepository.findByEmail("ahmed@example.com").orElseThrow(), "Football");
+        Asset drill = findAssetByOwnerAndTitle(
+                userRepository.findByEmail("youssef@example.com").orElseThrow(), "Cordless Drill");
+
+        assertThat(transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
+                football.getId(), karim.getId(), List.of(TransactionStatus.COMPLETED)))
+                .isPresent();
+        assertThat(transactionRepository.findByAssetIdAndBorrowerIdAndStateIn(
+                drill.getId(), omar.getId(), List.of(TransactionStatus.COMPLETED)))
+                .isPresent();
+    }
+
+    @Test
+    void v231CompletedFixturesMatchExpectedPartiesAndTiming() {
+        seedDataInitializer.seed();
+
+        Transaction football = seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com");
+        Transaction drill = seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com");
+
+        assertThat(football.getBorrower().getEmail()).isEqualTo("karim@example.com");
+        assertThat(football.getLender().getEmail()).isEqualTo("ahmed@example.com");
+        assertThat(football.getCommunity().getName()).isEqualTo("Engineering Office");
+        assertThat(football.getPurpose()).isEqualTo("Football match practice");
+        assertThat(football.getAgreedDurationDays()).isEqualTo(3);
+        assertThat(football.getReservedUnit()).isNull();
+        assertThat(football.getOriginalDueAt()).isEqualTo(football.getDueAt());
+        assertThat(football.getCompletedAt()).isNotNull();
+        assertThat(football.getCompletedAt().isAfter(football.getDueAt())).isFalse();
+
+        assertThat(drill.getBorrower().getEmail()).isEqualTo("omar@example.com");
+        assertThat(drill.getLender().getEmail()).isEqualTo("youssef@example.com");
+        assertThat(drill.getCommunity().getName()).isEqualTo("Hostel Block B");
+        assertThat(drill.getPurpose()).isEqualTo("Wall drilling task");
+        assertThat(drill.getAgreedDurationDays()).isEqualTo(4);
+        assertThat(drill.getReservedUnit()).isNull();
+        assertThat(drill.getOriginalDueAt()).isEqualTo(drill.getDueAt());
+        assertThat(drill.getCompletedAt()).isNotNull();
+        assertThat(drill.getCompletedAt().isAfter(drill.getDueAt())).isTrue();
+    }
+
+    @Test
+    void v231SeededLifecycleEventsMatchActors() {
+        seedDataInitializer.seed();
+
+        for (Transaction txn : List.of(
+                seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com"),
+                seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com"))) {
+            List<TransactionEvent> events = transactionEventRepository
+                    .findByTransactionIdOrderByCreatedAtAsc(txn.getId()).stream()
+                    .sorted(Comparator.comparing(TransactionEvent::getId))
+                    .toList();
+
+            assertThat(events).extracting(TransactionEvent::getEventType)
+                    .containsExactly(
+                            TransactionEventType.REQUEST_APPROVED,
+                            TransactionEventType.HANDOVER_SCHEDULED,
+                            TransactionEventType.LOAN_STARTED,
+                            TransactionEventType.HANDOVER_CONFIRMED,
+                            TransactionEventType.RETURN_INITIATED,
+                            TransactionEventType.RETURN_REPORTED,
+                            TransactionEventType.LOAN_COMPLETED);
+
+            assertThat(events.get(0).getActor().getEmail()).isEqualTo(txn.getLender().getEmail());
+            assertThat(events.get(1).getActor().getEmail()).isEqualTo(txn.getLender().getEmail());
+            assertThat(events.get(2).getActor().getEmail()).isEqualTo(txn.getLender().getEmail());
+            assertThat(events.get(3).getActor().getEmail()).isEqualTo(txn.getBorrower().getEmail());
+            assertThat(events.get(4).getActor().getEmail()).isEqualTo(txn.getBorrower().getEmail());
+            assertThat(events.get(5).getActor().getEmail()).isEqualTo(txn.getBorrower().getEmail());
+            assertThat(events.get(6).getActor().getEmail()).isEqualTo(txn.getLender().getEmail());
+        }
+    }
+
+    @Test
+    void v231SeededSystemMessagesMatchLifecycle() {
+        seedDataInitializer.seed();
+
+        for (Transaction txn : List.of(
+                seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com"),
+                seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com"))) {
+            List<TransactionMessage> systemMessages = transactionMessageRepository
+                    .findByTransactionIdAndKind(txn.getId(), MessageKind.SYSTEM).stream()
+                    .sorted(Comparator.comparing(TransactionMessage::getId))
+                    .toList();
+
+            assertThat(systemMessages).allSatisfy(m -> assertThat(m.getAuthor()).isNull());
+            assertThat(systemMessages).extracting(TransactionMessage::getBody)
+                    .containsExactly(
+                            "Handover scheduled",
+                            "Loan started",
+                            "Borrower confirmed receipt",
+                            "Return initiated",
+                            "Handback reported",
+                            "Loan completed");
+        }
+    }
+
+    @Test
+    void v231SeededEventsHaveNoDeliveries() {
+        seedDataInitializer.seed();
+
+        for (Transaction txn : List.of(
+                seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com"),
+                seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com"))) {
+            List<TransactionEvent> events = transactionEventRepository
+                    .findByTransactionIdOrderByCreatedAtAsc(txn.getId());
+            assertThat(events).isNotEmpty();
+            for (TransactionEvent event : events) {
+                assertThat(transactionEventDeliveryRepository.findByEventId(event.getId()))
+                        .as("deliveries for event %s", event.getEventType())
+                        .isEmpty();
+            }
+        }
+    }
+
+    @Test
+    void v231SeedIsIdempotentForCompletedFixtures() {
+        seedDataInitializer.seed();
+
+        List<Transaction> firstCompleted = List.of(
+                seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com"),
+                seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com"));
+        long eventsAfterFirst = firstCompleted.stream()
+                .mapToLong(t -> transactionEventRepository
+                        .findByTransactionIdOrderByCreatedAtAsc(t.getId()).size())
+                .sum();
+        long messagesAfterFirst = firstCompleted.stream()
+                .mapToLong(t -> transactionMessageRepository
+                        .findByTransactionIdAndKind(t.getId(), MessageKind.SYSTEM).size())
+                .sum();
+
+        seedDataInitializer.seed();
+
+        List<Transaction> secondCompleted = List.of(
+                seededCompletedFixture("ahmed@example.com", "Football", "karim@example.com"),
+                seededCompletedFixture("youssef@example.com", "Cordless Drill", "omar@example.com"));
+        assertThat(secondCompleted).extracting(Transaction::getId)
+                .containsExactlyInAnyOrderElementsOf(firstCompleted.stream().map(Transaction::getId).toList());
+        long eventsAfterSecond = secondCompleted.stream()
+                .mapToLong(t -> transactionEventRepository
+                        .findByTransactionIdOrderByCreatedAtAsc(t.getId()).size())
+                .sum();
+        long messagesAfterSecond = secondCompleted.stream()
+                .mapToLong(t -> transactionMessageRepository
+                        .findByTransactionIdAndKind(t.getId(), MessageKind.SYSTEM).size())
+                .sum();
+        assertThat(eventsAfterSecond).isEqualTo(eventsAfterFirst);
+        assertThat(messagesAfterSecond).isEqualTo(messagesAfterFirst);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
