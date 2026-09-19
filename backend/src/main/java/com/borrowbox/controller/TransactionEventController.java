@@ -1,6 +1,7 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.TransactionEventDeliveryResponse;
+import com.borrowbox.dto.TransactionEventResponse;
 import com.borrowbox.entity.TransactionEventDeliveryStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.service.TransactionEventService;
@@ -46,6 +47,17 @@ public class TransactionEventController {
             @PathVariable Long id) {
         User user = currentUser();
         return ResponseEntity.ok(eventService.getByTransaction(id, user));
+    }
+
+    /**
+     * V2.3.1 participant-only ledger timeline (all semantic events in
+     * createdAt ASC, id ASC order).
+     */
+    @GetMapping("/transactions/{id}/timeline")
+    public ResponseEntity<List<TransactionEventResponse>> getTransactionTimeline(
+            @PathVariable Long id) {
+        User user = currentUser();
+        return ResponseEntity.ok(eventService.getTimeline(id, user));
     }
 
     @PostMapping("/me/events/{deliveryId}/read")

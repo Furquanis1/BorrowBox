@@ -1,13 +1,16 @@
 import React from 'react'
 import Button from '../ui/Button'
 
-export default function ListingRowList({ listings, myAssetIds = [], onRequest, onJoinWaitlist }) {
+export default function ListingRowList({ listings, myAssetIds, onRequest, onJoinWaitlist }) {
+  const ownedAssetsKnown = Array.isArray(myAssetIds)
   return (
     <ul className="explore-listing-list">
       {listings.map((listing) => {
-        const isMine = myAssetIds.includes(Number(listing.assetId))
-        const canRequest = Boolean(onRequest) && !isMine && listing.availableUnits > 0
-        const canJoinWaitlist = Boolean(onJoinWaitlist) && !isMine && listing.availableUnits === 0
+        const isMine = ownedAssetsKnown && myAssetIds.includes(Number(listing.assetId))
+        const canRequest =
+          ownedAssetsKnown && Boolean(onRequest) && !isMine && listing.availableUnits > 0
+        const canJoinWaitlist =
+          ownedAssetsKnown && Boolean(onJoinWaitlist) && !isMine && listing.availableUnits === 0
         return (
           <li key={listing.id} className="explore-listing-row">
             <div className="explore-listing-row-main">

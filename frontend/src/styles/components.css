@@ -2533,3 +2533,168 @@ select,
     max-height: 60vh;
   }
 }
+
+/* ============ V2.3.1 TRUST PROFILE ============ */
+
+.profile-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-8) 0;
+}
+
+.profile-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.profile-scope select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.profile-history {
+  margin-top: var(--sp-7);
+}
+
+.trust-summary {
+  margin-bottom: var(--sp-6);
+}
+
+.trust-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+}
+
+.trust-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.trust-stat-icon {
+  color: var(--teal-600);
+  font-size: 1.1rem;
+}
+
+.trust-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.trust-stat-label {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.trust-stat-hint {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
+
+/* ============ V2.3.1 LEDGER TIMELINE ============ */
+
+/*
+ * The conversation drawer owns its scrolling: only the message list scrolls so
+ * the timeline toggle below it can never cover a message when a system entry is
+ * scrolled into view.
+ */
+.conversation-drawer .drawer-body {
+  overflow: hidden;
+}
+
+.conversation-drawer .conversation-body {
+  min-height: 0;
+}
+
+.conversation-timeline {
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--line);
+}
+
+.timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--teal-700);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timeline-toggle:hover {
+  color: var(--teal-600);
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-item {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+
+.timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--teal-50);
+  color: var(--teal-700);
+  font-size: 0.8rem;
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timeline-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.timeline-meta {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.timeline-empty {
+  margin: var(--sp-4) 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}

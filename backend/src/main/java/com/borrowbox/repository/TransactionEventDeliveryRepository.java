@@ -15,6 +15,8 @@ public interface TransactionEventDeliveryRepository extends JpaRepository<Transa
 
     Optional<TransactionEventDelivery> findByEventIdAndRecipientId(Long eventId, Long recipientId);
 
+    List<TransactionEventDelivery> findByEventId(Long eventId);
+
     List<TransactionEventDelivery> findByRecipientIdAndStatusOrderByCreatedAtDesc(Long recipientId, TransactionEventDeliveryStatus status);
 
     @Query("select d from TransactionEventDelivery d " +

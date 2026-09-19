@@ -27,6 +27,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByLenderIdOrderByIdDesc(Long lenderId);
 
+    List<Transaction> findByBorrowerIdAndCommunityIdOrderByIdDesc(Long borrowerId, Long communityId);
+
+    List<Transaction> findByLenderIdAndCommunityIdOrderByIdDesc(Long lenderId, Long communityId);
+
     Optional<Transaction> findByReservedUnitId(Long reservedUnitId);
 
     Optional<Transaction> findByAssetIdAndBorrowerIdAndStateIn(
