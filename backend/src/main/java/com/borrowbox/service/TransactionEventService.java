@@ -213,6 +213,44 @@ public class TransactionEventService {
         deliveryRepository.saveAll(unread);
     }
 
+    /**
+     * V2.3.1 ledger timeline for one transaction.
+     *
+     * Returns the canonical semantic events in deterministic order
+     * ({@code createdAt ASC, id ASC}) and is restricted to the two
+     * transaction participants. Unlike {@link #getByTransaction} this surfaces
+     * every event to both participants regardless of delivery state and never
+     * exposes other users' deliveries.
+     */
+    @Transactional(readOnly = true)
+    public List<TransactionEventResponse> getTimeline(Long transactionId, User user) {
+        if (user == null) {
+            throw new UnauthorizedException("Authentication required");
+        }
+        Transaction transaction = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction not found: " + transactionId));
+        if (!transaction.getBorrower().getId().equals(user.getId())
+                && !transaction.getLender().getId().equals(user.getId())) {
+            throw new UnauthorizedException("Only participants can view the transaction timeline");
+        }
+        return eventRepository.findByTransactionIdOrderByCreatedAtAscIdAsc(transactionId).stream()
+                .map(this::toEventResponse)
+                .collect(toList());
+    }
+
+    private TransactionEventResponse toEventResponse(TransactionEvent event) {
+        User actor = event.getActor();
+        return new TransactionEventResponse(
+                event.getId(),
+                event.getTransaction().getId(),
+                event.getEventType(),
+                actor != null ? actor.getId() : null,
+                actor != null ? actor.getFullName() : null,
+                event.getPayload(),
+                event.getCreatedAt()
+        );
+    }
+
     private TransactionEventDeliveryResponse toDeliveryResponse(TransactionEventDelivery delivery) {
         TransactionEvent event = delivery.getEvent();
         Transaction transaction = event.getTransaction();
