@@ -85,7 +85,7 @@ export default function ExplorePage() {
         <section aria-label="Explore listing">
           <ListingRowList
             listings={listings}
-            myAssetIds={myAssetIds || []}
+            myAssetIds={myAssetIds}
             onRequest={(listing) => setRequestListing(listing)}
             onJoinWaitlist={(listing) => setWaitlistListing(listing)}
           />
