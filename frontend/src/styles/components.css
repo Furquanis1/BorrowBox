@@ -2533,3 +2533,78 @@ select,
     max-height: 60vh;
   }
 }
+
+/* ============ V2.3.1 TRUST PROFILE ============ */
+
+.profile-loading {
+  display: flex;
+  justify-content: center;
+  padding: var(--sp-8) 0;
+}
+
+.profile-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.profile-scope select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.profile-history {
+  margin-top: var(--sp-7);
+}
+
+.trust-summary {
+  margin-bottom: var(--sp-6);
+}
+
+.trust-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+}
+
+.trust-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.trust-stat-icon {
+  color: var(--teal-600);
+  font-size: 1.1rem;
+}
+
+.trust-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.trust-stat-label {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.trust-stat-hint {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+}
