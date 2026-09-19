@@ -2611,6 +2611,19 @@ select,
 
 /* ============ V2.3.1 LEDGER TIMELINE ============ */
 
+/*
+ * The conversation drawer owns its scrolling: only the message list scrolls so
+ * the timeline toggle below it can never cover a message when a system entry is
+ * scrolled into view.
+ */
+.conversation-drawer .drawer-body {
+  overflow: hidden;
+}
+
+.conversation-drawer .conversation-body {
+  min-height: 0;
+}
+
 .conversation-timeline {
   padding: var(--sp-4) var(--sp-5);
   border-top: 1px solid var(--line);
@@ -2685,4 +2698,3 @@ select,
   font-size: 0.85rem;
   color: var(--ink-muted);
 }
-

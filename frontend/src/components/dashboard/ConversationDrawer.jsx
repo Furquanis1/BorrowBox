@@ -381,7 +381,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
       open={open}
       onClose={onClose}
       title={`Conversation \u2014 ${transaction.title || 'Transaction'}`}
-      className="request-drawer"
+      className="request-drawer conversation-drawer"
     >
       {loading ? (
         <div className="conversation-status">
