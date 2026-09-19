@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Drawer from '../ui/Drawer'
 import Button from '../ui/Button'
 import Spinner from '../ui/Spinner'
+import EventTimeline from './EventTimeline'
 import { useAuth } from '../../contexts/AuthContext'
-import { requestService } from '../../services'
+import { eventService, requestService } from '../../services'
 
 const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
@@ -45,6 +46,10 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const [evidence, setEvidence] = useState([])
   const [evidenceLoading, setEvidenceLoading] = useState(false)
   const [uploadingType, setUploadingType] = useState(null)
+  const [showTimeline, setShowTimeline] = useState(false)
+  const [timeline, setTimeline] = useState([])
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineError, setTimelineError] = useState('')
   const { user } = useAuth()
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -59,6 +64,9 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     setCounterNote('')
     setCounterOpen(false)
     setRequestOpen(false)
+    setShowTimeline(false)
+    setTimeline([])
+    setTimelineError('')
   }, [transaction])
 
   const active = currentTxn || transaction
@@ -96,6 +104,21 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   useEffect(() => {
     if (open && transaction && EVIDENCE_STATES.has(transaction.state)) loadEvidence()
   }, [open, transaction?.id, transaction?.state, loadEvidence])
+
+  const loadTimeline = useCallback(() => {
+    if (!transaction) return Promise.resolve()
+    setTimelineLoading(true)
+    setTimelineError('')
+    return eventService
+      .getTimeline(transaction.id)
+      .then(setTimeline)
+      .catch((err) => setTimelineError(err?.message || 'Could not load the timeline'))
+      .finally(() => setTimelineLoading(false))
+  }, [transaction])
+
+  useEffect(() => {
+    if (open && showTimeline && transaction) loadTimeline()
+  }, [open, showTimeline, transaction?.id, currentTxn?.state, loadTimeline])
 
   useEffect(() => {
     if (!loading && messages.length) {
@@ -402,6 +425,32 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
           <div ref={bottomRef} />
         </div>
       )}
+
+      <div className="conversation-timeline">
+        <button
+          type="button"
+          className="timeline-toggle"
+          aria-expanded={showTimeline}
+          onClick={() => setShowTimeline((value) => !value)}
+        >
+          <i
+            className={`bi ${showTimeline ? 'bi-chevron-down' : 'bi-chevron-right'}`}
+            aria-hidden="true"
+          />
+          Activity timeline
+        </button>
+
+        {showTimeline &&
+          (timelineLoading ? (
+            <div className="conversation-status">
+              <Spinner />
+            </div>
+          ) : timelineError ? (
+            <p className="field-error" role="alert">{timelineError}</p>
+          ) : (
+            <EventTimeline events={timeline} currentUserId={user?.id} />
+          ))}
+      </div>
 
       {state === 'HANDOVER_DISPUTED' && (
         <div className="conversation-context">

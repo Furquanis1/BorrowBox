@@ -9,6 +9,9 @@ export const eventService = {
   getByTransaction: (transactionId) =>
     apiClient.get(`/transactions/${transactionId}/events`),
 
+  getTimeline: (transactionId) =>
+    apiClient.get(`/transactions/${transactionId}/timeline`),
+
   markRead: (deliveryId) =>
     apiClient.post(`/me/events/${deliveryId}/read`),
 

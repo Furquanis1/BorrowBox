@@ -2608,3 +2608,81 @@ select,
   font-size: 0.72rem;
   color: var(--ink-faint);
 }
+
+/* ============ V2.3.1 LEDGER TIMELINE ============ */
+
+.conversation-timeline {
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--line);
+}
+
+.timeline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--teal-700);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.timeline-toggle:hover {
+  color: var(--teal-600);
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-item {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: flex-start;
+}
+
+.timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--teal-50);
+  color: var(--teal-700);
+  font-size: 0.8rem;
+}
+
+.timeline-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timeline-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.timeline-meta {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.timeline-empty {
+  margin: var(--sp-4) 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
