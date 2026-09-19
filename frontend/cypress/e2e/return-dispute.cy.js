@@ -41,6 +41,9 @@ describe('V2.2.6 Return Dispute', () => {
     cy.get('input[type="password"]').type(user.password)
     cy.get('form.auth-form button[type="submit"]').click()
     cy.url().should('include', '/communities/', { timeout: 15000 })
+    // V2.2.8: mark this user's event deliveries READ so the global Event
+    // Envelope does not overlay the legacy return-dispute UI on the next load.
+    cy.request({ method: 'POST', url: '/api/me/events/read-all' })
   }
 
   const loginViaApi = (user) => {

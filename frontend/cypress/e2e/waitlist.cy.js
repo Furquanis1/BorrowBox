@@ -100,7 +100,7 @@ describe('V2.2.7 Waitlist / Queueing', () => {
     loginViaApi(ahmed)
     cy.request('GET', '/api/me/lend-requests').then((res) => {
       res.body
-        .filter((t) => t.purpose.startsWith(marker))
+        .filter((t) => t.purpose.startsWith(marker) || t.purpose.startsWith('Events-'))
         .forEach((txn) => closeMarkerTxn(txn))
     })
   }
@@ -128,11 +128,13 @@ describe('V2.2.7 Waitlist / Queueing', () => {
     // Remove waitlist rows first so any later release finds no live waiter to
     // promote, then close marker transactions to restore canonical inventory.
     cy.task('restoreWaitlist', marker)
+    cy.task('restoreEvents', marker)
     cleanMarkerTransactions()
   })
 
   after(() => {
     cy.task('restoreWaitlist', marker)
+    cy.task('restoreEvents', marker)
     cleanMarkerTransactions()
     footballCounts().then(({ available, borrowed }) => {
       expect(available).to.equal(1)

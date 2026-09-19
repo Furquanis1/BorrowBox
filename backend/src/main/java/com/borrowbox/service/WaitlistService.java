@@ -21,6 +21,8 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.WaitlistEntryRepository;
+import com.borrowbox.service.TransactionEventService;
+import com.borrowbox.entity.TransactionEventType;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -66,19 +68,22 @@ public class WaitlistService {
     private final TransactionRepository transactionRepository;
     private final MembershipService membershipService;
     private final TransactionMessageService messageService;
+    private final TransactionEventService eventService;
 
     public WaitlistService(WaitlistEntryRepository waitlistEntryRepository,
                            CommunityListingRepository listingRepository,
                            AssetUnitRepository assetUnitRepository,
                            TransactionRepository transactionRepository,
                            MembershipService membershipService,
-                           TransactionMessageService messageService) {
+                           TransactionMessageService messageService,
+                           TransactionEventService eventService) {
         this.waitlistEntryRepository = waitlistEntryRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
         this.transactionRepository = transactionRepository;
         this.membershipService = membershipService;
         this.messageService = messageService;
+        this.eventService = eventService;
     }
 
     /**
@@ -256,6 +261,8 @@ public class WaitlistService {
         }
 
         messageService.addSystemEvent(txn, "Promoted from waitlist");
+        // V2.2.8: emit waitlist promotion event (system-generated, actor_id = null)
+        eventService.createEventAndDeliveries(txn, TransactionEventType.WAITLIST_PROMOTED, null, null);
     }
 
     private boolean isEligible(WaitlistEntry entry) {

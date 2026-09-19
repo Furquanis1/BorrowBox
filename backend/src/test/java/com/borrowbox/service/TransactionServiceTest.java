@@ -16,6 +16,7 @@ import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
 import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionEventType;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
@@ -25,6 +26,7 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
+import com.borrowbox.service.TransactionEventService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -74,6 +77,9 @@ public class TransactionServiceTest {
     @Mock
     private WaitlistService waitlistService;
 
+    @Mock
+    private TransactionEventService eventService;
+
     private TransactionService transactionService;
 
     private User owner;
@@ -88,7 +94,7 @@ public class TransactionServiceTest {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
                 membershipService, messageService, evidenceRepository,
-                evidenceStorageService, waitlistService, 5_242_880L);
+                evidenceStorageService, waitlistService, eventService, 5_242_880L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -323,6 +329,7 @@ public class TransactionServiceTest {
         assertThat(response.agreedAt()).isNotNull();
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.REQUEST_APPROVED), eq(owner), eq(null));
     }
 
     @Test
@@ -375,6 +382,7 @@ public class TransactionServiceTest {
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
         verify(assetUnitRepository).save(unit);
         verify(waitlistService).promoteForAsset(500L);
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.REQUEST_REJECTED), eq(owner), eq(null));
     }
 
     // ── counter-offer ─────────────────────────────────────────────────
@@ -443,6 +451,7 @@ public class TransactionServiceTest {
         assertThat(response.agreedDurationDays()).isEqualTo(5);
         assertThat(response.agreedAt()).isNotNull();
         assertThat(response.reservationHeld()).isTrue();
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.REQUEST_APPROVED), eq(borrower), eq(null));
     }
 
     @Test
@@ -478,6 +487,7 @@ public class TransactionServiceTest {
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
         verify(assetUnitRepository).save(unit);
         verify(waitlistService).promoteForAsset(500L);
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.REQUEST_CANCELLED), eq(borrower), eq(null));
     }
 
     @Test
@@ -566,6 +576,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover scheduled"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.HANDOVER_SCHEDULED), eq(owner), eq(null));
     }
 
     @Test
@@ -624,6 +635,7 @@ public class TransactionServiceTest {
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(assetUnitRepository).save(unit);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan started"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.LOAN_STARTED), eq(owner), eq(null));
     }
 
     @Test
@@ -682,6 +694,7 @@ public class TransactionServiceTest {
         assertThat(response.startedAt()).isNotNull();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Return initiated"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.RETURN_INITIATED), eq(borrower), eq(null));
     }
 
     @Test
@@ -724,6 +737,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isTrue();
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Handback reported"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.RETURN_REPORTED), eq(borrower), eq(null));
     }
 
     @Test
@@ -776,6 +790,7 @@ public class TransactionServiceTest {
         verify(assetUnitRepository).save(unit);
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan completed"));
         verify(waitlistService).promoteForAsset(500L);
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.LOAN_COMPLETED), eq(owner), eq(null));
     }
 
     @Test
@@ -881,6 +896,7 @@ public class TransactionServiceTest {
         assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
         assertThat(response.borrowerConfirmedAt()).isNotNull();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Borrower confirmed receipt"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.HANDOVER_CONFIRMED), eq(borrower), eq(null));
     }
 
     @Test
@@ -925,6 +941,7 @@ public class TransactionServiceTest {
         assertThat(response.state()).isEqualTo(TransactionStatus.HANDOVER_DISPUTED);
         assertThat(response.reservationHeld()).isFalse();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Handover disputed"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.HANDOVER_DISPUTED), eq(borrower), eq(null));
     }
 
     @Test
@@ -942,6 +959,7 @@ public class TransactionServiceTest {
         assertThat(response.reservationHeld()).isFalse();
         verify(assetUnitRepository).save(unit);
         verify(waitlistService).promoteForAsset(500L);
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.HANDOVER_DISPUTED), eq(borrower), eq(null));
     }
 
     @Test
@@ -1121,6 +1139,7 @@ public class TransactionServiceTest {
         assertThat(response.extensionRequestPending()).isTrue();
         assertThat(response.extensionCounterPending()).isFalse();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension requested"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_REQUESTED), eq(borrower), anyString());
     }
 
     @Test
@@ -1247,6 +1266,7 @@ public class TransactionServiceTest {
         assertThat(response.extensionRequestedAt()).isNull();
         assertThat(response.extensionRequestPending()).isFalse();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension approved"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_APPROVED), eq(owner), eq(null));
     }
 
     @Test
@@ -1296,6 +1316,7 @@ public class TransactionServiceTest {
         assertThat(response.extensionRequestedDueAt()).isNull();
         assertThat(response.extensionRequestedAt()).isNull();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension rejected"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_REJECTED), eq(owner), eq(null));
     }
 
     @Test
@@ -1323,6 +1344,7 @@ public class TransactionServiceTest {
         assertThat(response.extensionRequestPending()).isFalse();
         assertThat(response.extensionCounterPending()).isTrue();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension countered"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_COUNTERED), eq(owner), anyString());
     }
 
     @Test
@@ -1376,6 +1398,7 @@ public class TransactionServiceTest {
         assertThat(response.extensionRequestedDueAt()).isNull();
         assertThat(response.extensionCounterPending()).isFalse();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension counter accepted"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_COUNTER_ACCEPTED), eq(borrower), eq(null));
     }
 
     @Test
@@ -1413,6 +1436,7 @@ public class TransactionServiceTest {
         assertThat(response.dueAt()).isEqualTo(txn.getOriginalDueAt());
         assertThat(response.extensionRequestedAt()).isNull();
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Extension counter rejected"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.EXTENSION_COUNTER_REJECTED), eq(borrower), eq(null));
     }
 
     @Test
@@ -1511,6 +1535,7 @@ public class TransactionServiceTest {
         assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
         verify(assetUnitRepository, never()).save(any(AssetUnit.class));
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Return disputed"));
+        verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.RETURN_DISPUTED), eq(owner), eq(null));
     }
 
     @Test

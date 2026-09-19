@@ -1,16 +1,23 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { useEvents } from '../../contexts/EventContext'
 import Avatar from '../ui/Avatar'
+import EventPanel from './EventPanel'
 
 export default function UserBar() {
   const { user, signOut } = useAuth()
+  const { unreadCount } = useEvents()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuTab, setMenuTab] = useState('main')
   const menuRef = useRef(null)
   const buttonRef = useRef(null)
 
-  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false)
+    setMenuTab('main')
+  }, [])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -80,34 +87,50 @@ export default function UserBar() {
           </button>
           {menuOpen && (
             <div className="avatar-menu-dropdown" role="menu">
-              <NavLink
-                to="/me/profile"
-                className="avatar-menu-item"
-                role="menuitem"
-                onClick={closeMenu}
-              >
-                <i className="bi bi-person" aria-hidden="true" />
-                Profile
-              </NavLink>
-              <NavLink
-                to="/me/settings"
-                className="avatar-menu-item"
-                role="menuitem"
-                onClick={closeMenu}
-              >
-                <i className="bi bi-gear" aria-hidden="true" />
-                Settings
-              </NavLink>
-              <div className="avatar-menu-divider" role="separator" />
-              <button
-                type="button"
-                className="avatar-menu-item"
-                role="menuitem"
-                onClick={handleSignOut}
-              >
-                <i className="bi bi-box-arrow-right" aria-hidden="true" />
-                Sign Out
-              </button>
+              {menuTab === 'main' ? (
+                <>
+                  <NavLink
+                    to="/me/profile"
+                    className="avatar-menu-item"
+                    role="menuitem"
+                    onClick={closeMenu}
+                  >
+                    <i className="bi bi-person" aria-hidden="true" />
+                    Profile
+                  </NavLink>
+                  <NavLink
+                    to="/me/settings"
+                    className="avatar-menu-item"
+                    role="menuitem"
+                    onClick={closeMenu}
+                  >
+                    <i className="bi bi-gear" aria-hidden="true" />
+                    Settings
+                  </NavLink>
+                  <button
+                    type="button"
+                    className="avatar-menu-item"
+                    role="menuitem"
+                    onClick={() => setMenuTab('events')}
+                  >
+                    <i className="bi bi-bell" aria-hidden="true" />
+                    Events
+                    {unreadCount > 0 && <span className="avatar-menu-badge">{unreadCount}</span>}
+                  </button>
+                  <div className="avatar-menu-divider" role="separator" />
+                  <button
+                    type="button"
+                    className="avatar-menu-item"
+                    role="menuitem"
+                    onClick={handleSignOut}
+                  >
+                    <i className="bi bi-box-arrow-right" aria-hidden="true" />
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <EventPanel onClose={closeMenu} />
+              )}
             </div>
           )}
         </div>

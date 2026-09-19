@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import SkipLink from './SkipLink'
 import CommunityPanel from './CommunityPanel'
 import UserBar from './UserBar'
+import EventEnvelopeController from './EventEnvelope'
 
 export default function AppShell() {
   return (
@@ -12,6 +13,7 @@ export default function AppShell() {
 
       <div className="dashboard-main">
         <UserBar />
+        <EventEnvelopeController />
         <main id="main-content" className="dashboard-content" tabIndex={-1}>
           <Outlet />
         </main>
