@@ -80,6 +80,9 @@ public class TransactionServiceTest {
     @Mock
     private TransactionEventService eventService;
 
+    @Mock
+    private ReputationEventService reputationEventService;
+
     private TransactionService transactionService;
 
     private User owner;
@@ -94,7 +97,8 @@ public class TransactionServiceTest {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
                 membershipService, messageService, evidenceRepository,
-                evidenceStorageService, waitlistService, eventService, 5_242_880L);
+                evidenceStorageService, waitlistService, eventService,
+                reputationEventService, 5_242_880L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);

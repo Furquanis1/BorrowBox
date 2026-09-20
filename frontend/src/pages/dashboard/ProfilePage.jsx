@@ -2,8 +2,9 @@ import React, { useCallback, useMemo, useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { useCommunity } from '../../contexts/CommunityContext'
 import { useAsync } from '../../hooks/useAsync'
-import { profileService, requestService } from '../../services'
+import { profileService, reputationService, requestService } from '../../services'
 import TrustSummary from '../../components/dashboard/TrustSummary'
+import ReputationLedgerList from '../../components/dashboard/ReputationLedgerList'
 import HistoryList from '../../components/dashboard/HistoryList'
 import Spinner from '../../components/ui/Spinner'
 import EmptyState from '../../components/ui/EmptyState'
@@ -23,6 +24,12 @@ export default function ProfilePage() {
     [scope]
   )
   const profileState = useAsync(fetchProfile, [scope])
+
+  const fetchReputation = useCallback(
+    () => reputationService.listForUser(scope || null),
+    [scope]
+  )
+  const reputationState = useAsync(fetchReputation, [scope])
 
   const fetchMine = useCallback(() => requestService.getMine(), [])
   const fetchLended = useCallback(() => requestService.getLendRequests(), [])
@@ -76,6 +83,8 @@ export default function ProfilePage() {
       ) : (
         <>
           <TrustSummary profile={profileState.data} />
+
+          <ReputationLedgerList events={reputationState.data} />
 
           <section className="profile-history" aria-label="Transaction history">
             <div className="requests-header">
