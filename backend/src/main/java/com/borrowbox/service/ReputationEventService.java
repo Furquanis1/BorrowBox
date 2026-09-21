@@ -1,5 +1,6 @@
 package com.borrowbox.service;
 
+import com.borrowbox.dto.ReputationEventResponse;
 import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.ReputationEvent;
@@ -133,9 +134,11 @@ public class ReputationEventService {
     /**
      * Self-scoped ledger surface for the authenticated user, newest first.
      * Optionally narrowed to one community the caller is an ACTIVE member of.
+     * DTO mapping happens inside the transaction boundary to avoid
+     * LazyInitializationException when accessing lazy-loaded relationships.
      */
     @Transactional(readOnly = true)
-    public List<ReputationEvent> listForUser(Long userId, Long communityId) {
+    public List<ReputationEventResponse> listForUser(Long userId, Long communityId) {
         if (userId == null) {
             throw new UnauthorizedException("Authentication required");
         }
@@ -145,9 +148,15 @@ public class ReputationEventService {
                     .orElseThrow(() -> new AccessDeniedException(
                             "You are not an active member of this community"));
             return reputationEventRepository
-                    .findByUserIdAndCommunityIdOrderByOccurredAtDesc(userId, communityId);
+                    .findByUserIdAndCommunityIdOrderByOccurredAtDesc(userId, communityId)
+                    .stream()
+                    .map(ReputationEventResponse::from)
+                    .toList();
         }
-        return reputationEventRepository.findByUserIdOrderByOccurredAtDesc(userId);
+        return reputationEventRepository.findByUserIdOrderByOccurredAtDesc(userId)
+                .stream()
+                .map(ReputationEventResponse::from)
+                .toList();
     }
 
     /**

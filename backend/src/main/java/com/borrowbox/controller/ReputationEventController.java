@@ -51,10 +51,7 @@ public class ReputationEventController {
         if (user == null) {
             throw new UnauthorizedException("Authentication required");
         }
-        return ResponseEntity.ok(reputationEventService.listForUser(user.getId(), communityId)
-                .stream()
-                .map(ReputationEventResponse::from)
-                .toList());
+        return ResponseEntity.ok(reputationEventService.listForUser(user.getId(), communityId));
     }
 
     private User currentUser() {
