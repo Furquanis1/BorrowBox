@@ -137,6 +137,7 @@ public class TransactionService {
     private final EvidenceStorageService evidenceStorageService;
     private final WaitlistService waitlistService;
     private final TransactionEventService eventService;
+    private final ReputationEventService reputationEventService;
     private final long maxEvidenceBytes;
 
     public TransactionService(TransactionRepository transactionRepository,
@@ -148,6 +149,7 @@ public class TransactionService {
                               EvidenceStorageService evidenceStorageService,
                               WaitlistService waitlistService,
                               TransactionEventService eventService,
+                              ReputationEventService reputationEventService,
                               @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
@@ -158,6 +160,7 @@ public class TransactionService {
         this.evidenceStorageService = evidenceStorageService;
         this.waitlistService = waitlistService;
         this.eventService = eventService;
+        this.reputationEventService = reputationEventService;
         this.maxEvidenceBytes = maxEvidenceBytes;
     }
 
@@ -708,6 +711,7 @@ public class TransactionService {
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_COMPLETED, lender, null);
+        reputationEventService.recordLoanCompleted(txn);
         return response;
     }
 
@@ -737,6 +741,9 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Return disputed");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_DISPUTED, lender, null);
+        // V2.3.2 (ADR-020): record the ONE borrower reputation row for the
+        // disputed return — same DB transaction, append-only, idempotent.
+        reputationEventService.recordReturnDisputed(txn);
         return response;
     }
 

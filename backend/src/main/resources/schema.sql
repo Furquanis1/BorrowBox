@@ -308,3 +308,38 @@ CREATE TABLE IF NOT EXISTS transaction_event_deliveries (
     CONSTRAINT uq_txn_event_delivery UNIQUE (event_id, recipient_id),
     INDEX idx_txn_event_deliveries_recipient_status (recipient_id, status)
 ) ENGINE=InnoDB;
+
+-- V2.3.2 durable reputation ledger: append-only outcome rows (ADR-020,
+-- ADR-021). Written atomically at the moment a transaction reaches a
+-- reputation-bearing terminal state and stamped with the authoritative server
+-- clock (occurred_at). Never edited or deleted.
+--
+-- LOAN_COMPLETED (confirmReturn): TWO rows — borrower role=BORROWER,
+-- successful=true, on_time = completedAt <= final dueAt; lender role=LENDER,
+-- successful=true, on_time = null (lenders face no on-time deadline).
+-- RETURN_DISPUTED (disputeReturn): ONE borrower row role=BORROWER,
+-- successful=false, on_time=false.
+--
+-- Idempotency: UNIQUE (transaction_id, user_id, event_type) plus an existence
+-- check in the service BEFORE insert, so replaying a transition or re-running
+-- self-healing reconcile can never duplicate a row.
+CREATE TABLE IF NOT EXISTS reputation_events (
+    id             BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id        BIGINT       NOT NULL,
+    community_id   BIGINT       NOT NULL,
+    transaction_id BIGINT       NOT NULL,
+    event_type     VARCHAR(40)  NOT NULL,
+    role           VARCHAR(10)  NOT NULL,
+    on_time        BOOLEAN      DEFAULT NULL,
+    successful     BOOLEAN      NOT NULL,
+    occurred_at    DATETIME(6)  NOT NULL,
+    created_at     DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_reputation_events_user        FOREIGN KEY (user_id)        REFERENCES users (id),
+    CONSTRAINT fk_reputation_events_community   FOREIGN KEY (community_id)   REFERENCES communities (id),
+    CONSTRAINT fk_reputation_events_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT uq_reputation_event_identity UNIQUE (transaction_id, user_id, event_type),
+    INDEX idx_reputation_events_user_occurred (user_id, occurred_at),
+    INDEX idx_reputation_events_community_occurred (community_id, occurred_at),
+    INDEX idx_reputation_events_transaction (transaction_id)
+) ENGINE=InnoDB;

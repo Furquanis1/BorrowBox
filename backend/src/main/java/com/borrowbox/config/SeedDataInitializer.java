@@ -31,6 +31,7 @@ import com.borrowbox.repository.TransactionEventRepository;
 import com.borrowbox.repository.TransactionMessageRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.service.ReputationEventService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -86,6 +87,7 @@ public class SeedDataInitializer implements ApplicationRunner {
     private final TransactionRepository transactionRepository;
     private final TransactionEventRepository transactionEventRepository;
     private final TransactionMessageRepository transactionMessageRepository;
+    private final ReputationEventService reputationEventService;
     private final PasswordEncoder passwordEncoder;
 
     public SeedDataInitializer(UserRepository userRepository,
@@ -97,6 +99,7 @@ public class SeedDataInitializer implements ApplicationRunner {
                                TransactionRepository transactionRepository,
                                TransactionEventRepository transactionEventRepository,
                                TransactionMessageRepository transactionMessageRepository,
+                               ReputationEventService reputationEventService,
                                PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.communityRepository = communityRepository;
@@ -107,6 +110,7 @@ public class SeedDataInitializer implements ApplicationRunner {
         this.transactionRepository = transactionRepository;
         this.transactionEventRepository = transactionEventRepository;
         this.transactionMessageRepository = transactionMessageRepository;
+        this.reputationEventService = reputationEventService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -498,6 +502,7 @@ public class SeedDataInitializer implements ApplicationRunner {
         seedSystemMessageIfMissing(txn, existingSystemBodies, "Return initiated");
         seedSystemMessageIfMissing(txn, existingSystemBodies, "Handback reported");
         seedSystemMessageIfMissing(txn, existingSystemBodies, "Loan completed");
+        reputationEventService.recordLoanCompleted(txn);
     }
 
     private void seedLifecycleEventIfMissing(Transaction txn, Set<TransactionEventType> existing,
