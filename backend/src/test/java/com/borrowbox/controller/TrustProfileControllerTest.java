@@ -64,7 +64,7 @@ public class TrustProfileControllerTest {
     void authenticatedGlobalProfileIsReturned() throws Exception {
         authenticateAs(currentUser);
         TrustProfileResponse resp = new TrustProfileResponse(
-                null, null, 1, 0, 1, 1, 1, 0, 1.0);
+                null, null, 1, 0, 1, 1, 1, 0, 1.0, 0, 0, 0);
         when(trustProfileService.getTrustProfile(eq(100L), eq(null))).thenReturn(resp);
 
         mockMvc.perform(get("/api/me/trust-profile"))
@@ -81,7 +81,7 @@ public class TrustProfileControllerTest {
     void authenticatedCommunityScopedProfileIsReturned() throws Exception {
         authenticateAs(currentUser);
         TrustProfileResponse resp = new TrustProfileResponse(
-                10L, "Engineering Office", 1, 1, 1, 1, 1, 0, 1.0);
+                10L, "Engineering Office", 1, 1, 1, 1, 1, 0, 1.0, 0, 0, 0);
         when(trustProfileService.getTrustProfile(eq(100L), eq(10L))).thenReturn(resp);
 
         mockMvc.perform(get("/api/me/trust-profile").param("communityId", "10"))
@@ -95,7 +95,7 @@ public class TrustProfileControllerTest {
     void activeMembershipCommunityScopeIsAllowed() throws Exception {
         authenticateAs(currentUser);
         TrustProfileResponse resp = new TrustProfileResponse(
-                10L, "Engineering Office", 0, 0, 0, 0, 0, 0, null);
+                10L, "Engineering Office", 0, 0, 0, 0, 0, 0, null, 0, 0, 0);
         when(trustProfileService.getTrustProfile(eq(100L), eq(10L))).thenReturn(resp);
 
         mockMvc.perform(get("/api/me/trust-profile").param("communityId", "10"))
@@ -130,7 +130,7 @@ public class TrustProfileControllerTest {
     void nullRateSerializesAsNullNotZero() throws Exception {
         authenticateAs(currentUser);
         TrustProfileResponse resp = new TrustProfileResponse(
-                null, null, 0, 0, 0, 0, 0, 0, null);
+                null, null, 0, 0, 0, 0, 0, 0, null, 0, 0, 0);
         when(trustProfileService.getTrustProfile(eq(100L), eq(null))).thenReturn(resp);
 
         mockMvc.perform(get("/api/me/trust-profile"))
