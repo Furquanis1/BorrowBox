@@ -17,6 +17,9 @@ package com.borrowbox.dto;
  * @param onTimeReturns         completed loans returned on or before the final dueAt
  * @param lateReturns           completed loans returned after the final dueAt
  * @param onTimeReturnRate      onTimeReturns / completedLoans, or null when completedLoans == 0
+ * @param returnDisputes        borrower RETURN_DISPUTED events
+ * @param completedLends        completed loans where user acted as lender
+ * @param returnDisputesReceived RETURN_DISPUTED events where user was the lender
  */
 public record TrustProfileResponse(
         Long communityId,
@@ -27,6 +30,9 @@ public record TrustProfileResponse(
         int completedLoans,
         int onTimeReturns,
         int lateReturns,
-        Double onTimeReturnRate
+        Double onTimeReturnRate,
+        int returnDisputes,
+        int completedLends,
+        int returnDisputesReceived
 ) {
 }

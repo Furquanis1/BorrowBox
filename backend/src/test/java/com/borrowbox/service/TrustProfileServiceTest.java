@@ -4,9 +4,12 @@ import com.borrowbox.dto.TrustProfileResponse;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipStatus;
+import com.borrowbox.entity.ReputationEventType;
+import com.borrowbox.entity.ReputationRole;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.ReputationEventRepository;
 import com.borrowbox.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,7 +25,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,11 +43,19 @@ public class TrustProfileServiceTest {
     @Mock
     private MembershipRepository membershipRepository;
 
+    @Mock
+    private ReputationEventRepository reputationEventRepository;
+
     private TrustProfileService service;
 
     @BeforeEach
     void setUp() {
-        service = new TrustProfileService(transactionRepository, membershipRepository);
+        service = new TrustProfileService(transactionRepository, membershipRepository, reputationEventRepository);
+        // Default: no reputation events (lenient to avoid strict stubbing issues)
+        lenient().when(reputationEventRepository.countByUserIdAndRoleAndEventType(anyLong(), any(), any(), anyLong()))
+                .thenReturn(0L);
+        lenient().when(reputationEventRepository.countByTransactionLenderIdAndEventType(anyLong(), any(), anyLong()))
+                .thenReturn(0L);
     }
 
     private Transaction txn(Long id, TransactionStatus state) {

@@ -18,6 +18,7 @@ import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.service.ReputationEventService;
 import com.borrowbox.service.TrustProfileService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,6 +53,7 @@ public class TrustProfileIntegrationTest {
     @Autowired private TrustProfileService trustProfileService;
     @Autowired private UserRepository userRepository;
     @Autowired private MembershipRepository membershipRepository;
+    @Autowired private ReputationEventService reputationEventService;
     @Autowired private CommunityRepository communityRepository;
     @Autowired private AssetRepository assetRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
@@ -144,6 +146,9 @@ public class TrustProfileIntegrationTest {
         assertThat(profile.onTimeReturns()).isEqualTo(1);
         assertThat(profile.lateReturns()).isEqualTo(1);
         assertThat(profile.onTimeReturnRate()).isEqualTo(0.5);
+        assertThat(profile.returnDisputes()).isEqualTo(0);
+        assertThat(profile.completedLends()).isEqualTo(0);
+        assertThat(profile.returnDisputesReceived()).isEqualTo(0);
     }
 
     @Test
@@ -163,10 +168,12 @@ public class TrustProfileIntegrationTest {
                 .orElseThrow();
 
         LocalDateTime due = LocalDateTime.of(2026, 6, 10, 9, 0);
-        transaction(borrower, lender, office, listing, football,
+        Transaction txn1 = transaction(borrower, lender, office, listing, football,
                 TransactionStatus.COMPLETED, due, due.minusHours(1));
-        transaction(borrower, lender, office, listing, football,
+        reputationEventService.recordLoanCompleted(txn1);
+        Transaction txn2 = transaction(borrower, lender, office, listing, football,
                 TransactionStatus.COMPLETED, due, due.plusHours(5));
+        reputationEventService.recordLoanCompleted(txn2);
 
         TrustProfileResponse profile =
                 trustProfileService.getTrustProfile(lender.getId(), office.getId());
@@ -176,6 +183,9 @@ public class TrustProfileIntegrationTest {
         assertThat(profile.successfulTransactions()).isEqualTo(2);
         assertThat(profile.completedLoans()).isEqualTo(0);
         assertThat(profile.onTimeReturnRate()).isNull();
+        assertThat(profile.returnDisputes()).isEqualTo(0);
+        assertThat(profile.completedLends()).isEqualTo(2);
+        assertThat(profile.returnDisputesReceived()).isEqualTo(0);
     }
 
     @Test
@@ -207,6 +217,9 @@ public class TrustProfileIntegrationTest {
         assertThat(profile.completedLoans()).isEqualTo(1);
         assertThat(profile.onTimeReturns()).isEqualTo(1);
         assertThat(profile.onTimeReturnRate()).isEqualTo(1.0);
+        assertThat(profile.returnDisputes()).isEqualTo(0);
+        assertThat(profile.completedLends()).isEqualTo(0);
+        assertThat(profile.returnDisputesReceived()).isEqualTo(0);
     }
 
     @Test
@@ -226,6 +239,9 @@ public class TrustProfileIntegrationTest {
         assertThat(profile.onTimeReturns()).isEqualTo(0);
         assertThat(profile.lateReturns()).isEqualTo(0);
         assertThat(profile.onTimeReturnRate()).isNull();
+        assertThat(profile.returnDisputes()).isEqualTo(0);
+        assertThat(profile.completedLends()).isEqualTo(0);
+        assertThat(profile.returnDisputesReceived()).isEqualTo(0);
     }
 
     @Test

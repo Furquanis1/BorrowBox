@@ -146,6 +146,9 @@ describe('V2.3.1 Derived Trust Profile', () => {
           'onTimeReturns',
           'lateReturns',
           'onTimeReturnRate',
+          'returnDisputes',
+          'completedLends',
+          'returnDisputesReceived',
         ].sort()
       )
     })

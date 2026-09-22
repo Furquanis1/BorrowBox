@@ -45,6 +45,9 @@ export default function TrustSummary({ profile }) {
           value={formatRate(profile.onTimeReturnRate)}
           hint={noCompletedLoans ? 'No completed loans yet' : undefined}
         />
+        <Stat icon="bi-exclamation-triangle" label="Return disputes" value={profile.returnDisputes} />
+        <Stat icon="bi-box-arrow-up-right" label="Completed lends" value={profile.completedLends} />
+        <Stat icon="bi-exclamation-triangle-fill" label="Disputes received" value={profile.returnDisputesReceived} />
       </div>
     </section>
   )

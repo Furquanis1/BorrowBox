@@ -3,10 +3,13 @@ package com.borrowbox.service;
 import com.borrowbox.dto.TrustProfileResponse;
 import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipStatus;
+import com.borrowbox.entity.ReputationEventType;
+import com.borrowbox.entity.ReputationRole;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.MembershipRepository;
+import com.borrowbox.repository.ReputationEventRepository;
 import com.borrowbox.repository.TransactionRepository;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -40,11 +43,14 @@ public class TrustProfileService {
 
     private final TransactionRepository transactionRepository;
     private final MembershipRepository membershipRepository;
+    private final ReputationEventRepository reputationEventRepository;
 
     public TrustProfileService(TransactionRepository transactionRepository,
-                               MembershipRepository membershipRepository) {
+                               MembershipRepository membershipRepository,
+                               ReputationEventRepository reputationEventRepository) {
         this.transactionRepository = transactionRepository;
         this.membershipRepository = membershipRepository;
+        this.reputationEventRepository = reputationEventRepository;
     }
 
     /**
@@ -93,9 +99,25 @@ public class TrustProfileService {
                 ? null
                 : (double) onTimeReturns / completedLoansCount;
 
+        // Borrower return disputes
+        int returnDisputes = (int) reputationEventRepository.countByUserIdAndRoleAndEventType(
+                userId, ReputationRole.BORROWER, ReputationEventType.RETURN_DISPUTED, communityId
+        );
+
+        // Lender completed lends
+        int completedLends = (int) reputationEventRepository.countByUserIdAndRoleAndEventType(
+                userId, ReputationRole.LENDER, ReputationEventType.LOAN_COMPLETED, communityId
+        );
+
+        // Lender return disputes received
+        int returnDisputesReceived = (int) reputationEventRepository.countByTransactionLenderIdAndEventType(
+                userId, ReputationEventType.RETURN_DISPUTED, communityId
+        );
+
         return new TrustProfileResponse(communityId, communityName,
                 itemsBorrowed, itemsLent, successfulTransactions,
-                completedLoansCount, onTimeReturns, lateReturns, onTimeReturnRate);
+                completedLoansCount, onTimeReturns, lateReturns, onTimeReturnRate,
+                returnDisputes, completedLends, returnDisputesReceived);
     }
 
     private List<Transaction> borrowedTransactions(Long userId, Long communityId) {
