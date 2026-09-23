@@ -2,12 +2,13 @@
 -- + Transactions + Loan Lifecycle + Conversation + Loan Accountability Clock
 -- + Loan Extensions + Return Disputes + Evidence + Queueing/Waitlist
 -- + Transaction Events)
+-- V2.4.1 adds community flags (Community Health + Moderation).
 -- Fresh V2 database. V1 tables are not carried forward.
 -- Matches exactly the entities mapped by the application:
 --   users, communities, memberships, categories, community_rules,
 --   assets, asset_units, community_listings, transactions,
 --   transaction_messages, transaction_evidence, waitlist_entries,
---   transaction_events, transaction_event_deliveries
+--   transaction_events, transaction_event_deliveries, flags
 
 CREATE TABLE IF NOT EXISTS users (
     id            BIGINT       NOT NULL AUTO_INCREMENT,
@@ -342,4 +343,37 @@ CREATE TABLE IF NOT EXISTS reputation_events (
     INDEX idx_reputation_events_user_occurred (user_id, occurred_at),
     INDEX idx_reputation_events_community_occurred (community_id, occurred_at),
     INDEX idx_reputation_events_transaction (transaction_id)
+) ENGINE=InnoDB;
+
+-- V2.4.1 community flags (Community Health + Moderation): one row per recorded
+-- incident (overdue loan, handover/return dispute, missing evidence, or a
+-- manual manager report). community_id is always required; transaction_id is
+-- optional (manual flags may describe an incident not tied to a transaction).
+-- reporter_id is nullable so future system-generated flags can be recorded
+-- without inventing a fake SYSTEM user. Core incident facts (community,
+-- transaction, flag_type, reporter, occurred_at, created_at) are immutable
+-- after creation; the mutable moderation workflow fields are status / assignee
+-- / note / updated_at. There is deliberately NO UNIQUE(transaction_id,
+-- flag_type): the same transaction may legitimately carry several flags.
+CREATE TABLE IF NOT EXISTS flags (
+    id             BIGINT        NOT NULL AUTO_INCREMENT,
+    community_id   BIGINT        NOT NULL,
+    transaction_id BIGINT        DEFAULT NULL,
+    flag_type      VARCHAR(30)   NOT NULL,
+    status         VARCHAR(20)   NOT NULL DEFAULT 'OPEN',
+    reporter_id    BIGINT        DEFAULT NULL,
+    assignee_id    BIGINT        DEFAULT NULL,
+    note           VARCHAR(2000) DEFAULT NULL,
+    occurred_at    DATETIME(6)   NOT NULL,
+    created_at     DATETIME(6)   NOT NULL,
+    updated_at     DATETIME(6)   NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_flags_community   FOREIGN KEY (community_id)   REFERENCES communities (id),
+    CONSTRAINT fk_flags_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT fk_flags_reporter    FOREIGN KEY (reporter_id)    REFERENCES users (id),
+    CONSTRAINT fk_flags_assignee    FOREIGN KEY (assignee_id)    REFERENCES users (id),
+    INDEX idx_flags_community_type   (community_id, flag_type),
+    INDEX idx_flags_community_status (community_id, status),
+    INDEX idx_flags_transaction      (transaction_id),
+    INDEX idx_flags_occurred         (occurred_at)
 ) ENGINE=InnoDB;

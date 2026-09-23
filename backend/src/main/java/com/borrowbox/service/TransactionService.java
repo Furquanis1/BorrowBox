@@ -12,6 +12,9 @@ import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.CommunityRule;
+import com.borrowbox.entity.CommunityRuleType;
+import com.borrowbox.entity.CommunityStatus;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
@@ -23,6 +26,7 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
+import com.borrowbox.repository.CommunityRuleRepository;
 import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.service.TransactionEventService;
@@ -131,6 +135,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
     private final AssetUnitRepository assetUnitRepository;
+    private final CommunityRuleRepository communityRuleRepository;
     private final MembershipService membershipService;
     private final TransactionMessageService messageService;
     private final EvidenceRepository evidenceRepository;
@@ -143,6 +148,7 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
                               CommunityListingRepository listingRepository,
                               AssetUnitRepository assetUnitRepository,
+                              CommunityRuleRepository communityRuleRepository,
                               MembershipService membershipService,
                               TransactionMessageService messageService,
                               EvidenceRepository evidenceRepository,
@@ -154,6 +160,7 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
+        this.communityRuleRepository = communityRuleRepository;
         this.membershipService = membershipService;
         this.messageService = messageService;
         this.evidenceRepository = evidenceRepository;
@@ -1112,7 +1119,37 @@ public class TransactionService {
         if (txn.getState() != TransactionStatus.ACTIVE || txn.getDueAt() == null) {
             return false;
         }
-        return LocalDateTime.now().isAfter(txn.getDueAt());
+        // V2.4.1: the community's OVERDUE_GRACE_PERIOD rule, when configured,
+        // extends the effective overdue time. The authoritative loan clock
+        // (startedAt / dueAt / originalDueAt) is never rewritten; the grace
+        // period is applied only at evaluation time. A missing rule, a zero
+        // value, or an invalid value means zero grace.
+        return LocalDateTime.now().isAfter(txn.getDueAt().plusDays(overdueGracePeriodDays(txn)));
+    }
+
+    /**
+     * V2.4.1: reads the ACTIVE OVERDUE_GRACE_PERIOD rule for the transaction's
+     * community and returns its day count, clamped to non-negative. Zero (or
+     * missing / unparseable) means no grace and preserves V2.2.4 behavior.
+     */
+    private long overdueGracePeriodDays(Transaction txn) {
+        Community community = txn.getCommunity();
+        if (community == null || community.getId() == null) {
+            return 0;
+        }
+        List<CommunityRule> rules = communityRuleRepository
+                .findByCommunityIdAndRuleTypeAndStatus(
+                        community.getId(), CommunityRuleType.OVERDUE_GRACE_PERIOD, CommunityStatus.ACTIVE);
+        if (rules == null || rules.isEmpty()) {
+            return 0;
+        }
+        Object days = rules.get(0).getValue() != null
+                ? rules.get(0).getValue().get("days")
+                : null;
+        if (days instanceof Number number) {
+            return Math.max(0, number.longValue());
+        }
+        return 0;
     }
 
     private boolean isHandoverWindowOpen(Transaction txn) {

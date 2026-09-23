@@ -24,6 +24,7 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
+import com.borrowbox.repository.CommunityRuleRepository;
 import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.service.TransactionEventService;
@@ -63,6 +64,9 @@ public class TransactionServiceTest {
     private AssetUnitRepository assetUnitRepository;
 
     @Mock
+    private CommunityRuleRepository communityRuleRepository;
+
+    @Mock
     private MembershipService membershipService;
 
     @Mock
@@ -96,9 +100,9 @@ public class TransactionServiceTest {
     void setUp() {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
-                membershipService, messageService, evidenceRepository,
-                evidenceStorageService, waitlistService, eventService,
-                reputationEventService, 5_242_880L);
+                communityRuleRepository, membershipService, messageService,
+                evidenceRepository, evidenceStorageService, waitlistService,
+                eventService, reputationEventService, 5_242_880L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
