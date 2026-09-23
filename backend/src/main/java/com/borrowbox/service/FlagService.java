@@ -1,5 +1,6 @@
 package com.borrowbox.service;
 
+import com.borrowbox.dto.FlagUpdateRequest;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.Flag;
 import com.borrowbox.entity.FlagStatus;
@@ -11,6 +12,8 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.FlagRepository;
+import com.borrowbox.repository.TransactionRepository;
+import com.borrowbox.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,13 +45,19 @@ public class FlagService {
     private final FlagRepository flagRepository;
     private final CommunityRepository communityRepository;
     private final MembershipService membershipService;
+    private final TransactionRepository transactionRepository;
+    private final UserRepository userRepository;
 
     public FlagService(FlagRepository flagRepository,
                        CommunityRepository communityRepository,
-                       MembershipService membershipService) {
+                       MembershipService membershipService,
+                       TransactionRepository transactionRepository,
+                       UserRepository userRepository) {
         this.flagRepository = flagRepository;
         this.communityRepository = communityRepository;
         this.membershipService = membershipService;
+        this.transactionRepository = transactionRepository;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -81,7 +90,60 @@ public class FlagService {
         flag.setReporter(reporter);
         flag.setNote(normalizeNote(note));
         flag.setOccurredAt(LocalDateTime.now());
-        return flagRepository.save(flag);
+        return hydrate(flagRepository.save(flag));
+    }
+
+    /**
+     * V2.4.2: opens a flag from a transaction id. The reporting manager is the
+     * authenticated actor; no reporter id is ever accepted from the client.
+     * A null transactionId opens a manual flag not tied to a loan.
+     */
+    @Transactional
+    public Flag createFlag(Long communityId, Long transactionId, FlagType flagType,
+                           String note, User manager) {
+        Transaction transaction = null;
+        if (transactionId != null) {
+            transaction = transactionRepository.findById(transactionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Transaction not found with id: " + transactionId));
+        }
+        return createFlag(communityId, transaction, flagType, manager, note, manager);
+    }
+
+    /**
+     * V2.4.2: consolidated PATCH — status, assignee (or unassign), and note may
+     * be updated independently. Request fields set no-change when omitted.
+     */
+    @Transactional
+    public Flag updateFlag(Long communityId, Long flagId, FlagUpdateRequest request, User manager) {
+        if (request == null) {
+            throw new BusinessRuleViolationException("A flag update is required");
+        }
+        if (Boolean.TRUE.equals(request.clearAssignee()) && request.assigneeId() != null) {
+            throw new BusinessRuleViolationException(
+                    "A flag cannot be assigned and unassigned in the same update");
+        }
+        Community community = findCommunityOrThrow(communityId);
+        requireActiveManager(manager, community);
+
+        Flag flag = findFlagOwnedByCommunity(communityId, flagId);
+        if (request.status() != null) {
+            flag.setStatus(request.status());
+        }
+        if (request.assigneeId() != null) {
+            User assignee = userRepository.findById(request.assigneeId())
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + request.assigneeId()));
+            if (!membershipService.isActiveManager(assignee.getId(), communityId)) {
+                throw new UnauthorizedException(
+                        "The assignee must be an active manager of this community");
+            }
+            flag.setAssignee(assignee);
+        } else if (Boolean.TRUE.equals(request.clearAssignee())) {
+            flag.setAssignee(null);
+        }
+        if (request.note() != null) {
+            flag.setNote(normalizeNote(request.note()));
+        }
+        return hydrate(flagRepository.save(flag));
     }
 
     @Transactional
@@ -94,7 +156,7 @@ public class FlagService {
 
         Flag flag = findFlagOwnedByCommunity(communityId, flagId);
         flag.setStatus(status);
-        return flagRepository.save(flag);
+        return hydrate(flagRepository.save(flag));
     }
 
     /**
@@ -112,7 +174,7 @@ public class FlagService {
 
         Flag flag = findFlagOwnedByCommunity(communityId, flagId);
         flag.setAssignee(assignee);
-        return flagRepository.save(flag);
+        return hydrate(flagRepository.save(flag));
     }
 
     @Transactional
@@ -122,12 +184,14 @@ public class FlagService {
 
         Flag flag = findFlagOwnedByCommunity(communityId, flagId);
         flag.setNote(normalizeNote(note));
-        return flagRepository.save(flag);
+        return hydrate(flagRepository.save(flag));
     }
 
     public List<Flag> listByCommunity(Long communityId, User manager) {
         requireManagerOf(communityId, manager);
-        return flagRepository.findByCommunityId(communityId);
+        List<Flag> flags = flagRepository.findByCommunityId(communityId);
+        flags.forEach(this::hydrate);
+        return flags;
     }
 
     public List<Flag> listByCommunityAndStatus(Long communityId, FlagStatus status, User manager) {
@@ -135,7 +199,9 @@ public class FlagService {
             throw new BusinessRuleViolationException("A status is required");
         }
         requireManagerOf(communityId, manager);
-        return flagRepository.findByCommunityIdAndStatus(communityId, status);
+        List<Flag> flags = flagRepository.findByCommunityIdAndStatus(communityId, status);
+        flags.forEach(this::hydrate);
+        return flags;
     }
 
     public List<Flag> listByCommunityAndFlagType(Long communityId, FlagType flagType, User manager) {
@@ -143,7 +209,9 @@ public class FlagService {
             throw new BusinessRuleViolationException("A flag type is required");
         }
         requireManagerOf(communityId, manager);
-        return flagRepository.findByCommunityIdAndFlagType(communityId, flagType);
+        List<Flag> flags = flagRepository.findByCommunityIdAndFlagType(communityId, flagType);
+        flags.forEach(this::hydrate);
+        return flags;
     }
 
     public List<Flag> listByTransaction(Long communityId, Long transactionId, User manager) {
@@ -151,12 +219,37 @@ public class FlagService {
         if (transactionId == null) {
             throw new BusinessRuleViolationException("A transaction id is required");
         }
-        return flagRepository.findByCommunityIdAndTransactionId(communityId, transactionId);
+        List<Flag> flags = flagRepository.findByCommunityIdAndTransactionId(communityId, transactionId);
+        flags.forEach(this::hydrate);
+        return flags;
+    }
+
+    /**
+     * V2.4.2 combined filter; every filter is optional. With no filters the
+     * community's full flag list is returned, newest first.
+     */
+    public List<Flag> listFiltered(Long communityId, FlagStatus status, FlagType flagType,
+                                   Long transactionId, User manager) {
+        requireManagerOf(communityId, manager);
+        List<Flag> flags = flagRepository.findFiltered(communityId, status, flagType, transactionId);
+        flags.forEach(this::hydrate);
+        return flags;
+    }
+
+    public List<Flag> recentFlags(Long communityId, User manager) {
+        requireManagerOf(communityId, manager);
+        List<Flag> flags = flagRepository.findTop10ByCommunityIdOrderByOccurredAtDescIdDesc(communityId);
+        flags.forEach(this::hydrate);
+        return flags;
+    }
+
+    public long countOpen(Long communityId) {
+        return flagRepository.countByCommunityIdAndStatus(communityId, FlagStatus.OPEN);
     }
 
     public Flag getFlag(Long communityId, Long flagId, User manager) {
         requireManagerOf(communityId, manager);
-        return findFlagOwnedByCommunity(communityId, flagId);
+        return hydrate(findFlagOwnedByCommunity(communityId, flagId));
     }
 
     private void requireManagerOf(Long communityId, User manager) {
@@ -174,6 +267,20 @@ public class FlagService {
     private Community findCommunityOrThrow(Long communityId) {
         return communityRepository.findById(communityId)
                 .orElseThrow(() -> new ResourceNotFoundException("Community not found with id: " + communityId));
+    }
+
+    /**
+     * Ensures the lazy assignee association is loaded before a Flag leaves the
+     * transactional boundary, because {@code FlagResponse.from} reads
+     * assignee.getFullName() and open-in-view is disabled. Touching the getter
+     * is a no-op for already-initialized or non-proxy assignees, so the method
+     * is safe against mocks and plain entities in unit tests.
+     */
+    private Flag hydrate(Flag flag) {
+        if (flag != null && flag.getAssignee() != null) {
+            flag.getAssignee().getFullName();
+        }
+        return flag;
     }
 
     private Flag findFlagOwnedByCommunity(Long communityId, Long flagId) {

@@ -1,6 +1,7 @@
 package com.borrowbox.repository;
 
 import com.borrowbox.entity.TransactionEvent;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -27,4 +28,13 @@ public interface TransactionEventRepository extends JpaRepository<TransactionEve
             "where t.borrower.id = :userId or t.lender.id = :userId " +
             "order by e.createdAt desc")
     List<TransactionEvent> findByParticipantOrderByCreatedAtDesc(@Param("userId") Long userId);
+
+    /**
+     * V2.4.2 DB-bounded recent-activity feed for one community, newest first.
+     */
+    @Query("select e from TransactionEvent e " +
+            "join e.transaction t " +
+            "where t.community.id = :communityId " +
+            "order by e.createdAt desc, e.id desc")
+    List<TransactionEvent> findRecentByCommunityId(@Param("communityId") Long communityId, Pageable pageable);
 }

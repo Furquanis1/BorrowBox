@@ -50,6 +50,22 @@ public class MembershipService {
                 .toList();
     }
 
+    /**
+     * V2.4.2 members directory with optional status/role filters. Reading the
+     * directory stays an ACTIVE MEMBER action; the filters are convenience and
+     * never widen what the unfiltered view already grants.
+     */
+    public List<MembershipResponse> listMembers(Long requesterId, Long communityId,
+                                                MembershipStatus status, MembershipRole role) {
+        if (requesterId == null || !isActiveMember(requesterId, communityId)) {
+            throw new UnauthorizedException(
+                    "You must be an active member to view this community's members");
+        }
+        return membershipRepository.findFiltered(communityId, status, role).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     public Optional<Membership> findByUserAndCommunity(Long userId, Long communityId) {
         return membershipRepository.findByUserIdAndCommunityId(userId, communityId);
     }
@@ -176,6 +192,75 @@ public class MembershipService {
         membership.setStatus(MembershipStatus.LEFT);
         membershipRepository.save(membership);
         return toResponse(membership);
+    }
+
+    /**
+     * V2.4.2 manager moderation: suspend an ACTIVE member. Audit fields
+     * (role, joinedAt, verifiedBy, verifiedAt, verificationMethod) are never
+     * touched; only the status changes.
+     */
+    @Transactional
+    public MembershipResponse suspend(Long membershipId, User manager) {
+        Membership membership = findForModeration(membershipId, manager);
+        if (membership.getStatus() != MembershipStatus.ACTIVE) {
+            throw new BusinessRuleViolationException("Only an active member can be suspended");
+        }
+        requireNotLastActiveManager(membership);
+        membership.setStatus(MembershipStatus.SUSPENDED);
+        return toResponse(membershipRepository.save(membership));
+    }
+
+    /**
+     * V2.4.2 manager moderation: reinstate a SUSPENDED member.
+     */
+    @Transactional
+    public MembershipResponse reinstate(Long membershipId, User manager) {
+        Membership membership = findForModeration(membershipId, manager);
+        if (membership.getStatus() != MembershipStatus.SUSPENDED) {
+            throw new BusinessRuleViolationException("Only a suspended member can be reinstated");
+        }
+        membership.setStatus(MembershipStatus.ACTIVE);
+        return toResponse(membershipRepository.save(membership));
+    }
+
+    /**
+     * V2.4.2 manager moderation: permanently remove an ACTIVE or SUSPENDED
+     * member, moving the row to LEFT. The last ACTIVE manager can never be
+     * removed.
+     */
+    @Transactional
+    public MembershipResponse removeMember(Long membershipId, User manager) {
+        Membership membership = findForModeration(membershipId, manager);
+        if (membership.getStatus() != MembershipStatus.ACTIVE
+                && membership.getStatus() != MembershipStatus.SUSPENDED) {
+            throw new BusinessRuleViolationException(
+                    "Only an active or suspended member can be removed");
+        }
+        requireNotLastActiveManager(membership);
+        membership.setStatus(MembershipStatus.LEFT);
+        return toResponse(membershipRepository.save(membership));
+    }
+
+    private Membership findForModeration(Long membershipId, User manager) {
+        Membership membership = membershipRepository.findByIdForUpdate(membershipId)
+                .orElseThrow(() -> new ResourceNotFoundException("Membership not found with id: " + membershipId));
+        Long communityId = membership.getCommunity() != null ? membership.getCommunity().getId() : null;
+        if (communityId == null || manager == null || !isActiveManager(manager.getId(), communityId)) {
+            throw new UnauthorizedException("Only an active manager can moderate members");
+        }
+        return membership;
+    }
+
+    private void requireNotLastActiveManager(Membership membership) {
+        if (membership.getRole() == MembershipRole.MANAGER
+                && membership.getStatus() == MembershipStatus.ACTIVE) {
+            Long communityId = membership.getCommunity().getId();
+            List<Membership> activeManagers = membershipRepository.findActiveManagersForUpdate(communityId);
+            if (activeManagers.size() <= 1) {
+                throw new BusinessRuleViolationException(
+                        "You cannot suspend or remove the last active manager of this community");
+            }
+        }
     }
 
     private void applyAdmissionPath(Membership membership, Community community, CommunityJoinRequest request) {

@@ -1,6 +1,7 @@
 package com.borrowbox.repository;
 
 import com.borrowbox.entity.Membership;
+import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -45,4 +46,18 @@ public interface MembershipRepository extends JpaRepository<Membership, Long> {
             + " and m.status = com.borrowbox.entity.MembershipStatus.ACTIVE"
             + " and m.role = com.borrowbox.entity.MembershipRole.MANAGER")
     List<Membership> findActiveManagersForUpdate(@Param("communityId") Long communityId);
+
+    /**
+     * V2.4.2 members directory filter. Any filter may be null to leave it
+     * unconstrained; stable id order.
+     */
+    @Query("select m from Membership m where m.community.id = :communityId "
+            + "and (:status is null or m.status = :status) "
+            + "and (:role is null or m.role = :role) "
+            + "order by m.id asc")
+    List<Membership> findFiltered(@Param("communityId") Long communityId,
+                                  @Param("status") MembershipStatus status,
+                                  @Param("role") MembershipRole role);
+
+    long countByCommunityIdAndStatus(Long communityId, MembershipStatus status);
 }

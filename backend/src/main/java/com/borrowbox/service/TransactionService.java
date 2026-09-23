@@ -1115,7 +1115,7 @@ public class TransactionService {
         return !now.isBefore(threshold) && now.isBefore(txn.getDueAt());
     }
 
-    private boolean isOverdue(Transaction txn) {
+    public boolean isOverdue(Transaction txn) {
         if (txn.getState() != TransactionStatus.ACTIVE || txn.getDueAt() == null) {
             return false;
         }
