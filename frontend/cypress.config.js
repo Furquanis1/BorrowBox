@@ -128,6 +128,60 @@ function cleanupEventsDb(marker) {
   return true
 }
 
+/**
+ * Deletes V2.4.2 flags whose note carries the spec's marker prefix. Flags have
+ * no product delete API, so the suite restores the canonical fixture directly.
+ */
+function restoreFlags(marker) {
+  if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
+    throw new Error(`Invalid flags marker: ${marker}`)
+  }
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `DELETE FROM flags WHERE note LIKE '${marker}%';`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
+/**
+ * Removes a throwaway membership-review member and its membership row so the
+ * canonical seeded fixture survives for later specs. The member is created and
+ * moderated only inside membership-review.cy.js, which never leaves state.
+ */
+function restoreMembership({ userId, communityId }) {
+  const uid = Number(userId)
+  const cid = Number(communityId)
+  if (!Number.isInteger(uid) || uid <= 0) throw new Error(`Invalid user id: ${userId}`)
+  if (!Number.isInteger(cid) || cid <= 0) throw new Error(`Invalid community id: ${communityId}`)
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `DELETE FROM memberships WHERE user_id = ${uid} AND community_id = ${cid};`,
+    `DELETE FROM users WHERE id = ${uid};`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
+/**
+ * Removes V2.4.2 rules a rules-pages spec created for one community + type so
+ * the canonical fixture (no grace-period rules) survives for later specs.
+ */
+function restoreRules({ communityId, ruleType }) {
+  const cid = Number(communityId)
+  if (!Number.isInteger(cid) || cid <= 0) throw new Error(`Invalid community id: ${communityId}`)
+  if (!/^[A-Z_]+$/.test(ruleType)) throw new Error(`Invalid rule type: ${ruleType}`)
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `DELETE FROM community_rules WHERE community_id = ${cid} AND rule_type = '${ruleType}';`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
 module.exports = defineConfig({
   e2e: {
     baseUrl: process.env.CYPRESS_BASE_URL || 'http://localhost:3000',
@@ -147,6 +201,9 @@ module.exports = defineConfig({
         restoreEvents,
         cleanupEventsDb,
         purgeEvents,
+        restoreFlags,
+        restoreMembership,
+        restoreRules,
       })
     },
   },

@@ -73,11 +73,22 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
   })
 
   it('should have exactly one community-local navigation on Home', () => {
+    cy.visit(`/communities/${cseId}`)
     cy.get('.community-home').should('be.visible')
     cy.get('.community-tabs').should('have.length', 1)
-    cy.get('.community-tab').should('have.length', 4)
+    cy.get('.community-tab').should('have.length', 6)
+    cy.get('.community-tab').should('contain', 'Dashboard')
+    cy.get('.community-tab').should('contain', 'Flags')
     cy.get('.community-page nav').should('have.length', 1)
     cy.get('.community-home-actions').should('not.exist')
+  })
+
+  it('should hide manager tabs for non-manager communities', () => {
+    cy.visit(`/communities/${hostelId}`)
+    cy.url({ timeout: 15000 }).should('include', `/communities/${hostelId}`)
+    cy.get('.community-tab').should('have.length', 4)
+    cy.get('.community-tab').should('not.contain', 'Dashboard')
+    cy.get('.community-tab').should('not.contain', 'Flags')
   })
 
   it('should not render a desktop community dropdown', () => {

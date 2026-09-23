@@ -2698,3 +2698,250 @@ select,
   font-size: 0.85rem;
   color: var(--ink-muted);
 }
+
+/* ============ V2.4.2 MANAGER PAGES (DASHBOARD / FLAGS / MEMBERS / RULES) ============ */
+
+.manager-section-title {
+  margin: var(--sp-5) 0 var(--sp-3);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.manager-section-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: var(--sp-3);
+}
+
+.stat-grid-health {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.stat-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ink-muted);
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.stat-tone-danger { color: var(--danger); }
+.stat-tone-warning { color: var(--amber-800); }
+.stat-tone-success { color: var(--success); }
+.stat-tone-default { color: var(--ink-muted); }
+
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.stat-hint {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.activity-list,
+.flag-list,
+.member-list,
+.rule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.activity-item,
+.flag-item,
+.member-item,
+.rule-item,
+.flag-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.activity-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-pill);
+  background: var(--teal-100);
+  color: var(--teal-700);
+  flex-shrink: 0;
+}
+
+.activity-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.activity-meta {
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+.flag-chip {
+  justify-content: flex-start;
+  gap: var(--sp-2);
+}
+
+.flag-chip-type {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.flags-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.flags-header .manager-section-title {
+  margin-top: var(--sp-4);
+}
+
+.flag-toolbar {
+  display: flex;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.flag-create-form {
+  padding: var(--sp-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  margin-bottom: var(--sp-4);
+}
+
+.filter-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-muted);
+  margin-bottom: var(--sp-3);
+}
+
+.flag-filters,
+.member-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.flag-filters .form-group,
+.member-filters .form-group {
+  margin-bottom: 0;
+  min-width: 160px;
+}
+
+.flag-filter-actions,
+.member-filter-actions,
+.flag-item-actions,
+.member-item-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.flag-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.flag-item-head,
+.member-item-main,
+.rule-item-main {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.flag-item-type,
+.rule-item-type,
+.member-item-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.flag-item-meta,
+.member-item-meta,
+.rule-item-summary {
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.flag-item-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+
+.flag-action-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-right: 6px;
+}
+
+.flag-item-actions label {
+  display: flex;
+  align-items: center;
+}
+
+.flag-item-actions .select {
+  width: auto;
+  min-width: 130px;
+}

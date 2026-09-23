@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,4 +38,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
             Long assetId, Long borrowerId, List<TransactionStatus> states);
 
     List<Transaction> findByAssetIdOrderByIdDesc(Long assetId);
+
+    Optional<Transaction> findByIdAndCommunityId(Long id, Long communityId);
+
+    List<Transaction> findByCommunityIdAndState(Long communityId, TransactionStatus state);
+
+    long countByCommunityIdAndStateIn(Long communityId, List<TransactionStatus> states);
+
+    long countByCommunityIdAndState(Long communityId, TransactionStatus state);
+
+    long countByCommunityIdAndStateAndDueAtIsNotNull(Long communityId, TransactionStatus state);
+
+    /**
+     * V2.4.2 completed loans returned on or before their due date, compared in
+     * SQL so both columns use the same persisted server-clock values.
+     */
+    @Query("select count(t) from Transaction t "
+            + "where t.community.id = :communityId and t.state = :state "
+            + "and t.dueAt is not null and t.completedAt is not null and t.completedAt <= t.dueAt")
+    long countCompletedOnTime(@Param("communityId") Long communityId,
+                              @Param("state") TransactionStatus state);
+
+    long countByCommunityIdAndCreatedAtGreaterThanEqual(Long communityId, LocalDateTime from);
 }

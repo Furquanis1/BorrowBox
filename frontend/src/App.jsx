@@ -19,6 +19,8 @@ import RequestsPage from './pages/dashboard/RequestsPage'
 import LoansPage from './pages/dashboard/LoansPage'
 import MembersPage from './pages/dashboard/MembersPage'
 import RulesPage from './pages/dashboard/RulesPage'
+import DashboardPage from './pages/dashboard/DashboardPage'
+import FlagsPage from './pages/dashboard/FlagsPage'
 import ProfilePage from './pages/dashboard/ProfilePage'
 import SettingsPage from './pages/dashboard/SettingsPage'
 import Toast from './components/ui/Toast'
@@ -141,6 +143,8 @@ export default function App() {
                   }
                 >
                   <Route index element={<CommunityHomePage />} />
+                  <Route path="dashboard" element={<DashboardPage />} />
+                  <Route path="flags" element={<FlagsPage />} />
                   <Route path="explore" element={<ExplorePage />} />
                   <Route path="members" element={<MembersPage />} />
                   <Route path="rules" element={<RulesPage />} />

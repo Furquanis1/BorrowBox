@@ -1,5 +1,6 @@
 package com.borrowbox.service;
 
+import com.borrowbox.dto.FlagUpdateRequest;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityType;
 import com.borrowbox.entity.Flag;
@@ -12,6 +13,8 @@ import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.FlagRepository;
+import com.borrowbox.repository.TransactionRepository;
+import com.borrowbox.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +28,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -40,11 +45,18 @@ public class FlagServiceTest {
     @Mock
     private MembershipService membershipService;
 
+    @Mock
+    private TransactionRepository transactionRepository;
+
+    @Mock
+    private UserRepository userRepository;
+
     private FlagService service;
 
     @BeforeEach
     void setUp() {
-        service = new FlagService(flagRepository, communityRepository, membershipService);
+        service = new FlagService(flagRepository, communityRepository, membershipService,
+                transactionRepository, userRepository);
     }
 
     private User user(Long id) {
@@ -278,5 +290,166 @@ public class FlagServiceTest {
 
         assertThatThrownBy(() -> service.getFlag(900L, 11L, manager))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ─── V2.4.2: transaction-id create ──────────────────────────────────────
+
+    @Test
+    void createByIdResolvesTransactionAndReportsTheManager() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        Transaction txn = transactionOf(50L, community(900L));
+        when(transactionRepository.findById(50L)).thenReturn(Optional.of(txn));
+        when(flagRepository.save(any(Flag.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Flag created = service.createFlag(900L, 50L, FlagType.OVERDUE, null, manager);
+
+        assertThat(created.getTransaction().getId()).isEqualTo(50L);
+        assertThat(created.getReporter().getId()).isEqualTo(100L);
+        assertThat(created.getFlagType()).isEqualTo(FlagType.OVERDUE);
+    }
+
+    @Test
+    void createByIdThrowsWhenTransactionMissing() {
+        User manager = user(100L);
+
+        assertThatThrownBy(() -> service.createFlag(900L, 50L, FlagType.MANUAL, null, manager))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void createByIdRejectsTransactionFromAnotherCommunity() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        when(transactionRepository.findById(50L))
+                .thenReturn(Optional.of(transactionOf(50L, community(999L))));
+
+        assertThatThrownBy(() -> service.createFlag(900L, 50L, FlagType.MANUAL, null, manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    // ─── V2.4.2: consolidated PATCH update ──────────────────────────────────
+
+    @Test
+    void updateFlagAppliesOnlyPresentFields() {
+        User manager = user(100L);
+        User assignee = user(200L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        when(membershipService.isActiveManager(200L, 900L)).thenReturn(true);
+        when(userRepository.findById(200L)).thenReturn(Optional.of(assignee));
+        Flag target = flag(11L, 900L, FlagStatus.OPEN, FlagType.MANUAL);
+        when(flagRepository.findById(11L)).thenReturn(Optional.of(target));
+        when(flagRepository.save(any(Flag.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Flag updated = service.updateFlag(900L, 11L,
+                new FlagUpdateRequest(FlagStatus.REVIEWED, 200L, false, "  checking  "), manager);
+
+        assertThat(updated.getStatus()).isEqualTo(FlagStatus.REVIEWED);
+        assertThat(updated.getAssignee().getId()).isEqualTo(200L);
+        assertThat(updated.getNote()).isEqualTo("checking");
+    }
+
+    @Test
+    void updateFlagClearAssigneeUnassigns() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        Flag target = flag(11L, 900L, FlagStatus.OPEN, FlagType.MANUAL);
+        target.setAssignee(user(200L));
+        when(flagRepository.findById(11L)).thenReturn(Optional.of(target));
+        when(flagRepository.save(any(Flag.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Flag updated = service.updateFlag(900L, 11L,
+                new FlagUpdateRequest(null, null, true, null), manager);
+
+        assertThat(updated.getAssignee()).isNull();
+    }
+
+    @Test
+    void updateFlagRejectsAssignAndUnassignTogether() {
+        User manager = user(100L);
+
+        assertThatThrownBy(() -> service.updateFlag(900L, 11L,
+                new FlagUpdateRequest(null, 200L, true, null), manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void updateFlagRejectsNonManagerAssignee() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        when(userRepository.findById(300L)).thenReturn(Optional.of(user(300L)));
+        when(flagRepository.findById(11L)).thenReturn(Optional.of(flag(11L, 900L, FlagStatus.OPEN, FlagType.MANUAL)));
+
+        assertThatThrownBy(() -> service.updateFlag(900L, 11L,
+                new FlagUpdateRequest(null, 300L, false, null), manager))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void updateFlagRequiresActiveManagerAndOwningCommunity() {
+        User outsider = user(100L);
+        stubCommunity(900L);
+
+        assertThatThrownBy(() -> service.updateFlag(900L, 11L,
+                new FlagUpdateRequest(FlagStatus.RESOLVED, null, false, null), outsider))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    // ─── V2.4.2: combined filters ───────────────────────────────────────────
+
+    @Test
+    void listFilteredDelegatesToCombinedQueryWhenAnyFilterPresent() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        Flag f = flag(1L, 900L, FlagStatus.OPEN, FlagType.OVERDUE);
+        when(flagRepository.findFiltered(900L, FlagStatus.OPEN, FlagType.OVERDUE, 50L))
+                .thenReturn(List.of(f));
+
+        List<Flag> result = service.listFiltered(900L, FlagStatus.OPEN, FlagType.OVERDUE, 50L, manager);
+
+        assertThat(result).containsExactly(f);
+        verify(flagRepository).findFiltered(eq(900L), eq(FlagStatus.OPEN), eq(FlagType.OVERDUE), eq(50L));
+    }
+
+    @Test
+    void listFilteredWithoutFiltersReturnsFullList() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        Flag f1 = flag(1L, 900L, FlagStatus.OPEN, FlagType.MANUAL);
+        when(flagRepository.findFiltered(900L, null, null, null)).thenReturn(List.of(f1));
+
+        List<Flag> result = service.listFiltered(900L, null, null, null, manager);
+
+        assertThat(result).containsExactly(f1);
+        verify(flagRepository).findFiltered(eq(900L), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void listFilteredRequiresManager() {
+        User outsider = user(100L);
+        stubCommunity(900L);
+
+        assertThatThrownBy(() -> service.listFiltered(900L, FlagStatus.OPEN, null, null, outsider))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void recentFlagsAndOpenCountDelegateToRepository() {
+        User manager = user(100L);
+        stubCommunity(900L);
+        stubActiveManager(manager, 900L);
+        Flag f = flag(1L, 900L, FlagStatus.OPEN, FlagType.OVERDUE);
+        when(flagRepository.findTop10ByCommunityIdOrderByOccurredAtDescIdDesc(900L)).thenReturn(List.of(f));
+        when(flagRepository.countByCommunityIdAndStatus(900L, FlagStatus.OPEN)).thenReturn(3L);
+
+        assertThat(service.recentFlags(900L, manager)).containsExactly(f);
+        assertThat(service.countOpen(900L)).isEqualTo(3L);
     }
 }

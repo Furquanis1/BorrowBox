@@ -4,6 +4,8 @@ import com.borrowbox.dto.CommunityCreateRequest;
 import com.borrowbox.dto.CommunityJoinRequest;
 import com.borrowbox.dto.CommunityResponse;
 import com.borrowbox.dto.MembershipResponse;
+import com.borrowbox.entity.MembershipRole;
+import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.service.CommunityService;
 import com.borrowbox.service.MembershipService;
 import com.borrowbox.service.UserService;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -56,8 +59,15 @@ public class CommunityController {
     }
 
     @GetMapping("/{id}/members")
-    public ResponseEntity<List<MembershipResponse>> getMembers(@PathVariable Long id) {
-        return ResponseEntity.ok(communityService.listMembers(id, currentUser()));
+    public ResponseEntity<List<MembershipResponse>> getMembers(
+            @PathVariable Long id,
+            @RequestParam(required = false) MembershipStatus status,
+            @RequestParam(required = false) MembershipRole role) {
+        if (status == null && role == null) {
+            return ResponseEntity.ok(communityService.listMembers(id, currentUser()));
+        }
+        return ResponseEntity.ok(
+                membershipService.listMembers(currentUser().getId(), id, status, role));
     }
 
     @PostMapping("/{id}/join")
@@ -76,6 +86,24 @@ public class CommunityController {
     @GetMapping("/{id}/members/pending")
     public ResponseEntity<List<MembershipResponse>> getPendingMembers(@PathVariable Long id) {
         return ResponseEntity.ok(membershipService.listPendingForCommunity(currentUser().getId(), id));
+    }
+
+    @PostMapping("/{id}/members/{membershipId}/suspend")
+    public ResponseEntity<MembershipResponse> suspendMember(@PathVariable Long id,
+                                                            @PathVariable Long membershipId) {
+        return ResponseEntity.ok(membershipService.suspend(membershipId, currentUser()));
+    }
+
+    @PostMapping("/{id}/members/{membershipId}/reinstate")
+    public ResponseEntity<MembershipResponse> reinstateMember(@PathVariable Long id,
+                                                              @PathVariable Long membershipId) {
+        return ResponseEntity.ok(membershipService.reinstate(membershipId, currentUser()));
+    }
+
+    @PostMapping("/{id}/members/{membershipId}/remove")
+    public ResponseEntity<MembershipResponse> removeMember(@PathVariable Long id,
+                                                           @PathVariable Long membershipId) {
+        return ResponseEntity.ok(membershipService.removeMember(membershipId, currentUser()));
     }
 
     private com.borrowbox.entity.User currentUser() {

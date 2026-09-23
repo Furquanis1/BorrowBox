@@ -65,4 +65,23 @@ public interface ReputationEventRepository extends JpaRepository<ReputationEvent
             @Param("eventType") ReputationEventType eventType,
             @Param("communityId") Long communityId
     );
+
+    long countByCommunityIdAndEventTypeAndRole(Long communityId,
+                                               ReputationEventType eventType,
+                                               ReputationRole role);
+
+    /**
+     * V2.4.2 disputes received by lenders of a community: RETURN_DISPUTED
+     * events whose transaction's lender is a member of that community.
+     */
+    @Query("SELECT COUNT(r) FROM ReputationEvent r " +
+           "WHERE r.eventType = :eventType " +
+           "AND r.community.id = :communityId " +
+           "AND r.transaction.lender.id IN " +
+           "(SELECT m.user.id FROM Membership m WHERE m.community.id = :communityId)")
+    long countByCommunityIdAndEventTypeWhereTransactionLenderIsMember(
+            @Param("communityId") Long communityId,
+            @Param("eventType") ReputationEventType eventType);
+
+    List<ReputationEvent> findTop20ByCommunityIdOrderByOccurredAtDesc(Long communityId);
 }

@@ -419,4 +419,179 @@ public class MembershipServiceTest {
         assertThatThrownBy(() -> service.leave(1L, 40L))
                 .isInstanceOf(BusinessRuleViolationException.class);
     }
+
+    // ─── V2.4.2 moderation ──────────────────────────────────────────────────
+
+    @Test
+    void suspendActiveMemberPreservesAuditFields() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        LocalDateTime joined = LocalDateTime.now().minusDays(20);
+        User verifiedBy = user(5L);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.ACTIVE);
+        target.setId(99L);
+        target.setJoinedAt(joined);
+        target.setVerificationMethod(MembershipVerificationMethod.LOCATION);
+        target.setVerifiedBy(verifiedBy);
+        target.setVerifiedAt(joined);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        MembershipResponse resp = service.suspend(99L, user(5L));
+
+        assertThat(resp.status()).isEqualTo(MembershipStatus.SUSPENDED);
+        assertThat(resp.role()).isEqualTo(MembershipRole.MEMBER);
+        assertThat(resp.joinedAt()).isEqualTo(joined);
+        assertThat(resp.verificationMethod()).isEqualTo(MembershipVerificationMethod.LOCATION);
+        assertThat(resp.verifiedBy()).isEqualTo(5L);
+        assertThat(resp.verifiedAt()).isEqualTo(joined);
+    }
+
+    @Test
+    void suspendPendingMemberThrows() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.PENDING);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.suspend(99L, user(5L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Only an active member can be suspended");
+    }
+
+    @Test
+    void reinstateSuspendedMemberActivates() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.SUSPENDED);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        MembershipResponse resp = service.reinstate(99L, user(5L));
+
+        assertThat(resp.status()).isEqualTo(MembershipStatus.ACTIVE);
+    }
+
+    @Test
+    void reinstateNonSuspendedMemberThrows() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.ACTIVE);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.reinstate(99L, user(5L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Only a suspended member can be reinstated");
+    }
+
+    @Test
+    void removeActiveMemberLeaves() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.ACTIVE);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        MembershipResponse resp = service.removeMember(99L, user(5L));
+
+        assertThat(resp.status()).isEqualTo(MembershipStatus.LEFT);
+    }
+
+    @Test
+    void removeLeftMemberThrows() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.LEFT);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.removeMember(99L, user(5L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Only an active or suspended member can be removed");
+    }
+
+    @Test
+    void lastActiveManagerCannotBeSuspendedOrRemoved() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership manager = membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE);
+        manager.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(manager));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L)).thenReturn(Optional.of(manager));
+        when(membershipRepository.findActiveManagersForUpdate(40L)).thenReturn(List.of(manager));
+
+        assertThatThrownBy(() -> service.suspend(99L, user(5L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("You cannot suspend or remove the last active manager of this community");
+        assertThatThrownBy(() -> service.removeMember(99L, user(5L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void managerCanSuspendAnotherManagerWhenAnotherActiveManagerRemains() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership managerA = membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE);
+        Membership managerB = membership(user(6L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE);
+        managerB.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(managerB));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L)).thenReturn(Optional.of(managerA));
+        when(membershipRepository.findActiveManagersForUpdate(40L))
+                .thenReturn(List.of(managerA, managerB));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        MembershipResponse resp = service.suspend(99L, user(5L));
+
+        assertThat(resp.status()).isEqualTo(MembershipStatus.SUSPENDED);
+        assertThat(resp.role()).isEqualTo(MembershipRole.MANAGER);
+    }
+
+    @Test
+    void moderationByNonManagerThrowsUnauthorized() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        Membership target = membership(user(6L), 40L, MembershipRole.MEMBER, MembershipStatus.ACTIVE);
+        target.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(target));
+        when(membershipRepository.findByUserIdAndCommunityId(8L, 40L))
+                .thenReturn(Optional.of(membership(user(8L), 40L, MembershipRole.MEMBER, MembershipStatus.ACTIVE)));
+
+        assertThatThrownBy(() -> service.suspend(99L, user(8L)))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> service.removeMember(99L, user(8L)))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void listMembersRequiresActiveMember() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        when(membershipRepository.findByUserIdAndCommunityId(8L, 40L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.listMembers(8L, 40L, null, null))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void listMembersAppliesStatusAndRoleFilters() {
+        MembershipService service = new MembershipService(membershipRepository, communityRepository);
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        Membership manager = membership(user(5L), 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE);
+        when(membershipRepository.findFiltered(40L, MembershipStatus.ACTIVE, MembershipRole.MANAGER))
+                .thenReturn(List.of(manager));
+
+        List<MembershipResponse> result = service.listMembers(5L, 40L,
+                MembershipStatus.ACTIVE, MembershipRole.MANAGER);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).role()).isEqualTo(MembershipRole.MANAGER);
+        assertThat(result.get(0).status()).isEqualTo(MembershipStatus.ACTIVE);
+    }
 }
