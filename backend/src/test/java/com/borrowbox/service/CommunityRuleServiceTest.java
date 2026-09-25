@@ -105,12 +105,32 @@ public class CommunityRuleServiceTest {
 
         CommunityRuleResponse resp = service.createRule(10L,
                 new CommunityRuleRequest(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
-                        Map.of("required", List.of("program", "year"))),
+                        Map.of("fields", List.of("program", "year"))),
                 manager(1L));
 
         assertThat(resp.ruleType()).isEqualTo(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS);
         assertThat(resp.status()).isEqualTo(CommunityStatus.ACTIVE);
-        assertThat(resp.value()).containsEntry("required", List.of("program", "year"));
+        assertThat(resp.value()).containsEntry("fields", List.of("program", "year"));
+        assertThat(resp.value()).doesNotContainKey("required");
+    }
+
+    @Test
+    void createRuleNormalizesLegacyMembershipRequiredKey() {
+        Community c = community(10L, CommunityStatus.ACTIVE);
+        when(communityRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(c));
+        when(membershipService.isActiveManager(1L, 10L)).thenReturn(true);
+        when(communityRuleRepository.findByCommunityIdAndRuleTypeAndStatus(
+                10L, CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS, CommunityStatus.ACTIVE))
+                .thenReturn(List.of());
+        when(communityRuleRepository.save(any(CommunityRule.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CommunityRuleResponse resp = service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
+                        Map.of("required", List.of("section", "tower"))),
+                manager(1L));
+
+        assertThat(resp.value()).containsEntry("fields", List.of("section", "tower"));
+        assertThat(resp.value()).doesNotContainKey("required");
     }
 
     @Test
@@ -182,14 +202,14 @@ public class CommunityRuleServiceTest {
         when(communityRuleRepository.save(any(CommunityRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CommunityRuleResponse resp = service.updateRule(10L, 51L,
-                new CommunityRuleUpdateRequest(Map.of("text", "Updated"), true),
+                new CommunityRuleUpdateRequest(Map.of("note", "Updated"), true),
                 manager(1L));
 
         verify(communityRepository).findByIdForUpdate(10L);
         assertThat(conflicting.getStatus()).isEqualTo(CommunityStatus.ARCHIVED);
         assertThat(target.getStatus()).isEqualTo(CommunityStatus.ACTIVE);
         assertThat(resp.status()).isEqualTo(CommunityStatus.ACTIVE);
-        assertThat(resp.value()).containsEntry("text", "Updated");
+        assertThat(resp.value()).containsEntry("note", "Updated");
     }
 
     @Test
@@ -202,12 +222,161 @@ public class CommunityRuleServiceTest {
         when(communityRuleRepository.save(any(CommunityRule.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CommunityRuleResponse resp = service.updateRule(10L, 51L,
-                new CommunityRuleUpdateRequest(Map.of("text", "Draft"), false),
+                new CommunityRuleUpdateRequest(Map.of("note", "Draft"), false),
                 manager(1L));
 
         assertThat(target.getStatus()).isEqualTo(CommunityStatus.ARCHIVED);
         assertThat(resp.status()).isEqualTo(CommunityStatus.ARCHIVED);
-        assertThat(resp.value()).containsEntry("text", "Draft");
+        assertThat(resp.value()).containsEntry("note", "Draft");
+    }
+
+    // ─── Validation ─────────────────────────────────────────────────────
+
+    private void validCreateSetup() {
+        Community c = community(10L, CommunityStatus.ACTIVE);
+        when(communityRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(c));
+        when(membershipService.isActiveManager(1L, 10L)).thenReturn(true);
+    }
+
+    private void stubRuleSave() {
+        when(communityRuleRepository.save(any(CommunityRule.class))).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    private void expectValidationFailure(CommunityRuleType type, Map<String, Object> value) {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L, new CommunityRuleRequest(type, value), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining(type.name());
+        verify(communityRuleRepository, org.mockito.Mockito.never()).save(any(CommunityRule.class));
+    }
+
+    @Test
+    void createRuleNormalizesLegacyAdmissionNoteTextKey() {
+        validCreateSetup();
+        stubRuleSave();
+        when(communityRuleRepository.findByCommunityIdAndRuleTypeAndStatus(
+                10L, CommunityRuleType.ADMISSION_NOTE, CommunityStatus.ACTIVE)).thenReturn(List.of());
+
+        CommunityRuleResponse resp = service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.ADMISSION_NOTE, Map.of("text", "Legacy")),
+                manager(1L));
+
+        assertThat(resp.value()).containsEntry("note", "Legacy");
+        assertThat(resp.value()).doesNotContainKey("text");
+    }
+
+    @Test
+    void admissionNoteRejectsMissingNote() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.ADMISSION_NOTE, Map.of()), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("note");
+    }
+
+    @Test
+    void admissionNoteRejectsBlankNote() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.ADMISSION_NOTE, Map.of("note", "   ")), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void admissionNoteRejectsOverlongNote() {
+        expectValidationFailure(CommunityRuleType.ADMISSION_NOTE,
+                Map.of("note", "x".repeat(2001)));
+    }
+
+    @Test
+    void maxActiveMembersAcceptsOne() {
+        validCreateSetup();
+        stubRuleSave();
+        when(communityRuleRepository.findByCommunityIdAndRuleTypeAndStatus(
+                10L, CommunityRuleType.MAX_ACTIVE_MEMBERS, CommunityStatus.ACTIVE)).thenReturn(List.of());
+
+        CommunityRuleResponse resp = service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.MAX_ACTIVE_MEMBERS, Map.of("max", 1)),
+                manager(1L));
+
+        assertThat(resp.value()).containsEntry("max", 1L);
+    }
+
+    @Test
+    void maxActiveMembersRejectsZero() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.MAX_ACTIVE_MEMBERS, Map.of("max", 0)), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void maxActiveMembersRejectsNegative() {
+        expectValidationFailure(CommunityRuleType.MAX_ACTIVE_MEMBERS, Map.of("max", -5));
+    }
+
+    @Test
+    void maxActiveMembersRejectsNonNumeric() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.MAX_ACTIVE_MEMBERS, Map.of("max", "many")), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void overdueGracePeriodAcceptsZeroAndThirty() {
+        validCreateSetup();
+        stubRuleSave();
+        when(communityRuleRepository.findByCommunityIdAndRuleTypeAndStatus(
+                10L, CommunityRuleType.OVERDUE_GRACE_PERIOD, CommunityStatus.ACTIVE)).thenReturn(List.of());
+
+        CommunityRuleResponse zero = service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", 0)),
+                manager(1L));
+        CommunityRuleResponse thirty = service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", 30)),
+                manager(1L));
+
+        assertThat(zero.value()).containsEntry("days", 0L);
+        assertThat(thirty.value()).containsEntry("days", 30L);
+    }
+
+    @Test
+    void overdueGracePeriodRejectsNegative() {
+        expectValidationFailure(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", -1));
+    }
+
+    @Test
+    void overdueGracePeriodRejectsThirtyOne() {
+        expectValidationFailure(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", 31));
+    }
+
+    @Test
+    void overdueGracePeriodRejectsNonNumeric() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", "soon")), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void membershipContextFieldsRejectsUnknownField() {
+        expectValidationFailure(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
+                Map.of("fields", List.of("program", "favorite_color")));
+    }
+
+    @Test
+    void membershipContextFieldsRejectsEmptyList() {
+        expectValidationFailure(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
+                Map.of("fields", List.of()));
+    }
+
+    @Test
+    void membershipContextFieldsRejectsMissingValue() {
+        validCreateSetup();
+        assertThatThrownBy(() -> service.createRule(10L,
+                new CommunityRuleRequest(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS, Map.of()), manager(1L)))
+                .isInstanceOf(BusinessRuleViolationException.class);
     }
 
     @Test

@@ -7,34 +7,13 @@ import { ruleService } from '../../services'
 import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
-
-const RULE_TYPES = [
-  'MEMBERSHIP_CONTEXT_FIELDS',
-  'MAX_ACTIVE_MEMBERS',
-  'ADMISSION_NOTE',
-  'OVERDUE_GRACE_PERIOD',
-]
-
-const DEFAULT_VALUE_PLACEHOLDER = {
-  OVERDUE_GRACE_PERIOD: '{ "days": 3 }',
-  MAX_ACTIVE_MEMBERS: '{ "max": 50 }',
-  ADMISSION_NOTE: '{ "note": "Welcome to the community" }',
-  MEMBERSHIP_CONTEXT_FIELDS: '{ "fields": ["program", "year"] }',
-}
-
-function ruleSummary(rule) {
-  if (!rule.value) return ''
-  if (rule.ruleType === 'OVERDUE_GRACE_PERIOD' && rule.value.days != null) {
-    return `${rule.value.days} day grace`
-  }
-  if (rule.ruleType === 'MAX_ACTIVE_MEMBERS' && rule.value.max != null) {
-    return `max ${rule.value.max} members`
-  }
-  if (rule.ruleType === 'ADMISSION_NOTE' && rule.value.note) {
-    return String(rule.value.note)
-  }
-  return JSON.stringify(rule.value)
-}
+import RuleValueEditor, {
+  RULE_TYPES,
+  defaultRuleValue,
+  ruleSummary,
+  ruleValuePayload,
+  validateRuleValue,
+} from '../../components/dashboard/RuleValueEditor'
 
 export default function RulesPage() {
   const { communityId } = useParams()
@@ -44,7 +23,8 @@ export default function RulesPage() {
   const manager = isManager(communityId)
   const [creating, setCreating] = useState(false)
   const [createType, setCreateType] = useState('OVERDUE_GRACE_PERIOD')
-  const [createValue, setCreateValue] = useState('')
+  const [createValue, setCreateValue] = useState(() => defaultRuleValue('OVERDUE_GRACE_PERIOD'))
+  const [createError, setCreateError] = useState('')
   const [saving, setSaving] = useState(false)
   const [actingRuleId, setActingRuleId] = useState(null)
 
@@ -58,30 +38,29 @@ export default function RulesPage() {
   const { data: rules, loading, error, reload } = useAsync(fetchRules, [communityId, manager])
 
   const openCreate = () => {
-    setCreateValue(DEFAULT_VALUE_PLACEHOLDER[createType] || '')
     setCreating((value) => !value)
+    setCreateError('')
   }
 
   const changeCreateType = (event) => {
     const next = event.target.value
     setCreateType(next)
-    setCreateValue(DEFAULT_VALUE_PLACEHOLDER[next] || '')
+    setCreateValue(defaultRuleValue(next))
+    setCreateError('')
   }
 
   const handleCreate = async (event) => {
     event.preventDefault()
-    let parsedValue
-    try {
-      parsedValue = createValue.trim() ? JSON.parse(createValue) : {}
-    } catch (err) {
-      showToast('The rule value must be valid JSON.', 'error')
+    const validationError = validateRuleValue(createType, createValue)
+    if (validationError) {
+      setCreateError(validationError)
       return
     }
     setSaving(true)
     try {
-      await ruleService.createRule(communityId, createType, parsedValue)
+      await ruleService.createRule(communityId, createType, ruleValuePayload(createType, createValue))
       setCreating(false)
-      setCreateValue('')
+      setCreateError('')
       showToast('Rule created and activated.')
       await reload()
     } catch (err) {
@@ -126,7 +105,7 @@ export default function RulesPage() {
         )}
 
         {creating && (
-          <form className="flag-create-form" onSubmit={handleCreate} aria-label="Create a rule">
+          <form className="flag-create-form" onSubmit={handleCreate} aria-label="Create a rule" noValidate>
             <div className="form-group">
               <label htmlFor="create-rule-type">Rule type</label>
               <select
@@ -142,20 +121,20 @@ export default function RulesPage() {
                 ))}
               </select>
             </div>
-            <div className="form-group">
-              <label htmlFor="create-rule-value">Value (JSON)</label>
-              <textarea
-                id="create-rule-value"
-                className="textarea"
-                value={createValue}
-                onChange={(event) => setCreateValue(event.target.value)}
-                placeholder={DEFAULT_VALUE_PLACEHOLDER[createType]}
-              />
-              <p className="form-hint">
-                The most recently created rule of a type becomes the single active rule of that
-                type; the previous one is archived automatically.
+            <RuleValueEditor
+              ruleType={createType}
+              value={createValue}
+              onChange={setCreateValue}
+            />
+            <p className="form-hint">
+              The most recently created rule of a type becomes the single active rule of that
+              type; the previous one is archived automatically.
+            </p>
+            {createError && (
+              <p className="field-error" role="alert">
+                {createError}
               </p>
-            </div>
+            )}
             <Button type="submit" loading={saving}>
               Create rule
             </Button>

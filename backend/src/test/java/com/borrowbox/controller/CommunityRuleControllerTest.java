@@ -62,7 +62,7 @@ public class CommunityRuleControllerTest {
 
     private CommunityRuleResponse ruleResponse(Long id, CommunityRuleType type, CommunityStatus status) {
         return new CommunityRuleResponse(
-                id, 1L, type, Map.of("text", "Be kind"),
+                id, 1L, type, Map.of("note", "Be kind"),
                 status, 100L, 100L, null, null);
     }
 
@@ -79,7 +79,7 @@ public class CommunityRuleControllerTest {
     @Test
     void createRuleReturnsRule() throws Exception {
         CommunityRuleRequest req = new CommunityRuleRequest(
-                CommunityRuleType.ADMISSION_NOTE, Map.of("text", "Be kind"));
+                CommunityRuleType.ADMISSION_NOTE, Map.of("note", "Be kind"));
         CommunityRuleResponse resp = ruleResponse(1L, CommunityRuleType.ADMISSION_NOTE, CommunityStatus.ACTIVE);
         Mockito.when(communityRuleService.createRule(eq(1L), any(), eq(currentUser))).thenReturn(resp);
 
@@ -93,7 +93,7 @@ public class CommunityRuleControllerTest {
 
     @Test
     void updateRuleReturnsRule() throws Exception {
-        CommunityRuleUpdateRequest req = new CommunityRuleUpdateRequest(Map.of("text", "Kind"), true);
+        CommunityRuleUpdateRequest req = new CommunityRuleUpdateRequest(Map.of("note", "Kind"), true);
         CommunityRuleResponse resp = ruleResponse(5L, CommunityRuleType.ADMISSION_NOTE, CommunityStatus.ACTIVE);
         Mockito.when(communityRuleService.updateRule(eq(1L), eq(5L), any(), eq(currentUser))).thenReturn(resp);
 
