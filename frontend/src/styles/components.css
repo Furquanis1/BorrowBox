@@ -2945,3 +2945,28 @@ select,
   width: auto;
   min-width: 130px;
 }
+
+.context-field-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.context-field-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 0.875rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.context-field-option input[type='checkbox'] {
+  accent-color: var(--teal-600);
+  width: 16px;
+  height: 16px;
+}

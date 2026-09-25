@@ -100,15 +100,63 @@ public class CommunityRuleIntegrationTest {
         CommunityRuleResponse created = communityRuleService.createRule(
                 community.getId(),
                 new CommunityRuleRequest(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
-                        Map.of("required", List.of("program", "year"), "section", "A")),
+                        Map.of("fields", List.of("program", "year"))),
                 manager);
 
         assertThat(created.status()).isEqualTo(CommunityStatus.ACTIVE);
         CommunityRule loaded = communityRuleRepository.findById(created.id()).orElseThrow();
         assertThat(loaded.getRuleType()).isEqualTo(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS);
         assertThat(loaded.getStatus()).isEqualTo(CommunityStatus.ACTIVE);
-        assertThat(loaded.getValue()).containsEntry("required", List.of("program", "year"));
-        assertThat(loaded.getValue()).containsEntry("section", "A");
+        assertThat(loaded.getValue()).containsEntry("fields", List.of("program", "year"));
+        assertThat(loaded.getValue()).doesNotContainKey("required");
+    }
+
+    @Test
+    void createRuleNormalizesLegacyAdmissionNoteTextKey() {
+        User manager = user("RulesMgrLegacy");
+        Community community = createCommunity(manager);
+
+        CommunityRuleResponse created = communityRuleService.createRule(
+                community.getId(),
+                new CommunityRuleRequest(CommunityRuleType.ADMISSION_NOTE, Map.of("text", "Legacy")),
+                manager);
+
+        CommunityRule loaded = communityRuleRepository.findById(created.id()).orElseThrow();
+        assertThat(loaded.getValue()).containsEntry("note", "Legacy");
+        assertThat(loaded.getValue()).doesNotContainKey("text");
+    }
+
+    @Test
+    void createRuleRejectsInvalidValues() {
+        User manager = user("RulesMgrInvalid");
+        Community community = createCommunity(manager);
+
+        assertThatThrownBy(() -> communityRuleService.createRule(
+                community.getId(),
+                new CommunityRuleRequest(CommunityRuleType.ADMISSION_NOTE, Map.of("note", "   ")),
+                manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        assertThatThrownBy(() -> communityRuleService.createRule(
+                community.getId(),
+                new CommunityRuleRequest(CommunityRuleType.MAX_ACTIVE_MEMBERS, Map.of("max", 0)),
+                manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        assertThatThrownBy(() -> communityRuleService.createRule(
+                community.getId(),
+                new CommunityRuleRequest(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", 31)),
+                manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        assertThatThrownBy(() -> communityRuleService.createRule(
+                community.getId(),
+                new CommunityRuleRequest(CommunityRuleType.MEMBERSHIP_CONTEXT_FIELDS,
+                        Map.of("fields", List.of("unsupported_field"))),
+                manager))
+                .isInstanceOf(BusinessRuleViolationException.class);
+
+        assertThat(communityRuleRepository.findByCommunityId(community.getId())).isEmpty();
     }
 
     @Test
@@ -181,14 +229,14 @@ public class CommunityRuleIntegrationTest {
 
         CommunityRuleResponse updated = communityRuleService.updateRule(
                 community.getId(), activeA.getId(),
-                new CommunityRuleUpdateRequest(Map.of("text", "A-updated"), true),
+                new CommunityRuleUpdateRequest(Map.of("note", "A-updated"), true),
                 manager);
 
         assertThat(updated.status()).isEqualTo(CommunityStatus.ACTIVE);
         CommunityRule target = communityRuleRepository.findById(activeA.getId()).orElseThrow();
         CommunityRule conflict = communityRuleRepository.findById(activeB.getId()).orElseThrow();
         assertThat(target.getStatus()).isEqualTo(CommunityStatus.ACTIVE);
-        assertThat(target.getValue()).containsEntry("text", "A-updated");
+        assertThat(target.getValue()).containsEntry("note", "A-updated");
         assertThat(conflict.getStatus()).isEqualTo(CommunityStatus.ARCHIVED);
 
         List<CommunityRule> active = communityRuleRepository.findByCommunityIdAndStatus(
