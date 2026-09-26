@@ -165,6 +165,7 @@ describe('V2.2.6 Return Dispute', () => {
     loginViaApi(salah)
     post(() => `/api/transactions/${txnId}/stage-handover`)
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`)
 
     footballCounts().then(({ available, borrowed }) => {
@@ -197,10 +198,10 @@ describe('V2.2.6 Return Dispute', () => {
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return reported').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
     cy.get('.conversation-return-action').contains('The borrower reported the item is back.').should('be.visible')
-    cy.get('.conversation-return-action button').contains('Confirm received').should('be.visible')
+    cy.get('.conversation-return-action button').contains('Confirm received').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains('Not received').should('be.visible')
     cy.get('.conversation-return-title').contains('Photos').should('be.visible')
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
+    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 3)
     cy.get('.conversation-evidence-item').first().find('img').should('be.visible')
 
     // ── RETURN_REPORTED guard rails: borrower can neither confirm nor dispute ──
@@ -235,7 +236,7 @@ describe('V2.2.6 Return Dispute', () => {
       .should('be.visible')
     cy.get('.conversation-return-action').should('not.exist')
     cy.get('.conversation-composer').should('not.exist')
-    cy.get('.conversation-evidence-item').should('have.length', 2)
+    cy.get('.conversation-evidence-item').should('have.length', 3)
     cy.get('button[aria-label="Close"]').click()
 
     // ── Loans UI shows the terminal dispute state ──

@@ -9,7 +9,11 @@ import { eventService, requestService } from '../../services'
 const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
 const EVIDENCE_STATES = new Set(['RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
+// V2.5.1: the lender can also capture/see evidence while awaiting handover.
+const EVIDENCE_VISIBLE_STATES = new Set(['AWAITING_HANDOVER', 'RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
 const EVIDENCE_LABELS = {
+  LENDER_PRE_LENDING: 'Pre-lending',
+  LENDER_HANDOVER: 'At handover',
   BORROWER_PRE_RETURN: 'Before return',
   BORROWER_RETURN_HANDOVER: 'At handover',
 }
@@ -46,15 +50,21 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const [evidence, setEvidence] = useState([])
   const [evidenceLoading, setEvidenceLoading] = useState(false)
   const [uploadingType, setUploadingType] = useState(null)
+  // V2.5.1: one pending lender upload at a time; each slot keeps its own
+  // condition note/rating so metadata always belongs to the chosen photo.
+  const [pendingUpload, setPendingUpload] = useState(null)
   const [showTimeline, setShowTimeline] = useState(false)
   const [timeline, setTimeline] = useState([])
   const [timelineLoading, setTimelineLoading] = useState(false)
   const [timelineError, setTimelineError] = useState('')
   const { user } = useAuth()
   const bottomRef = useRef(null)
+  const messageListRef = useRef(null)
   const inputRef = useRef(null)
   const preRef = useRef(null)
   const handoverRef = useRef(null)
+  const lenderPreRef = useRef(null)
+  const lenderHandoverRef = useRef(null)
 
   useEffect(() => {
     setCurrentTxn(transaction)
@@ -67,6 +77,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     setShowTimeline(false)
     setTimeline([])
     setTimelineError('')
+    setPendingUpload(null)
   }, [transaction])
 
   const active = currentTxn || transaction
@@ -102,7 +113,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   }, [transaction])
 
   useEffect(() => {
-    if (open && transaction && EVIDENCE_STATES.has(transaction.state)) loadEvidence()
+    if (open && transaction && EVIDENCE_VISIBLE_STATES.has(transaction.state)) loadEvidence()
   }, [open, transaction?.id, transaction?.state, loadEvidence])
 
   const loadTimeline = useCallback(() => {
@@ -121,8 +132,8 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   }, [open, showTimeline, transaction?.id, currentTxn?.state, loadTimeline])
 
   useEffect(() => {
-    if (!loading && messages.length) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (!loading && messages.length && messageListRef.current) {
+      messageListRef.current.scrollTo({ top: messageListRef.current.scrollHeight })
     }
   }, [loading, messages.length])
 
@@ -240,18 +251,30 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const hasEvidenceType = (type) => evidence.some((item) => item.type === type)
   const evidenceReady = hasEvidenceType('BORROWER_PRE_RETURN') && hasEvidenceType('BORROWER_RETURN_HANDOVER')
 
-  const handleUploadEvidence = async (type, file) => {
+  const handleUploadEvidence = async (type, file, conditionNote, conditionRating) => {
     if (!file) return
     setUploadingType(type)
     setActionError('')
     try {
-      await requestService.uploadEvidence(transaction.id, type, file)
+      await requestService.uploadEvidence(transaction.id, type, file, conditionNote, conditionRating)
       await loadEvidence()
     } catch (err) {
       setActionError(err?.message || 'Could not upload the photo')
     } finally {
       setUploadingType(null)
     }
+  }
+
+  const handleSelectLenderPhoto = (type, file) => {
+    if (!file) return
+    setPendingUpload({ type, file, note: '', rating: null })
+  }
+
+  const handleSubmitPendingUpload = async () => {
+    if (!pendingUpload || !pendingUpload.file) return
+    const { type, file, note, rating } = pendingUpload
+    await handleUploadEvidence(type, file, note || null, rating)
+    setPendingUpload(null)
   }
 
   const handleDisputeReturn = async () => {
@@ -390,7 +413,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
       ) : error && !messages.length ? (
         <p className="field-error" role="alert">{error}</p>
       ) : (
-        <div className="conversation-body">
+        <div className="conversation-body" ref={messageListRef}>
           {!messages.length && (
             <p className="conversation-empty">
               No messages yet. Use this conversation to coordinate pickup with the other party.
@@ -468,7 +491,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         </div>
       )}
 
-      {EVIDENCE_STATES.has(state) && (
+      {EVIDENCE_VISIBLE_STATES.has(state) && (
         <div className="conversation-evidence">
           <p className="conversation-return-title">Photos</p>
           {evidenceLoading ? (
@@ -482,12 +505,14 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
                   <img src={item.contentUrl} alt={EVIDENCE_LABELS[item.type] || item.type} />
                   <figcaption>
                     {EVIDENCE_LABELS[item.type] || item.type} · {item.capturerName}
+                    {item.conditionNote && ` · ${item.conditionNote}`}
+                    {item.conditionRating != null && ` · ${item.conditionRating}/5`}
                   </figcaption>
                 </figure>
               ))}
             </div>
           ) : (
-            <p className="conversation-return-hint">No photos were captured for this return.</p>
+            <p className="conversation-return-hint">No photos were captured yet for this transaction.</p>
           )}
         </div>
       )}
@@ -496,6 +521,119 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         <div className="conversation-context">
           {actionError && (
             <p className="field-error" role="alert">{actionError}</p>
+          )}
+
+          {state === 'AWAITING_HANDOVER' && isLender && (
+            <div className="conversation-lender-evidence">
+              <p className="conversation-return-title">Evidence photos</p>
+              <p className="conversation-return-hint">
+                Capture the item before lending and at the physical handover. The handover photo is required before confirming the handover.
+              </p>
+              <div className="conversation-window-actions">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={uploadingType === 'LENDER_PRE_LENDING'}
+                  disabled={uploadingType !== null || (pendingUpload !== null && pendingUpload.type !== 'LENDER_PRE_LENDING')}
+                  onClick={() => lenderPreRef.current?.click()}
+                >
+                  <i className="bi bi-camera" aria-hidden="true" />
+                  {hasEvidenceType('LENDER_PRE_LENDING') ? 'Pre-lend photo added' : 'Add pre-lend photo'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={uploadingType === 'LENDER_HANDOVER'}
+                  disabled={uploadingType !== null || (pendingUpload !== null && pendingUpload.type !== 'LENDER_HANDOVER')}
+                  onClick={() => lenderHandoverRef.current?.click()}
+                >
+                  <i className="bi bi-camera" aria-hidden="true" />
+                  {hasEvidenceType('LENDER_HANDOVER') ? 'Handover photo added' : 'Add handover photo'}
+                </Button>
+              </div>
+              <input
+                ref={lenderPreRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  handleSelectLenderPhoto('LENDER_PRE_LENDING', event.target.files[0])
+                  event.target.value = ''
+                }}
+              />
+              <input
+                ref={lenderHandoverRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(event) => {
+                  handleSelectLenderPhoto('LENDER_HANDOVER', event.target.files[0])
+                  event.target.value = ''
+                }}
+              />
+              {pendingUpload && (
+                <div className="conversation-evidence-pending">
+                  <p className="conversation-return-title">
+                    Add {EVIDENCE_LABELS[pendingUpload.type] || pendingUpload.type} photo
+                  </p>
+                  <p className="conversation-return-hint">
+                    Optionally record the item condition for this evidence photo before uploading.
+                  </p>
+                  <label className="conversation-extension-field">
+                    <span>Condition note (optional)</span>
+                    <textarea
+                      className="conversation-extension-input conversation-evidence-note"
+                      rows={2}
+                      maxLength={1000}
+                      placeholder="Describe the item condition at this moment..."
+                      value={pendingUpload.note}
+                      onChange={(event) =>
+                        setPendingUpload((pending) => ({ ...pending, note: event.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className="conversation-extension-field">
+                    <span>Condition rating (optional, 1-5)</span>
+                    <select
+                      className="conversation-extension-input conversation-evidence-rating"
+                      value={pendingUpload.rating == null ? '' : pendingUpload.rating}
+                      onChange={(event) =>
+                        setPendingUpload((pending) => ({
+                          ...pending,
+                          rating: event.target.value === '' ? null : Number(event.target.value),
+                        }))
+                      }
+                    >
+                      <option value="">— No rating —</option>
+                      <option value={1}>1 — Poor</option>
+                      <option value={2}>2 — Fair</option>
+                      <option value={3}>3 — Good</option>
+                      <option value={4}>4 — Very good</option>
+                      <option value={5}>5 — Excellent</option>
+                    </select>
+                  </label>
+                  <div className="conversation-window-actions">
+                    <Button variant="primary" size="sm" loading={uploadingType === pendingUpload.type} onClick={handleSubmitPendingUpload}>
+                      <i className="bi bi-upload" aria-hidden="true" />
+                      Upload photo
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={uploadingType !== null}
+                      onClick={() => setPendingUpload(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {!hasEvidenceType('LENDER_HANDOVER') && (
+                <p className="conversation-return-hint">
+                  The handover photo is required before you can confirm the handover.
+                </p>
+              )}
+            </div>
           )}
 
           {state === 'ACTIVE' && isBorrower && active.handoverWindowOpen && !active.borrowerConfirmedAt && (

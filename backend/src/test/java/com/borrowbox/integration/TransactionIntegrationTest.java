@@ -394,6 +394,8 @@ public class TransactionIntegrationTest {
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isZero();
 
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
         TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
         assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
         assertThat(active.startedAt()).isNotNull();
@@ -405,9 +407,9 @@ public class TransactionIntegrationTest {
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
 
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
         assertThat(countOf(football, AssetUnitStatus.BORROWED)).isEqualTo(1);
@@ -436,6 +438,8 @@ public class TransactionIntegrationTest {
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
         TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
         TransactionResponse returned = transactionService.initiateReturn(active.id(), salah);
         assertThat(returned.state()).isEqualTo(TransactionStatus.RETURN_INITIATED);
@@ -448,9 +452,9 @@ public class TransactionIntegrationTest {
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
 
@@ -507,6 +511,8 @@ public class TransactionIntegrationTest {
         // Still writable while awaiting handover.
         transactionMessageService.sendMessage(staged.id(), salah, "I am at the gate now");
 
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
         TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
         assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
@@ -524,9 +530,9 @@ public class TransactionIntegrationTest {
         // The borrower reports the physical handback; the lender can then confirm
         // receipt. Messaging stays open through RETURN_REPORTED.
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                returned.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
         transactionService.uploadEvidence(
-                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                returned.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
         TransactionResponse reported = transactionService.reportHandback(returned.id(), salah);
         assertThat(reported.state()).isEqualTo(TransactionStatus.RETURN_REPORTED);
         transactionMessageService.sendMessage(reported.id(), ahmed, "Thanks, I will confirm shortly");
@@ -542,7 +548,8 @@ public class TransactionIntegrationTest {
                 .map(TransactionMessageResponse::body)
                 .toList();
         assertThat(systemBodies).containsExactly(
-                "Handover scheduled", "Loan started", "Return initiated",
+                "Handover scheduled", "Evidence added: LENDER_HANDOVER", "Loan started",
+                "Return initiated",
                 "Evidence added: BORROWER_PRE_RETURN", "Evidence added: BORROWER_RETURN_HANDOVER",
                 "Handback reported", "Loan completed");
         assertThat(timeline).allSatisfy(message -> assertThat(message.createdAt()).isNotNull());
@@ -555,7 +562,7 @@ public class TransactionIntegrationTest {
                 });
 
         // COMPLETED is a read-only archive: reads allowed, writes rejected.
-        assertThat(transactionMessageService.listMessages(completed.id(), salah)).hasSize(13);
+        assertThat(transactionMessageService.listMessages(completed.id(), salah)).hasSize(14);
         assertThatThrownBy(() -> transactionMessageService.sendMessage(completed.id(), salah, "hi"))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
@@ -594,6 +601,8 @@ public class TransactionIntegrationTest {
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
         return transactionService.confirmHandover(staged.id(), ahmed);
     }
 
@@ -901,9 +910,9 @@ public class TransactionIntegrationTest {
         TransactionResponse active = activateToActive(football, ahmed, salah);
         TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
         transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
         transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
         return transactionService.reportHandback(initiated.id(), salah);
     }
 
@@ -960,13 +969,13 @@ public class TransactionIntegrationTest {
                 .hasMessage("Both return evidence photos are required before reporting the handback");
 
         transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
         assertThatThrownBy(() -> transactionService.reportHandback(initiated.id(), salah))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("Both return evidence photos are required before reporting the handback");
 
         transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
         assertThat(transactionService.reportHandback(initiated.id(), salah).state())
                 .isEqualTo(TransactionStatus.RETURN_REPORTED);
     }
@@ -983,13 +992,17 @@ public class TransactionIntegrationTest {
         TransactionResponse active = activateToActive(football, ahmed, salah);
         TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
         EvidenceResponse uploaded = transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1, 2, 3}), salah);
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN,
+                photo("before.png", new byte[]{1, 2, 3}), null, null, salah);
 
+        // Both participants see the lender's handover photo plus the new one.
         List<EvidenceResponse> fromBorrower = transactionService.listEvidence(initiated.id(), salah);
         List<EvidenceResponse> fromLender = transactionService.listEvidence(initiated.id(), ahmed);
-        assertThat(fromBorrower).hasSize(1);
-        assertThat(fromBorrower.get(0).id()).isEqualTo(uploaded.id());
-        assertThat(fromLender).hasSize(1);
+        assertThat(fromBorrower).hasSize(2);
+        assertThat(fromBorrower.get(0).type()).isEqualTo(EvidenceType.LENDER_HANDOVER);
+        assertThat(fromBorrower.get(1).id()).isEqualTo(uploaded.id());
+        assertThat(fromLender).hasSize(2);
+        assertThat(fromLender.get(1).id()).isEqualTo(uploaded.id());
 
         assertThatThrownBy(() -> transactionService.listEvidence(initiated.id(), youssef))
                 .isInstanceOf(UnauthorizedException.class);
@@ -1017,17 +1030,102 @@ public class TransactionIntegrationTest {
             TransactionResponse active = activateToActive(football, ahmed, salah);
             TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
             transactionService.uploadEvidence(
-                    initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), salah);
+                    initiated.id(), EvidenceType.BORROWER_PRE_RETURN, photo("before.png", new byte[]{1}), null, null, salah);
             transactionService.uploadEvidence(
-                    initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), salah);
+                    initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER, photo("handover.png", new byte[]{2}), null, null, salah);
             during.set(mediaFileCount());
             status.setRollbackOnly();
             return null;
         });
 
-        assertThat(during.get()).as("both files exist while the transaction is active")
-                .isEqualTo(before + 2);
+        assertThat(during.get()).as("all three files exist while the transaction is active")
+                .isEqualTo(before + 3);
         assertThat(mediaFileCount()).as("rolled-back uploads leave no orphaned files")
                 .isEqualTo(before);
+    }
+
+    // ── V2.5.1 lender evidence + condition metadata ───────────────────
+
+    @Test
+    @Transactional
+    void lenderEvidenceFlowWithConditionMetadata() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        User youssef = seedUser("youssef@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Handover evidence flow", 2), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        assertThat(staged.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+
+        EvidenceResponse preLending = transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_PRE_LENDING,
+                photo("pre-lending.png", new byte[]{1}), "Minor scratches", 4, ahmed);
+        EvidenceResponse handover = transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER,
+                photo("handover.png", new byte[]{2}), "Handed over in good order", 5, ahmed);
+
+        TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
+        assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
+
+        List<EvidenceResponse> fromBorrower = transactionService.listEvidence(active.id(), salah);
+        assertThat(fromBorrower).hasSize(2);
+        assertThat(transactionService.listEvidence(active.id(), ahmed)).hasSize(2);
+
+        EvidenceResponse preRow = fromBorrower.stream()
+                .filter(e -> e.type() == EvidenceType.LENDER_PRE_LENDING).findFirst().orElseThrow();
+        EvidenceResponse handoverRow = fromBorrower.stream()
+                .filter(e -> e.type() == EvidenceType.LENDER_HANDOVER).findFirst().orElseThrow();
+        assertThat(preRow.id()).isEqualTo(preLending.id());
+        assertThat(preRow.conditionNote()).isEqualTo("Minor scratches");
+        assertThat(preRow.conditionRating()).isEqualTo(4);
+        assertThat(handoverRow.id()).isEqualTo(handover.id());
+        assertThat(handoverRow.conditionNote()).isEqualTo("Handed over in good order");
+        assertThat(handoverRow.conditionRating()).isEqualTo(5);
+
+        assertThatThrownBy(() -> transactionService.listEvidence(active.id(), youssef))
+                .isInstanceOf(UnauthorizedException.class);
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                active.id(), EvidenceType.LENDER_HANDOVER, photo("late.png", new byte[]{3}), null, null, ahmed))
+                .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    @Transactional
+    void confirmHandoverRejectedWithoutLenderHandoverEvidence() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "No evidence", 2), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        assertThat(staged.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(staged.id(), ahmed))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Handover evidence required before confirming handover");
+
+        // A pre-lending photo alone does not unblock the handover.
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_PRE_LENDING, photo("pre-lending.png", new byte[]{1}), null, null, ahmed);
+        assertThatThrownBy(() -> transactionService.confirmHandover(staged.id(), ahmed))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Handover evidence required before confirming handover");
+
+        // With the handover photo the precondition is satisfied.
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
+        assertThat(transactionService.confirmHandover(staged.id(), ahmed).state())
+                .isEqualTo(TransactionStatus.ACTIVE);
     }
 }

@@ -38,6 +38,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,6 +49,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -189,6 +191,33 @@ public class TransactionServiceTest {
             reserved.setStatus(AssetUnitStatus.BORROWED);
         }
         return txn;
+    }
+
+    /**
+     * V2.5.1: drives the real application upload path for the lender's
+     * LENDER_HANDOVER photo while the fixture transaction is AWAITING_HANDOVER,
+     * so the confirmHandover precondition is genuinely satisfied through the
+     * product flow (no direct repository seeding). The transaction id and the
+     * transactionRepository.findByIdForUpdate(1L) stub must already be in
+     * place before this helper is called.
+     */
+    private void uploadLenderHandoverEvidence() {
+        AtomicReference<Evidence> saved = new AtomicReference<>();
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(7L);
+            saved.set(e);
+            return e;
+        });
+        when(evidenceRepository.findByTransactionIdAndType(anyLong(), eq(EvidenceType.LENDER_HANDOVER)))
+                .thenAnswer(inv -> saved.get() != null ? List.of(saved.get()) : List.of());
+        MockMultipartFile file = new MockMultipartFile("file", "handover.png", "image/png", new byte[]{1, 2});
+        transactionService.uploadEvidence(1L, EvidenceType.LENDER_HANDOVER, file, null, null, owner);
+    }
+
+    private MockMultipartFile imagePhoto() {
+        return new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1});
     }
 
     // ── create ────────────────────────────────────────────────────────
@@ -626,6 +655,8 @@ public class TransactionServiceTest {
         txn.setAgreedDurationDays(3);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        // V2.5.1: lender must capture handover evidence before confirming.
+        uploadLenderHandoverEvidence();
 
         TransactionResponse response = transactionService.confirmHandover(1L, owner);
 
@@ -840,6 +871,8 @@ public class TransactionServiceTest {
         txn.setAgreedDurationDays(7);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        // V2.5.1: lender must capture handover evidence before confirming.
+        uploadLenderHandoverEvidence();
 
         TransactionResponse response = transactionService.confirmHandover(1L, owner);
 
@@ -1592,7 +1625,7 @@ public class TransactionServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.png", "image/png", new byte[]{1, 2, 3});
 
-        EvidenceResponse response = transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower);
+        EvidenceResponse response = transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower);
 
         assertThat(response.id()).isEqualTo(7L);
         assertThat(response.type()).isEqualTo(EvidenceType.BORROWER_PRE_RETURN);
@@ -1600,21 +1633,22 @@ public class TransactionServiceTest {
         assertThat(response.contentType()).isEqualTo("image/png");
         assertThat(response.sizeBytes()).isEqualTo(3L);
         assertThat(response.contentUrl()).endsWith("/evidence/7/content");
+        assertThat(response.conditionNote()).isNull();
+        assertThat(response.conditionRating()).isNull();
         verify(evidenceStorageService).store(any(byte[].class));
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Evidence added: BORROWER_PRE_RETURN"));
     }
 
     @Test
-    void uploadEvidenceRejectsBorrowSideMoment() {
+    void uploadEvidenceRejectsBorrowerUploadingLenderEvidence() {
         Transaction txn = pending(unit);
         txn.setState(TransactionStatus.RETURN_INITIATED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.png", "image/png", new byte[]{1});
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.LENDER_HANDOVER, file, borrower))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessage("This evidence moment is not available yet");
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.LENDER_HANDOVER, file, null, null, borrower))
+                .isInstanceOf(UnauthorizedException.class);
     }
 
     @Test
@@ -1625,7 +1659,7 @@ public class TransactionServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.png", "image/png", new byte[]{1});
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, owner))
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, owner))
                 .isInstanceOf(UnauthorizedException.class);
     }
 
@@ -1637,7 +1671,7 @@ public class TransactionServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "note.txt", "text/plain", new byte[]{1});
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("Evidence must be an image file");
     }
@@ -1649,7 +1683,7 @@ public class TransactionServiceTest {
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[0]);
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("An evidence photo is required");
     }
@@ -1662,7 +1696,7 @@ public class TransactionServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.png", "image/png", new byte[5_242_881]);
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Evidence must be between 1 byte and");
     }
@@ -1675,9 +1709,238 @@ public class TransactionServiceTest {
         MockMultipartFile file = new MockMultipartFile(
                 "file", "photo.png", "image/png", new byte[]{1});
 
-        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, borrower))
+        assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("not in state");
+    }
+
+    // ── V2.5.1 borrow-side evidence + condition metadata ─────────────
+
+    @Test
+    void lenderPreLendingSucceedsInAwaitingHandoverWithConditionMetadata() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        AtomicReference<Evidence> saved = new AtomicReference<>();
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(7L);
+            saved.set(e);
+            return e;
+        });
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_PRE_LENDING, imagePhoto(), "Minor scratches", 4, owner);
+
+        assertThat(response.id()).isEqualTo(7L);
+        assertThat(response.type()).isEqualTo(EvidenceType.LENDER_PRE_LENDING);
+        assertThat(response.capturerId()).isEqualTo(100L);
+        assertThat(response.conditionNote()).isEqualTo("Minor scratches");
+        assertThat(response.conditionRating()).isEqualTo(4);
+        assertThat(saved.get().getConditionNote()).isEqualTo("Minor scratches");
+        assertThat(saved.get().getConditionRating()).isEqualTo(4);
+        assertThat(saved.get().getCapturer().getId()).isEqualTo(100L);
+        verify(evidenceStorageService).store(any(byte[].class));
+    }
+
+    @Test
+    void lenderHandoverSucceedsInAwaitingHandoverWithConditionMetadata() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        AtomicReference<Evidence> saved = new AtomicReference<>();
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(8L);
+            saved.set(e);
+            return e;
+        });
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_HANDOVER, imagePhoto(), "Handed over in good order", 5, owner);
+
+        assertThat(response.id()).isEqualTo(8L);
+        assertThat(response.type()).isEqualTo(EvidenceType.LENDER_HANDOVER);
+        assertThat(response.conditionNote()).isEqualTo("Handed over in good order");
+        assertThat(response.conditionRating()).isEqualTo(5);
+        assertThat(saved.get().getConditionNote()).isEqualTo("Handed over in good order");
+        assertThat(saved.get().getConditionRating()).isEqualTo(5);
+        assertThat(saved.get().getCapturer().getId()).isEqualTo(100L);
+    }
+
+    @Test
+    void uploadEvidenceBorrowerReturnHandoverStillWorks() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(9L);
+            return e;
+        });
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_RETURN_HANDOVER, imagePhoto(), null, null, borrower);
+
+        assertThat(response.type()).isEqualTo(EvidenceType.BORROWER_RETURN_HANDOVER);
+        assertThat(response.conditionNote()).isNull();
+        assertThat(response.conditionRating()).isNull();
+    }
+
+    @Test
+    void lenderPreLendingRejectedAfterActive() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_PRE_LENDING, imagePhoto(), null, null, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not in state");
+    }
+
+    @Test
+    void lenderHandoverRejectedAfterActive() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_HANDOVER, imagePhoto(), null, null, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not in state");
+    }
+
+    @Test
+    void lenderHandoverRejectedOutsideAwaitingHandover() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_HANDOVER, imagePhoto(), null, null, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("not in state");
+    }
+
+    @Test
+    void uploadEvidenceRejectsNonParticipant() {
+        User intruder = new User("Karim", "karim@example.com");
+        intruder.setId(999L);
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.LENDER_PRE_LENDING, imagePhoto(), null, null, intruder))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void uploadEvidenceAcceptsConditionRatingOne() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, 1, borrower);
+
+        assertThat(response.conditionRating()).isEqualTo(1);
+    }
+
+    @Test
+    void uploadEvidenceAcceptsConditionRatingFive() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, 5, borrower);
+
+        assertThat(response.conditionRating()).isEqualTo(5);
+    }
+
+    @Test
+    void uploadEvidenceRejectsConditionRatingZero() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, 0, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Condition rating must be between 1 and 5");
+    }
+
+    @Test
+    void uploadEvidenceRejectsConditionRatingSix() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, 6, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Condition rating must be between 1 and 5");
+    }
+
+    @Test
+    void uploadEvidenceRejectsNegativeConditionRating() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, -1, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Condition rating must be between 1 and 5");
+    }
+
+    @Test
+    void uploadEvidenceAcceptsOmittedConditionMetadata() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), null, null, borrower);
+
+        assertThat(response.conditionNote()).isNull();
+        assertThat(response.conditionRating()).isNull();
+    }
+
+    @Test
+    void uploadEvidenceRejectsConditionNoteOverMaxLength() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        String tooLong = "x".repeat(TransactionService.CONDITION_NOTE_MAX_LENGTH + 1);
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, imagePhoto(), tooLong, null, borrower))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Condition note must be at most " + TransactionService.CONDITION_NOTE_MAX_LENGTH + " characters");
+    }
+
+    @Test
+    void confirmHandoverRejectedWithoutHandoverEvidence() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        txn.setAgreedDurationDays(3);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.confirmHandover(1L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Handover evidence required before confirming handover");
     }
 
     @Test

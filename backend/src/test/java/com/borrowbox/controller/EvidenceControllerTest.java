@@ -24,6 +24,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -68,14 +69,15 @@ public class EvidenceControllerTest {
                 101L, "Salah", "image/png", 3L,
                 LocalDateTime.of(2026, 6, 1, 10, 0),
                 LocalDateTime.of(2026, 6, 1, 10, 0),
-                "/api/evidence/7/content");
+                "/api/evidence/7/content",
+                null, null);
     }
 
     @Test
     void uploadEvidenceReturnsCreatedWithResponse() throws Exception {
         when(transactionService.uploadEvidence(
                 eq(1L), eq(EvidenceType.BORROWER_PRE_RETURN), any(org.springframework.web.multipart.MultipartFile.class),
-                eq(currentUser)))
+                isNull(), isNull(), eq(currentUser)))
                 .thenReturn(evidenceResponse);
         MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1, 2, 3});
 
@@ -85,7 +87,33 @@ public class EvidenceControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(7))
                 .andExpect(jsonPath("$.type").value("BORROWER_PRE_RETURN"))
-                .andExpect(jsonPath("$.contentUrl").value("/api/evidence/7/content"));
+                .andExpect(jsonPath("$.contentUrl").value("/api/evidence/7/content"))
+                .andExpect(jsonPath("$.conditionNote").isEmpty())
+                .andExpect(jsonPath("$.conditionRating").isEmpty());
+    }
+
+    @Test
+    void uploadEvidencePassesOptionalConditionMetadata() throws Exception {
+        when(transactionService.uploadEvidence(
+                eq(1L), eq(EvidenceType.LENDER_PRE_LENDING), any(org.springframework.web.multipart.MultipartFile.class),
+                eq("Minor scratches"), eq(4), eq(currentUser)))
+                .thenReturn(new EvidenceResponse(
+                        8L, 1L, EvidenceType.LENDER_PRE_LENDING,
+                        100L, "Ahmed", "image/png", 3L,
+                        LocalDateTime.of(2026, 6, 1, 10, 0),
+                        LocalDateTime.of(2026, 6, 1, 10, 0),
+                        "/api/evidence/8/content",
+                        "Minor scratches", 4));
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1, 2, 3});
+
+        mockMvc.perform(multipart("/api/transactions/1/evidence")
+                        .file(file)
+                        .param("type", "LENDER_PRE_LENDING")
+                        .param("conditionNote", "Minor scratches")
+                        .param("conditionRating", "4"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.conditionNote").value("Minor scratches"))
+                .andExpect(jsonPath("$.conditionRating").value(4));
     }
 
     @Test

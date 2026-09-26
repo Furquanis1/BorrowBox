@@ -43,9 +43,11 @@ public class EvidenceController {
     public ResponseEntity<EvidenceResponse> uploadEvidence(
             @PathVariable Long id,
             @RequestParam("file") MultipartFile file,
-            @RequestParam("type") EvidenceType type) {
+            @RequestParam("type") EvidenceType type,
+            @RequestParam(value = "conditionNote", required = false) String conditionNote,
+            @RequestParam(value = "conditionRating", required = false) Integer conditionRating) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(transactionService.uploadEvidence(id, type, file, currentUser()));
+                .body(transactionService.uploadEvidence(id, type, file, conditionNote, conditionRating, currentUser()));
     }
 
     @GetMapping("/transactions/{id}/evidence")

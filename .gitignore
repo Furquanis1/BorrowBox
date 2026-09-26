@@ -8,6 +8,7 @@ frontend/node_modules/
 
 # Runtime evidence binaries (V2.2.6) - never commit these
 backend/media/
+/media/
 
 # Environment secrets
 .env

@@ -63,6 +63,12 @@ public class Evidence {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "condition_note", length = 1000)
+    private String conditionNote;
+
+    @Column(name = "condition_rating")
+    private Integer conditionRating;
+
     public Evidence() {
     }
 
@@ -141,5 +147,21 @@ public class Evidence {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getConditionNote() {
+        return conditionNote;
+    }
+
+    public void setConditionNote(String conditionNote) {
+        this.conditionNote = conditionNote;
+    }
+
+    public Integer getConditionRating() {
+        return conditionRating;
+    }
+
+    public void setConditionRating(Integer conditionRating) {
+        this.conditionRating = conditionRating;
     }
 }

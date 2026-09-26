@@ -49,13 +49,15 @@ describe('V2.2.5 Loan Extensions', () => {
   }
 
   // V2.2.6: system-issued evidence uploads; binary content is arbitrary
-  // (only content-type + size are validated by the backend).
-  const uploadPhoto = (txnId, type) =>
+  // (only content-type + size are validated by the backend). `buildTxnId` may
+  // be a value or a thunk; the id is read at execution time.
+  const uploadPhoto = (buildTxnId, type) =>
     cy.wrap(null).then(() => {
+      const id = typeof buildTxnId === 'function' ? buildTxnId() : buildTxnId
       const form = new FormData()
       form.append('type', type)
       form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
-      return cy.request({ method: 'POST', url: `/api/transactions/${txnId}/evidence`, body: form, failOnStatusCode: true })
+      return cy.request({ method: 'POST', url: `/api/transactions/${id}/evidence`, body: form, failOnStatusCode: true })
     })
 
   const uploadReturnEvidence = (id) => {
@@ -220,6 +222,7 @@ describe('V2.2.5 Loan Extensions', () => {
     loginViaApi(salah)
     post(() => `/api/transactions/${txnId}/stage-handover`)
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       expect(res.body.state).to.equal('ACTIVE')
       dueAt = res.body.dueAt
@@ -329,6 +332,7 @@ describe('V2.2.5 Loan Extensions', () => {
     loginViaApi(salah)
     post(() => `/api/transactions/${txnId}/stage-handover`)
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       expect(res.body.state).to.equal('ACTIVE')
       dueAt = res.body.dueAt
@@ -386,6 +390,7 @@ describe('V2.2.5 Loan Extensions', () => {
     loginViaApi(salah)
     post(() => `/api/transactions/${txnId}/stage-handover`)
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       dueAt = res.body.dueAt
     })

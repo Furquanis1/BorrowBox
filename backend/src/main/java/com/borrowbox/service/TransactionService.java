@@ -110,6 +110,20 @@ import java.util.List;
  *    (server media directory); the Evidence row is transaction-scoped and
  *    visible only to participants. Evidence is immutable.
  *
+ * V2.5.1 borrow-side evidence + condition metadata:
+ *  - LENDER_PRE_LENDING and LENDER_HANDOVER photos are captured by the lender
+ *    while AWAITING_HANDOVER. At least one LENDER_HANDOVER evidence row must
+ *    exist before confirmHandover transitions the transaction to ACTIVE.
+ *    Either borrow-side photo is immutable once uploaded.
+ *  - Evidence authorization is explicit by actor + evidence type + transaction
+ *    state: the lender may only upload borrow-side moments, the borrower only
+ *    return-side moments (RETURN_INITIATED). Community managers never bypass
+ *    participant-only evidence access.
+ *  - Each evidence row may carry optional condition metadata: conditionNote
+ *    (max CONDITION_NOTE_MAX_LENGTH) and conditionRating (1-5, rejected rather
+ *    than silently normalized). Condition belongs to the Evidence row, never to
+ *    AssetUnit (AssetUnit.condition remains unmanaged).
+ *
  * V2.2.7 queueing / waitlist:
  *  - Every transition that releases an AssetUnit to AVAILABLE (reject, cancel,
  *    disputeHandover, confirmReturn) immediately attempts synchronous waitlist
@@ -131,6 +145,12 @@ public class TransactionService {
      * days past the current due date.
      */
     public static final long EXTENSION_MAX_DAYS = 30;
+
+    /**
+     * V2.5.1: the optional per-evidence condition note is capped to this length,
+     * mirroring the message-body limit used by TransactionMessageService.
+     */
+    public static final int CONDITION_NOTE_MAX_LENGTH = 1000;
 
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
@@ -414,6 +434,11 @@ public class TransactionService {
      * Lender confirms the physical handover. The loan clock starts here
      * (startedAt, backend-authoritative) and the reserved unit flips
      * RESERVED → BORROWED, moving the transaction to ACTIVE.
+     *
+     * V2.5.1: at least one LENDER_HANDOVER evidence row must exist before the
+     * handover can be confirmed. The evidence authorization guarantees that
+     * such a row was uploaded by the transaction lender. Nothing else about the
+     * transition (clock, reservation, accountability) is changed.
      */
     @Transactional
     public TransactionResponse confirmHandover(Long id, User lender) {
@@ -426,6 +451,8 @@ public class TransactionService {
         if (unit == null || unit.getStatus() != AssetUnitStatus.RESERVED) {
             throw new BusinessRuleViolationException("The reserved unit is not available to hand over");
         }
+
+        requireLenderHandoverEvidence(txn);
 
         LocalDateTime now = LocalDateTime.now();
         txn.setState(TransactionStatus.ACTIVE);
@@ -755,23 +782,31 @@ public class TransactionService {
     }
 
     /**
-     * V2.2.6: borrower uploads one return-side evidence photo while the
-     * transaction is RETURN_INITIATED.
+     * V2.2.6 + V2.5.1: a participant uploads one transaction-scoped evidence
+     * photo for one of the four evidence moments while the transaction is in
+     * the matching state.
      *
-     * The binary is stored by EvidenceStorageService (server media directory,
-     * UUID-only file name) and only a reference is persisted. If the enclosing
-     * database transaction rolls back, a transaction synchronization deletes
-     * the newly written file so no orphaned binaries are left behind. The
-     * binary payload is never served statically: it is only reachable through
-     * the authenticated, participant-only content endpoint.
+     * V2.5.1 authorization is explicit by actor + evidence type + state:
+     *  - LENDER_PRE_LENDING / LENDER_HANDOVER: transaction lender, AWAITING_HANDOVER
+     *  - BORROWER_PRE_RETURN / BORROWER_RETURN_HANDOVER: transaction borrower, RETURN_INITIATED
+     *
+     * Optional per-evidence condition metadata (conditionNote, conditionRating)
+     * is validated and persists with the Evidence row. The binary is stored by
+     * EvidenceStorageService (server media directory, UUID-only file name) and
+     * only a reference is persisted. If the enclosing database transaction rolls
+     * back, a transaction synchronization deletes the newly written file so no
+     * orphaned binaries are left behind. The binary payload is never served
+     * statically: it is only reachable through the authenticated,
+     * participant-only content endpoint.
      */
     @Transactional
-    public EvidenceResponse uploadEvidence(Long transactionId, EvidenceType type, MultipartFile file, User actor) {
+    public EvidenceResponse uploadEvidence(Long transactionId, EvidenceType type, MultipartFile file,
+                                           String conditionNote, Integer conditionRating, User actor) {
         requireUser(actor);
         Transaction txn = findForUpdate(transactionId);
         requireParticipant(txn, actor);
-        requireEvidenceTypeAllowed(type);
-        requireUploader(txn, actor);
+        requireEvidenceAuthorization(txn, actor, type);
+        validateConditionMetadata(conditionNote, conditionRating);
 
         if (file == null || file.isEmpty()) {
             throw new BusinessRuleViolationException("An evidence photo is required");
@@ -812,6 +847,8 @@ public class TransactionService {
         evidence.setContentType(contentType);
         evidence.setSizeBytes((long) bytes.length);
         evidence.setCapturedAt(now);
+        evidence.setConditionNote(conditionNote);
+        evidence.setConditionRating(conditionRating);
         messageService.addSystemEvent(txn, "Evidence added: " + type);
         return toEvidenceResponse(evidenceRepository.save(evidence));
     }
@@ -948,23 +985,56 @@ public class TransactionService {
     }
 
     /**
-     * V2.2.6: only the two return-side moments may be uploaded in this slice;
-     * borrow-side moments (LENDER_PRE_LENDING / LENDER_HANDOVER) are deferred.
+     * V2.5.1: explicit evidence authorization by actor + evidence type +
+     * transaction state. Borrow-side moments belong to the lender while
+     * AWAITING_HANDOVER; return-side moments belong to the borrower while
+     * RETURN_INITIATED. Community managers never bypass this participant-only
+     * rule.
      */
-    private void requireEvidenceTypeAllowed(EvidenceType type) {
-        if (type != EvidenceType.BORROWER_PRE_RETURN
-                && type != EvidenceType.BORROWER_RETURN_HANDOVER) {
-            throw new BusinessRuleViolationException("This evidence moment is not available yet");
+    private void requireEvidenceAuthorization(Transaction txn, User actor, EvidenceType type) {
+        switch (type) {
+            case LENDER_PRE_LENDING:
+            case LENDER_HANDOVER:
+                requireLender(txn, actor);
+                requireState(txn, TransactionStatus.AWAITING_HANDOVER);
+                break;
+            case BORROWER_PRE_RETURN:
+            case BORROWER_RETURN_HANDOVER:
+                requireBorrower(txn, actor);
+                requireState(txn, TransactionStatus.RETURN_INITIATED);
+                break;
+            default:
+                throw new BusinessRuleViolationException("Unsupported evidence type");
         }
     }
 
     /**
-     * V2.2.6: evidence is borrower-captured, and only while the return is
-     * being coordinated (RETURN_INITIATED) before the handback report.
+     * V2.5.1: optional per-evidence condition metadata. conditionRating, when
+     * supplied, must be 1-5 and is rejected rather than silently normalized.
+     * conditionNote, when supplied, must not exceed CONDITION_NOTE_MAX_LENGTH.
      */
-    private void requireUploader(Transaction txn, User actor) {
-        requireBorrower(txn, actor);
-        requireState(txn, TransactionStatus.RETURN_INITIATED);
+    private void validateConditionMetadata(String conditionNote, Integer conditionRating) {
+        if (conditionRating != null && (conditionRating < 1 || conditionRating > 5)) {
+            throw new BusinessRuleViolationException("Condition rating must be between 1 and 5");
+        }
+        if (conditionNote != null && conditionNote.length() > CONDITION_NOTE_MAX_LENGTH) {
+            throw new BusinessRuleViolationException(
+                    "Condition note must be at most " + CONDITION_NOTE_MAX_LENGTH + " characters");
+        }
+    }
+
+    /**
+     * V2.5.1: at least one LENDER_HANDOVER evidence row must exist before the
+     * lender may confirm the physical handover. Authorization asserts the
+     * evidence was captured by the transaction lender while AWAITING_HANDOVER.
+     */
+    private void requireLenderHandoverEvidence(Transaction txn) {
+        boolean hasHandover = !evidenceRepository
+                .findByTransactionIdAndType(txn.getId(), EvidenceType.LENDER_HANDOVER).isEmpty();
+        if (!hasHandover) {
+            throw new BusinessRuleViolationException(
+                    "Handover evidence required before confirming handover");
+        }
     }
 
     /**
@@ -994,7 +1064,9 @@ public class TransactionService {
                 evidence.getSizeBytes(),
                 evidence.getCapturedAt(),
                 evidence.getCreatedAt(),
-                "/api/evidence/" + evidence.getId() + "/content"
+                "/api/evidence/" + evidence.getId() + "/content",
+                evidence.getConditionNote(),
+                evidence.getConditionRating()
         );
     }
 

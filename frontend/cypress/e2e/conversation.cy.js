@@ -222,6 +222,7 @@ describe('V2.2.3 Transaction Conversation', () => {
 
 // ── Move to ACTIVE; SYSTEM event visible on the lender side ───────
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     cy.wrap(null).then(() =>
       cy.request({ method: 'POST', url: `/api/transactions/${txnId}/confirm-handover` }).then((res) => {
         expect(res.body.state).to.equal('ACTIVE')
@@ -325,6 +326,7 @@ describe('V2.2.3 Transaction Conversation', () => {
     listMessages().then((res) => {
       expect(systemBodies(res)).to.deep.equal([
         'Handover scheduled',
+        'Evidence added: LENDER_HANDOVER',
         'Loan started',
         'Return initiated',
         'Evidence added: BORROWER_PRE_RETURN',
@@ -332,7 +334,7 @@ describe('V2.2.3 Transaction Conversation', () => {
         'Handback reported',
         'Loan completed',
       ])
-      expect(res.body).to.have.length(12)
+      expect(res.body).to.have.length(13)
       expect(res.body.filter((m) => m.kind === 'SYSTEM').every((m) => m.authorId === null)).to.equal(true)
       expect(res.body.filter((m) => m.kind === 'USER').every((m) => m.authorId !== null)).to.equal(true)
     })

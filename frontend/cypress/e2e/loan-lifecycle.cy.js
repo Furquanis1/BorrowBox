@@ -187,6 +187,7 @@ describe('V2.2.3 Loan Lifecycle', () => {
     })
 
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       expect(res.body.state).to.equal('ACTIVE')
       expect(res.body.startedAt).to.not.equal(null)
@@ -276,6 +277,7 @@ describe('V2.2.3 Loan Lifecycle', () => {
     loginViaApi(salah)
     post(() => `/api/transactions/${txnId}/stage-handover`)
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`).then((res) => {
       expect(res.body.handoverWindowOpen).to.equal(true)
     })
@@ -342,6 +344,7 @@ describe('V2.2.3 Loan Lifecycle', () => {
     post(() => `/api/transactions/${txnId}/stage-handover`)
 
     loginViaApi(ahmed)
+    uploadPhoto(() => txnId, 'LENDER_HANDOVER')
     post(() => `/api/transactions/${txnId}/confirm-handover`)
 
     // The unit is now BORROWED; no other Football unit is available.

@@ -222,6 +222,11 @@ CREATE TABLE IF NOT EXISTS transaction_messages (
 -- directory; ``file_ref`` is a UUID-only reference never derived from user
 -- input. ``captured_at`` is stamped by the backend clock at upload time;
 -- client clocks are never trusted. Evidence is immutable (no update/delete).
+--
+-- V2.5.1: the LENDER_PRE_LENDING / LENDER_HANDOVER moments are now enabled and
+-- at least one LENDER_HANDOVER row is required before confirmHandover.
+-- ``condition_note`` (optional, max 1000) and ``condition_rating`` (optional,
+-- 1-5) are captured per evidence row at upload time.
 CREATE TABLE IF NOT EXISTS transaction_evidence (
     id             BIGINT         NOT NULL AUTO_INCREMENT,
     transaction_id BIGINT         NOT NULL,
@@ -232,6 +237,8 @@ CREATE TABLE IF NOT EXISTS transaction_evidence (
     size_bytes     BIGINT         NOT NULL,
     captured_at    DATETIME(6)    NOT NULL,
     created_at     DATETIME(6)    NOT NULL,
+    condition_note VARCHAR(1000)  DEFAULT NULL,
+    condition_rating INT          DEFAULT NULL,
     PRIMARY KEY (id),
     CONSTRAINT fk_transaction_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
     CONSTRAINT fk_transaction_evidence_capturer    FOREIGN KEY (capturer_id)    REFERENCES users (id),
