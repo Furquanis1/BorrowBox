@@ -8,8 +8,10 @@ package com.borrowbox.entity;
  *   BORROWER_PRE_RETURN      - borrower live photo immediately before returning
  *   BORROWER_RETURN_HANDOVER - borrower live return-handover photo: item + receiver
  *
- * V2.2.6 implements the return-side moments only (BORROWER_PRE_RETURN and
- * BORROWER_RETURN_HANDOVER). The borrow-side moments are deferred.
+ * V2.2.6 implemented the return-side moments (BORROWER_PRE_RETURN and
+ * BORROWER_RETURN_HANDOVER). V2.5.1 added the borrow-side moments
+ * (LENDER_PRE_LENDING and LENDER_HANDOVER), which the lender captures while
+ * the transaction is AWAITING_HANDOVER.
  */
 public enum EvidenceType {
     LENDER_PRE_LENDING,

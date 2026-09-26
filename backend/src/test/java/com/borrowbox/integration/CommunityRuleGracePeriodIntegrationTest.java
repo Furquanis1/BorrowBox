@@ -11,6 +11,7 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.CommunityRule;
 import com.borrowbox.entity.CommunityRuleType;
 import com.borrowbox.entity.CommunityStatus;
+import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.User;
 import com.borrowbox.repository.AssetRepository;
@@ -24,6 +25,7 @@ import com.borrowbox.service.TransactionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,6 +119,10 @@ public class CommunityRuleGracePeriodIntegrationTest {
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER,
+                new MockMultipartFile("file", "handover.png", "image/png", new byte[]{2}),
+                null, null, ahmed);
         return transactionService.confirmHandover(staged.id(), ahmed);
     }
 

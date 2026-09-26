@@ -1810,8 +1810,8 @@ select,
 .conversation-body {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-2) 0;
+  gap: var(--sp-1);
+  padding: var(--sp-1) 0;
   overflow-y: auto;
   flex: 1;
   min-height: 120px;
@@ -1850,7 +1850,7 @@ select,
 
 .conversation-bubble {
   max-width: 88%;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -1866,7 +1866,6 @@ select,
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--teal-700);
-  margin-bottom: 2px;
 }
 
 .conversation-text {
@@ -1879,7 +1878,6 @@ select,
 
 .conversation-time {
   display: block;
-  margin-top: 2px;
   font-size: 0.6875rem;
   color: var(--ink-muted);
 }
@@ -1888,7 +1886,7 @@ select,
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-3);
+  padding: 2px var(--sp-3);
   background: var(--surface-2);
   border-radius: var(--r-pill);
   font-size: 0.75rem;
@@ -1989,7 +1987,7 @@ select,
 
 .conversation-evidence-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-2);
   margin-top: var(--sp-2);
 }
@@ -2017,6 +2015,40 @@ select,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* V2.5.1 lender borrow-side evidence upload (AWAITING_HANDOVER) */
+.conversation-lender-evidence {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--surface-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+}
+
+.conversation-lender-evidence .btn {
+  margin-top: var(--sp-1);
+}
+
+.conversation-evidence-pending {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  width: 100%;
+  margin-top: var(--sp-1);
+  padding: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-sm);
+}
+
+.conversation-evidence-pending .conversation-evidence-note {
+  resize: vertical;
+  font-family: inherit;
 }
 
 .conversation-extension-action {
@@ -2612,12 +2644,13 @@ select,
 /* ============ V2.3.1 LEDGER TIMELINE ============ */
 
 /*
- * The conversation drawer owns its scrolling: only the message list scrolls so
- * the timeline toggle below it can never cover a message when a system entry is
- * scrolled into view.
+ * The conversation drawer owns its scrolling: the message list fills the space
+ * and scrolls internally, while the timeline toggle and the V2.5.1 evidence grid
+ * below it stay reachable. A two-column evidence grid keeps the fixed content
+ * (timeline + evidence + actions + composer) within the drawer's height.
  */
 .conversation-drawer .drawer-body {
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .conversation-drawer .conversation-body {
