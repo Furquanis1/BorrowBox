@@ -251,6 +251,7 @@ public class TransactionService {
         txn.setReservedAt(now);
         txn.setState(TransactionStatus.PENDING);
         txn.setPurpose(request.purpose().trim());
+        txn.setBorrowerNote(trimToNull(request.note()));
         txn.setRequestedDurationDays(request.requestedDurationDays());
 
         try {
@@ -1276,6 +1277,7 @@ public class TransactionService {
                 borrower.getFullName(),
                 txn.getState(),
                 txn.getPurpose(),
+                txn.getBorrowerNote(),
                 txn.getRequestedDurationDays(),
                 txn.getCounterPurpose(),
                 txn.getCounterDurationDays(),

@@ -166,6 +166,27 @@ function restoreMembership({ userId, communityId }) {
 }
 
 /**
+ * Pins a throwaway membership to the MANAGER/SUSPENDED state for the
+ * role-access spec. There is no product API that can create a MANAGER role
+ * (joining always creates MEMBER), so the spec seeds this one state directly
+ * and removes it via restoreMembership afterwards; the canonical seed is
+ * never mutated.
+ */
+function ensureSuspendedManager({ userId, communityId }) {
+  const uid = Number(userId)
+  const cid = Number(communityId)
+  if (!Number.isInteger(uid) || uid <= 0) throw new Error(`Invalid user id: ${userId}`)
+  if (!Number.isInteger(cid) || cid <= 0) throw new Error(`Invalid community id: ${communityId}`)
+  const sql = [
+    'INSERT INTO memberships (user_id, community_id, role, status, verification_method, created_at, updated_at)',
+    `VALUES (${uid}, ${cid}, 'MANAGER', 'SUSPENDED', 'ADMIN', NOW(6), NOW(6))`,
+    `ON DUPLICATE KEY UPDATE role='MANAGER', status='SUSPENDED', updated_at = NOW(6)`,
+  ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
+/**
  * Removes V2.4.2 rules a rules-pages spec created for one community + type so
  * the canonical fixture (no grace-period rules) survives for later specs.
  */
@@ -204,6 +225,7 @@ module.exports = defineConfig({
         restoreFlags,
         restoreMembership,
         restoreRules,
+        ensureSuspendedManager,
       })
     },
   },

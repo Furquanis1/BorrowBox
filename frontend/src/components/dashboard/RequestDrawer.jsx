@@ -40,7 +40,7 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted, mod
         const joined = await waitlistService.join(listing.id, trimmedPurpose, Number(duration))
         onSubmitted?.(joined)
       } else {
-        const created = await requestService.create(listing.id, trimmedPurpose, Number(duration))
+        const created = await requestService.create(listing.id, trimmedPurpose, Number(duration), note)
         onSubmitted?.(created)
       }
     } catch (err) {

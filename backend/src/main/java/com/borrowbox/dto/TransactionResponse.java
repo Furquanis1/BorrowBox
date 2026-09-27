@@ -32,6 +32,7 @@ public record TransactionResponse(
         String borrowerName,
         TransactionStatus state,
         String purpose,
+        String borrowerNote,
         Integer requestedDurationDays,
         String counterPurpose,
         Integer counterDurationDays,

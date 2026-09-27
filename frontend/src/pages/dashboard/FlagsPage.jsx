@@ -51,7 +51,7 @@ export default function FlagsPage() {
     })
   }, [communityId, appliedFilters, isManager])
 
-  const { data: flags, loading, error, reload } = useAsync(fetchFlags, [communityId, appliedFilters])
+  const { data: flags, loading, error, reload, retry } = useAsync(fetchFlags, [communityId, appliedFilters])
 
   if (!isManager(communityId)) {
     return <Navigate to={`/communities/${communityId}`} replace />
@@ -249,7 +249,7 @@ export default function FlagsPage() {
           title="Could not load flags"
           description={error.message}
           action={
-            <Button variant="outline" onClick={reload}>
+            <Button variant="outline" onClick={retry}>
               <i className="bi bi-arrow-clockwise" aria-hidden="true" />
               Try again
             </Button>

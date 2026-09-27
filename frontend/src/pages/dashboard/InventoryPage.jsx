@@ -23,7 +23,7 @@ export default function InventoryPage() {
     return { assets, listingsByAsset }
   }, [])
 
-  const { data, loading, error, reload } = useAsync(fetchAll, [])
+  const { data, loading, error, reload, retry } = useAsync(fetchAll, [])
 
   const assets = data?.assets || []
   const listingsByAsset = data?.listingsByAsset || {}
@@ -52,7 +52,7 @@ export default function InventoryPage() {
           title="Could not load your inventory"
           description={error.message}
           action={
-            <Button variant="outline" onClick={reload}>
+            <Button variant="outline" onClick={retry}>
               <i className="bi bi-arrow-clockwise" aria-hidden="true" />
               Try again
             </Button>

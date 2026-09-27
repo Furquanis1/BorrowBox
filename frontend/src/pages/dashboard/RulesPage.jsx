@@ -35,7 +35,7 @@ export default function RulesPage() {
       : ruleService.listActiveRules(communityId)
   }, [communityId, manager])
 
-  const { data: rules, loading, error, reload } = useAsync(fetchRules, [communityId, manager])
+  const { data: rules, loading, error, reload, retry } = useAsync(fetchRules, [communityId, manager])
 
   const openCreate = () => {
     setCreating((value) => !value)
@@ -149,7 +149,7 @@ export default function RulesPage() {
             title="Could not load rules"
             description={error.message}
             action={
-              <Button variant="outline" onClick={reload}>
+              <Button variant="outline" onClick={retry}>
                 <i className="bi bi-arrow-clockwise" aria-hidden="true" />
                 Try again
               </Button>

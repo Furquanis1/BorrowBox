@@ -77,6 +77,9 @@ public class Transaction {
     @Column(nullable = false)
     private String purpose;
 
+    @Column(name = "borrower_note", length = 1000)
+    private String borrowerNote;
+
     @Column(name = "requested_duration_days", nullable = false)
     private Integer requestedDurationDays;
 
@@ -241,6 +244,14 @@ public class Transaction {
 
     public void setPurpose(String purpose) {
         this.purpose = purpose;
+    }
+
+    public String getBorrowerNote() {
+        return borrowerNote;
+    }
+
+    public void setBorrowerNote(String borrowerNote) {
+        this.borrowerNote = borrowerNote;
     }
 
     public Integer getRequestedDurationDays() {

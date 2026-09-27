@@ -28,7 +28,7 @@ export default function ExplorePage() {
     return assets.map((asset) => Number(asset.id))
   }, [])
 
-  const { data: listings, loading, error, reload } = useAsync(fetchListings, [community?.id])
+  const { data: listings, loading, error, reload, retry } = useAsync(fetchListings, [community?.id])
   const { data: myAssetIds } = useAsync(fetchMyAssetIds, [])
 
   if (!community) return null
@@ -67,7 +67,7 @@ export default function ExplorePage() {
           title="Could not load listings"
           description={error.message}
           action={
-            <Button variant="outline" onClick={reload}>
+            <Button variant="outline" onClick={retry}>
               <i className="bi bi-arrow-clockwise" aria-hidden="true" />
               Try again
             </Button>

@@ -46,7 +46,7 @@ export default function DashboardPage() {
     return communityService.getHealth(communityId)
   }, [communityId, isManager])
 
-  const { data: dashboard, loading, error, reload } = useAsync(fetchDashboard, [communityId])
+  const { data: dashboard, loading, error, reload, retry } = useAsync(fetchDashboard, [communityId])
   const { data: health } = useAsync(fetchHealth, [communityId])
 
   if (!isManager(communityId)) {
@@ -63,7 +63,7 @@ export default function DashboardPage() {
           title="Could not load the dashboard"
           description={error.message}
           action={
-            <Button variant="outline" onClick={reload}>
+            <Button variant="outline" onClick={retry}>
               <i className="bi bi-arrow-clockwise" aria-hidden="true" />
               Try again
             </Button>

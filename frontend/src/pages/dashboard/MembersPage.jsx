@@ -45,7 +45,7 @@ export default function MembersPage() {
     return communityService.getPendingMembers(communityId)
   }, [communityId, isManager])
 
-  const { data: members, loading, error, reload } = useAsync(fetchMembers, [communityId, appliedFilters])
+  const { data: members, loading, error, reload, retry } = useAsync(fetchMembers, [communityId, appliedFilters])
   const { data: pending, reload: reloadPending } = useAsync(fetchPending, [communityId, isManager])
 
   const applyFilters = () => setAppliedFilters({ status: filters.status, role: filters.role })
@@ -187,7 +187,7 @@ export default function MembersPage() {
             title="Could not load members"
             description={error.message}
             action={
-              <Button variant="outline" onClick={reload}>
+              <Button variant="outline" onClick={retry}>
                 <i className="bi bi-arrow-clockwise" aria-hidden="true" />
                 Try again
               </Button>

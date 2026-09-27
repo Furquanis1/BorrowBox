@@ -15,7 +15,7 @@ export default function CommunityHomePage() {
     return listingService.getCommunityListings(community.id)
   }, [community?.id])
 
-  const { data: listings, loading, error, reload } = useAsync(fetchListings, [community?.id])
+  const { data: listings, loading, error, retry } = useAsync(fetchListings, [community?.id])
 
   if (!community) return null
 
@@ -33,7 +33,7 @@ export default function CommunityHomePage() {
             title="Could not load listings"
             description={error.message}
             action={
-              <Button variant="outline" onClick={reload}>
+              <Button variant="outline" onClick={retry}>
                 <i className="bi bi-arrow-clockwise" aria-hidden="true" />
                 Try again
               </Button>

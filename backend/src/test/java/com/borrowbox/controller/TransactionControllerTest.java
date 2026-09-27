@@ -83,7 +83,7 @@ public class TransactionControllerTest {
         pendingResponse = new TransactionResponse(
                 1L, 900L, "CSE Department", 701L, 500L, "Football",
                 100L, "Ahmed", 101L, "Salah",
-                TransactionStatus.PENDING, "Football match practice", 3,
+                TransactionStatus.PENDING, "Football match practice", null, 3,
                 null, null, null, null,
                 null, null, null,
                 null, true,
@@ -106,7 +106,7 @@ public class TransactionControllerTest {
         mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new TransactionCreateRequest(701L, "Football match practice", 3))))
+                                new TransactionCreateRequest(701L, "Football match practice", 3, null))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.state").value("PENDING"))
                 .andExpect(jsonPath("$.lenderId").value(100))
@@ -322,7 +322,7 @@ public class TransactionControllerTest {
         String body = mockMvc.perform(post("/api/transactions")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(
-                                new TransactionCreateRequest(701L, "Match", 3))))
+                                new TransactionCreateRequest(701L, "Match", 3, null))))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 

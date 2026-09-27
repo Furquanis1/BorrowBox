@@ -133,7 +133,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Practice for the match", 3), salah);
+                new TransactionCreateRequest(listingId, "Practice for the match", 3, null), salah);
         assertThat(created.state()).isEqualTo(TransactionStatus.PENDING);
         assertThat(created.reservationHeld()).isTrue();
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
@@ -160,7 +160,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Sunday game", 2), salah);
+                new TransactionCreateRequest(listingId, "Sunday game", 2, null), salah);
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
 
         TransactionResponse rejected = transactionService.reject(
@@ -171,7 +171,7 @@ public class TransactionIntegrationTest {
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
 
         TransactionResponse again = transactionService.create(
-                new TransactionCreateRequest(listingId, "Sunday game", 2), salah);
+                new TransactionCreateRequest(listingId, "Sunday game", 2, null), salah);
         assertThat(again.state()).isEqualTo(TransactionStatus.PENDING);
         assertThat(again.reservationHeld()).isTrue();
     }
@@ -186,7 +186,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Saturday pick-up", 2), salah);
+                new TransactionCreateRequest(listingId, "Saturday pick-up", 2, null), salah);
 
         TransactionResponse countered = transactionService.counterOffer(
                 created.id(), new CounterOfferRequest(null, 5, "Saturday is free"), ahmed);
@@ -215,7 +215,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Evening kick-about", 1), salah);
+                new TransactionCreateRequest(listingId, "Evening kick-about", 1, null), salah);
 
         TransactionResponse cancelled = transactionService.cancel(created.id(), salah);
         assertThat(cancelled.state()).isEqualTo(TransactionStatus.CANCELLED);
@@ -223,7 +223,7 @@ public class TransactionIntegrationTest {
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(1);
 
         TransactionResponse next = transactionService.create(
-                new TransactionCreateRequest(listingId, "Evening kick-about", 1), youssef);
+                new TransactionCreateRequest(listingId, "Evening kick-about", 1, null), youssef);
         assertThat(next.state()).isEqualTo(TransactionStatus.PENDING);
     }
 
@@ -237,17 +237,17 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
         long listingId = cseFootballListing(football).getId();
 
-        transactionService.create(new TransactionCreateRequest(listingId, "Group practice", 3), salah);
+        transactionService.create(new TransactionCreateRequest(listingId, "Group practice", 3, null), salah);
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(listingId, "Group practice", 3), youssef))
+                new TransactionCreateRequest(listingId, "Group practice", 3, null), youssef))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("No available unit");
 
         transactionService.cancel(transactionService.listForBorrower(salah).get(0).id(), salah);
 
         TransactionResponse third = transactionService.create(
-                new TransactionCreateRequest(listingId, "Group practice", 3), youssef);
+                new TransactionCreateRequest(listingId, "Group practice", 3, null), youssef);
         assertThat(third.state()).isEqualTo(TransactionStatus.PENDING);
     }
 
@@ -261,7 +261,7 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Me", 1), ahmed))
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Me", 1, null), ahmed))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("You cannot request your own asset");
     }
@@ -278,7 +278,7 @@ public class TransactionIntegrationTest {
         userRepository.save(stranger);
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Tour", 1), stranger))
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Tour", 1, null), stranger))
                 .isInstanceOf(UnauthorizedException.class);
     }
 
@@ -292,7 +292,7 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Warm-up", 1), salah);
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Warm-up", 1, null), salah);
 
         assertThatThrownBy(() -> transactionService.approve(
                 created.id(), new TransactionDecisionRequest("approved"), youssef))
@@ -314,7 +314,7 @@ public class TransactionIntegrationTest {
                 .findFirst().orElseThrow();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Temp", 1), salah);
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Temp", 1, null), salah);
 
         listingService.unlist(football.getId(), cse.getId(), ahmed);
 
@@ -334,7 +334,7 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "View check", 1), salah);
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "View check", 1, null), salah);
 
         assertThat(transactionService.view(created.id(), salah).id()).isEqualTo(created.id());
         assertThat(transactionService.view(created.id(), ahmed).id()).isEqualTo(created.id());
@@ -382,7 +382,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Weekend tournament", 2), salah);
+                new TransactionCreateRequest(listingId, "Weekend tournament", 2, null), salah);
         assertThat(countOf(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
 
         TransactionResponse approved = transactionService.approve(
@@ -434,7 +434,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Scoped return checks", 2), salah);
+                new TransactionCreateRequest(listingId, "Scoped return checks", 2, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
@@ -483,7 +483,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Weekend tournament", 2), salah);
+                new TransactionCreateRequest(listingId, "Weekend tournament", 2, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         assertThat(approved.state()).isEqualTo(TransactionStatus.APPROVED);
@@ -582,7 +582,7 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Coordination", 1), salah);
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Coordination", 1, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
 
@@ -597,7 +597,7 @@ public class TransactionIntegrationTest {
     private TransactionResponse activateToActive(Asset football, User ahmed, User salah) {
         long listingId = cseFootballListing(football).getId();
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Extension test", 3), salah);
+                new TransactionCreateRequest(listingId, "Extension test", 3, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
@@ -721,7 +721,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Still pending", 2), salah);
+                new TransactionCreateRequest(listingId, "Still pending", 2, null), salah);
 
         assertThatThrownBy(() -> transactionService.requestExtension(
                 created.id(), new ExtensionRequest(LocalDateTime.now().plusDays(3), null), salah))
@@ -797,7 +797,7 @@ public class TransactionIntegrationTest {
         Asset football = seedAssetOf(ahmed, "Football");
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(cseFootballListing(football).getId(), "Hygiene", 1), salah);
+                new TransactionCreateRequest(cseFootballListing(football).getId(), "Hygiene", 1, null), salah);
 
         String body = List.of(
                 created,
@@ -850,7 +850,7 @@ public class TransactionIntegrationTest {
                 startGate.await();
                 User borrower = userRepository.findByEmail(email).orElseThrow();
                 return transactionService.create(
-                        new TransactionCreateRequest(listingId, racePurpose, 3), borrower);
+                        new TransactionCreateRequest(listingId, racePurpose, 3, null), borrower);
             });
         }
 
@@ -1057,7 +1057,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Handover evidence flow", 2), salah);
+                new TransactionCreateRequest(listingId, "Handover evidence flow", 2, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
@@ -1105,7 +1105,7 @@ public class TransactionIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "No evidence", 2), salah);
+                new TransactionCreateRequest(listingId, "No evidence", 2, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);

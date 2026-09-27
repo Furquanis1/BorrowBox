@@ -1,8 +1,8 @@
 import { apiClient } from '../utils/apiClient'
 
 export const requestService = {
-  create: (listingId, purpose, requestedDurationDays) =>
-    apiClient.post('/transactions', { listingId, purpose, requestedDurationDays }),
+  create: (listingId, purpose, requestedDurationDays, note) =>
+    apiClient.post('/transactions', { listingId, purpose, requestedDurationDays, note }),
   getMine: () => apiClient.get('/me/requests'),
   getLendRequests: () => apiClient.get('/me/lend-requests'),
   get: (id) => apiClient.get(`/transactions/${id}`),

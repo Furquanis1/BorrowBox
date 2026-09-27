@@ -93,6 +93,12 @@ function TransactionCard({
         <p className="transaction-card-note">{transaction.decisionNote}</p>
       )}
 
+      {!isMine && state === 'PENDING' && transaction.borrowerNote && (
+        <p className="transaction-card-note">
+          <em>Borrower note:</em> {transaction.borrowerNote}
+        </p>
+      )}
+
       {state === 'COUNTER_OFFERED' && (
         <p className="transaction-card-counter">
           The owner offered {transaction.counterDurationDays} days

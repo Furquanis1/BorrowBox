@@ -158,6 +158,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     reserved_unit_id         BIGINT       DEFAULT NULL,
     state                    VARCHAR(30)  NOT NULL DEFAULT 'PENDING',
     purpose                  VARCHAR(255) NOT NULL,
+    borrower_note            VARCHAR(1000) DEFAULT NULL,
     requested_duration_days  INT          NOT NULL,
     counter_purpose          VARCHAR(255) DEFAULT NULL,
     counter_duration_days    INT          DEFAULT NULL,

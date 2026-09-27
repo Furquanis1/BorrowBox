@@ -112,7 +112,7 @@ public class WaitlistIntegrationTest {
     private TransactionResponse reserveFootballAvailableUnit(Asset football, CommunityListing cseFootball, User salah) {
         assertThat(countUnits(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
         return transactionService.create(
-                new TransactionCreateRequest(cseFootball.getId(), "Buffer " + UUID.randomUUID(), 1), salah);
+                new TransactionCreateRequest(cseFootball.getId(), "Buffer " + UUID.randomUUID(), 1, null), salah);
     }
 
     // ── join + read ───────────────────────────────────────────────────

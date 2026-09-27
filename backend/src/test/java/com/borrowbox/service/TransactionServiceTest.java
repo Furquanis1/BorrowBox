@@ -230,7 +230,7 @@ public class TransactionServiceTest {
         stubSaveAndFlushReturnsArgument();
 
         TransactionResponse response = transactionService.create(
-                new TransactionCreateRequest(701L, "Football match practice", 3), borrower);
+                new TransactionCreateRequest(701L, "Football match practice", 3, null), borrower);
 
         assertThat(response.state()).isEqualTo(TransactionStatus.PENDING);
         assertThat(response.lenderId()).isEqualTo(100L);
@@ -247,7 +247,7 @@ public class TransactionServiceTest {
     @Test
     void unauthenticatedUserIsRejected() {
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), null))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), null))
                 .isInstanceOf(UnauthorizedException.class);
     }
 
@@ -256,7 +256,7 @@ public class TransactionServiceTest {
         when(listingRepository.findById(701L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -266,7 +266,7 @@ public class TransactionServiceTest {
         when(listingRepository.findById(701L)).thenReturn(Optional.of(listing));
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class);
     }
 
@@ -276,7 +276,7 @@ public class TransactionServiceTest {
         when(listingRepository.findById(701L)).thenReturn(Optional.of(listing));
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("An archived asset cannot be requested");
     }
@@ -287,7 +287,7 @@ public class TransactionServiceTest {
         when(membershipService.isActiveMember(101L, 900L)).thenReturn(false);
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(UnauthorizedException.class);
     }
 
@@ -297,7 +297,7 @@ public class TransactionServiceTest {
         when(membershipService.isActiveMember(eq(100L), eq(900L))).thenReturn(true);
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), owner))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), owner))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("You cannot request your own asset");
     }
@@ -305,7 +305,7 @@ public class TransactionServiceTest {
     @Test
     void blankPurposeIsRejected() {
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "   ", 3), borrower))
+                new TransactionCreateRequest(701L, "   ", 3, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("Purpose is required");
     }
@@ -313,11 +313,11 @@ public class TransactionServiceTest {
     @Test
     void invalidDurationIsRejected() {
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 0), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 0, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 31), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 31, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class);
     }
 
@@ -329,7 +329,7 @@ public class TransactionServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("No available unit");
     }
@@ -343,7 +343,7 @@ public class TransactionServiceTest {
                 .thenReturn(Optional.of(unit));
 
         assertThatThrownBy(() -> transactionService.create(
-                new TransactionCreateRequest(701L, "Purpose", 3), borrower))
+                new TransactionCreateRequest(701L, "Purpose", 3, null), borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessage("No available unit");
     }
@@ -1136,7 +1136,7 @@ public class TransactionServiceTest {
         stubSaveAndFlushReturnsArgument();
 
         TransactionResponse response = transactionService.create(
-                new TransactionCreateRequest(701L, "Football match practice", 3), borrower);
+                new TransactionCreateRequest(701L, "Football match practice", 3, null), borrower);
 
         String json = response.toString();
         assertThat(json).doesNotContain("777");

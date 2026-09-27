@@ -115,7 +115,7 @@ public class CommunityRuleGracePeriodIntegrationTest {
         long listingId = cseFootballListing(football).getId();
 
         TransactionResponse created = transactionService.create(
-                new TransactionCreateRequest(listingId, "Grace check " + UUID.randomUUID(), 3), salah);
+                new TransactionCreateRequest(listingId, "Grace check " + UUID.randomUUID(), 3, null), salah);
         TransactionResponse approved = transactionService.approve(
                 created.id(), new TransactionDecisionRequest("Ok"), ahmed);
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
