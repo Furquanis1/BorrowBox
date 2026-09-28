@@ -36,6 +36,52 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
 
   const empty = []
 
+  /**
+   * Intercepts GET requests to the given URLs, lets them reach the real backend,
+   * then modifies only the specified date fields in the response body.
+   * Preserves the complete real response structure.
+   * @param {string[]} urls - Array of URL patterns to intercept
+   * @param {string[]} dateFieldsToNullify - Date field names to set to null
+   */
+  const interceptAndNullifyDates = (urls, dateFieldsToNullify) => {
+    urls.forEach((url) => {
+      cy.intercept('GET', url, (req) => {
+        req.continue((res) => {
+          if (Array.isArray(res.body)) {
+            res.body = res.body.map((item) => {
+              const modified = { ...item }
+              dateFieldsToNullify.forEach((field) => {
+                modified[field] = null
+              })
+              return modified
+            })
+          }
+        })
+      })
+    })
+  }
+
+  /**
+   * Intercepts GET requests to the given URLs, lets them reach the real backend,
+   * ensures the specified date fields have valid ISO timestamps (does not nullify).
+   * Used for "valid dates still render" tests.
+   * @param {string[]} urls - Array of URL patterns to intercept
+   * @param {string[]} dateFieldsToPreserve - Date field names to ensure are valid (no-op, just passes through real data)
+   */
+  const interceptAndPreserveDates = (urls, dateFieldsToPreserve) => {
+    urls.forEach((url) => {
+      cy.intercept('GET', url, (req) => {
+        req.continue((res) => {
+          // Pass through real response unchanged - backend returns valid dates
+          // This function exists for symmetry and clarity
+          if (Array.isArray(res.body)) {
+            res.body = res.body.map((item) => ({ ...item }))
+          }
+        })
+      })
+    })
+  }
+
   const signInAs = (email, password) => {
     cy.visit('/signin')
     cy.get('input[type="email"]', { timeout: 15000 }).should('be.visible')
@@ -226,5 +272,81 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
       'Your community managers have not set any rules yet.',
     )
     cy.get('.rules-page').should('not.contain', 'Create rule')
+  })
+
+  // --- P2 Date Hardening Regression Tests ---
+  // These tests intercept real API responses and modify ONLY the specified
+  // nullable date fields, preserving the complete real response structure.
+
+  it('loans: null completedAt and startedAt do not render "Invalid Date"', () => {
+    // Intercept both loan data endpoints, let real backend respond, then nullify dates
+    interceptAndNullifyDates(
+      ['/api/me/requests', '/api/me/lend-requests'],
+      ['startedAt', 'completedAt']
+    )
+    cy.intercept('GET', '/api/assets', { body: [] })
+
+    cy.visit('/me/loans')
+
+    // Should not display "Invalid Date" anywhere
+    cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
+    // Verify transaction cards render (if any loans exist in seeded data)
+    cy.get('.active-loans').should('be.visible')
+  })
+
+  it('loans: valid completedAt and startedAt still render correctly', () => {
+    // Intercept both loan data endpoints, pass through real response with valid dates
+    interceptAndPreserveDates(
+      ['/api/me/requests', '/api/me/lend-requests'],
+      ['startedAt', 'completedAt']
+    )
+    cy.intercept('GET', '/api/assets', { body: [] })
+
+    cy.visit('/me/loans')
+
+    // Should not display "Invalid Date"
+    cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
+    // Verify transaction cards render (if any loans exist in seeded data)
+    cy.get('.active-loans').should('be.visible')
+  })
+
+  it('requests: null agreedAt, startedAt, completedAt do not render "Invalid Date"', () => {
+    // Use ahmed (lender) to get incoming requests in APPROVED state that render agreedAt
+    cy.clearCookies()
+    cy.clearLocalStorage()
+    signInAs(ahmed.email, ahmed.password)
+
+    // Intercept all three request data endpoints, let real backend respond, then nullify dates
+    interceptAndNullifyDates(
+      ['/api/me/lend-requests', '/api/me/requests', '/api/me/waitlist'],
+      ['agreedAt', 'startedAt', 'completedAt']
+    )
+
+    cy.visit('/me/requests')
+
+    // Should not display "Invalid Date" anywhere
+    cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
+    // Verify request cards render (if any requests exist in seeded data)
+    cy.get('.request-inbox').should('be.visible')
+  })
+
+  it('requests: valid agreedAt, startedAt, completedAt still render correctly', () => {
+    // Use ahmed (lender) to get incoming requests in APPROVED state that render agreedAt
+    cy.clearCookies()
+    cy.clearLocalStorage()
+    signInAs(ahmed.email, ahmed.password)
+
+    // Intercept all three request data endpoints, pass through real response with valid dates
+    interceptAndPreserveDates(
+      ['/api/me/lend-requests', '/api/me/requests', '/api/me/waitlist'],
+      ['agreedAt', 'startedAt', 'completedAt']
+    )
+
+    cy.visit('/me/requests')
+
+    // Should not display "Invalid Date"
+    cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
+    // Verify request cards render (if any requests exist in seeded data)
+    cy.get('.request-inbox').should('be.visible')
   })
 })

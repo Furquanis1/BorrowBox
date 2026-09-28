@@ -1,7 +1,7 @@
 import React from 'react'
 
 function formatDate(iso) {
-  if (!iso) return '—'
+  if (!iso) return ''
   return new Date(iso).toLocaleDateString()
 }
 
@@ -29,7 +29,7 @@ const STYLE = {
 export default function ReputationLedgerList({ events }) {
   const sorted = (events || [])
     .slice()
-    .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+    .sort((a, b) => new Date(b.occurredAt || 0) - new Date(a.occurredAt || 0))
 
   return (
     <section className="reputation-ledger" aria-label="Reputation ledger" style={STYLE.wrapper}>

@@ -110,20 +110,20 @@ function TransactionCard({
       {(state === 'APPROVED' || state === 'AWAITING_HANDOVER') && (
         <p className="transaction-card-note">
           Agreed for {transaction.agreedDurationDays} days (from{' '}
-          {new Date(transaction.agreedAt).toLocaleDateString()}).
+          {transaction.agreedAt ? new Date(transaction.agreedAt).toLocaleDateString() : ''}).
         </p>
       )}
 
       {(state === 'ACTIVE' || state === 'RETURN_INITIATED') && (
         <p className="transaction-card-note">
-          Loan started {new Date(transaction.startedAt).toLocaleDateString()} · agreed for{' '}
+          Loan started {transaction.startedAt ? new Date(transaction.startedAt).toLocaleDateString() : ''} · agreed for{' '}
           {transaction.agreedDurationDays} days.
         </p>
       )}
 
       {state === 'COMPLETED' && (
         <p className="transaction-card-note">
-          Completed {new Date(transaction.completedAt).toLocaleDateString()}.
+          Completed {transaction.completedAt ? new Date(transaction.completedAt).toLocaleDateString() : ''}.
         </p>
       )}
 

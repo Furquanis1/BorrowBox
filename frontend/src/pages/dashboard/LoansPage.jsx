@@ -71,7 +71,7 @@ function LoanCard({ loan, currentUserId, onConversation }) {
 
       {state === 'COMPLETED' ? (
         <p className="transaction-card-note">
-          Returned {new Date(loan.completedAt).toLocaleDateString()}.
+          Returned {loan.completedAt ? new Date(loan.completedAt).toLocaleDateString() : ''}.
         </p>
       ) : state === 'RETURN_REPORTED' ? (
         <p className="transaction-card-note">
@@ -92,8 +92,12 @@ function LoanCard({ loan, currentUserId, onConversation }) {
       ) : (
         <p className="transaction-card-note">
           {dueDate
-            ? `Started ${new Date(loan.startedAt).toLocaleDateString()} · due ${dueDate.toLocaleDateString()}.`
-            : `Started ${new Date(loan.startedAt).toLocaleDateString()}.`}
+            ? loan.startedAt
+              ? `Started ${new Date(loan.startedAt).toLocaleDateString()} · due ${dueDate.toLocaleDateString()}.`
+              : ''
+            : loan.startedAt
+            ? `Started ${new Date(loan.startedAt).toLocaleDateString()}.`
+            : ''}
         </p>
       )}
 
