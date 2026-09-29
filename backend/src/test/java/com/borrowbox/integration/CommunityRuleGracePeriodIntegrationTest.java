@@ -3,6 +3,7 @@ package com.borrowbox.integration;
 import com.borrowbox.config.SeedDataInitializer;
 import com.borrowbox.dto.CommunityRuleRequest;
 import com.borrowbox.dto.CommunityRuleResponse;
+import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionResponse;
@@ -102,12 +103,13 @@ public class CommunityRuleGracePeriodIntegrationTest {
                 .orElseThrow(() -> new AssertionError("missing Football listing in CSE"));
     }
 
-    private void createGraceRule(Long communityId, int days, User manager) {
+    private CommunityRuleResponse createGraceRule(Long communityId, int days, User manager) {
         CommunityRuleResponse created = communityRuleService.createRule(
                 communityId,
                 new CommunityRuleRequest(CommunityRuleType.OVERDUE_GRACE_PERIOD, Map.of("days", days)),
                 manager);
         assertThat(created.ruleType()).isEqualTo(CommunityRuleType.OVERDUE_GRACE_PERIOD);
+        return created;
     }
 
     private TransactionResponse activateInCse(User ahmed, User salah) {
@@ -224,5 +226,87 @@ public class CommunityRuleGracePeriodIntegrationTest {
         assertThat(transactionService.view(active.id(), salah).overdue()).isFalse();
         assertThat(transactionService.view(active.id(), salah).dueAt())
                 .isBetween(futureDue.minusSeconds(5), futureDue.plusSeconds(5));
+    }
+
+    // ── Derived boundary edges ─────────────────────────────────────────
+    //
+    // DUE_SOON is [dueAt - 24h, dueAt): inclusive at the threshold, exclusive
+    // at dueAt. OVERDUE is strictly after dueAt + grace. The zero-width past
+    // instants cannot be pinned without a clock abstraction, so these cases
+    // assert the stable side of each edge: the clock only ever moves further
+    // out of the due-soon window and further past dueAt.
+
+    @Test
+    void dueSoonWindowOpensInclusivelyAtTwentyFourHoursAndClosesAtDueAt() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+
+        TransactionResponse active = activateInCse(ahmed, salah);
+
+        // Exactly at the 24h threshold: the window opens inclusively.
+        LocalDateTime thresholdDue = LocalDateTime.now().plusHours(24);
+        setDueAt(active.id(), thresholdDue);
+        assertThat(transactionService.view(active.id(), salah).dueSoon()).isTrue();
+        assertThat(transactionService.view(active.id(), salah).overdue()).isFalse();
+
+        // One minute past the threshold is outside the window (1 minute is a
+        // comfortable margin: the assertion runs in milliseconds).
+        setDueAt(active.id(), thresholdDue.plusMinutes(1));
+        assertThat(transactionService.view(active.id(), salah).dueSoon()).isFalse();
+
+        // At dueAt the window is already closed; with zero grace the loan becomes
+        // overdue on the far side. Both assertions are stable because the clock
+        // only moves further out of the window.
+        setDueAt(active.id(), LocalDateTime.now());
+        assertThat(transactionService.view(active.id(), salah).dueSoon()).isFalse();
+        assertThat(transactionService.view(active.id(), salah).overdue()).isTrue();
+    }
+
+    @Test
+    void acceptingAnExtensionWhileOverdueClearsOverdueAndKeepsOriginalDueAt() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+
+        TransactionResponse active = activateInCse(ahmed, salah);
+        setDueAt(active.id(), LocalDateTime.now().minusHours(12));
+        LocalDateTime originalDue = transactionService.view(active.id(), salah).originalDueAt();
+        assertThat(transactionService.view(active.id(), salah).overdue())
+                .as("CSE has no grace rule, so a 12h-late loan is overdue").isTrue();
+
+        TransactionResponse requested = transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(3), "Need more time"), salah);
+        assertThat(transactionService.view(active.id(), salah).overdue())
+                .as("a pending extension never hides an existing overdue state").isTrue();
+
+        TransactionResponse accepted = transactionService.acceptExtension(requested.id(), ahmed);
+
+        assertThat(accepted.dueAt()).isEqualTo(originalDue.plusDays(3));
+        assertThat(accepted.originalDueAt()).isEqualTo(originalDue);
+        assertThat(accepted.overdue())
+                .as("accepting an extension while overdue re-derives OVERDUE=false")
+                .isFalse();
+        assertThat(accepted.dueSoon())
+                .as("a 3-day extension is far outside the 24h due-soon window").isFalse();
+    }
+
+    @Test
+    void deactivatedGraceRuleRevertsToZeroGrace() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Long cse = cseId();
+        CommunityRuleResponse rule = createGraceRule(cse, 2, ahmed);
+
+        TransactionResponse active = activateInCse(ahmed, salah);
+        setDueAt(active.id(), LocalDateTime.now().minusDays(1));
+        assertThat(transactionService.view(active.id(), salah).overdue())
+                .as("1 day late is inside a 2-day grace").isFalse();
+
+        communityRuleService.deactivateRule(cse, rule.id(), ahmed);
+
+        assertThat(transactionService.view(active.id(), salah).overdue())
+                .as("an ARCHIVED rule is ignored, so grace falls back to zero").isTrue();
     }
 }
