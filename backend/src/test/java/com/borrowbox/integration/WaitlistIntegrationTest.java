@@ -10,6 +10,7 @@ import com.borrowbox.entity.Asset;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionMessage;
@@ -31,9 +32,11 @@ import com.borrowbox.service.WaitlistService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -113,6 +116,41 @@ public class WaitlistIntegrationTest {
         assertThat(countUnits(football, AssetUnitStatus.AVAILABLE)).isEqualTo(1);
         return transactionService.create(
                 new TransactionCreateRequest(cseFootball.getId(), "Buffer " + UUID.randomUUID(), 1, null), salah);
+    }
+
+    private MockMultipartFile photo(String name, byte[] content) {
+        return new MockMultipartFile("file", name, "image/png", content);
+    }
+
+    /**
+     * Every transaction a borrower holds on an asset, newest first. The count is
+     * only meaningful as a delta: concurrentReleasesProduceExactlyOnePromotion
+     * commits and deliberately leaves REJECTED history rows behind, so the local
+     * database is never empty for a borrower who has raced releases before.
+     */
+    private List<Transaction> borrowerTransactionsOn(Asset asset, User borrower) {
+        return transactionRepository.findByAssetIdOrderByIdDesc(asset.getId()).stream()
+                .filter(t -> t.getBorrower().getId().equals(borrower.getId()))
+                .toList();
+    }
+
+    /**
+     * Drives a real loan from request to ACTIVE so disputeHandover can be
+     * exercised end to end. The new request consumes Football's only AVAILABLE
+     * unit, leaving 0 AVAILABLE (the seeded APPROVED request still holds the
+     * other unit), which is what makes a later waitlist join legitimate.
+     */
+    private TransactionResponse activateLoanToActive(Asset football, CommunityListing cseFootball,
+                                                     User ahmed, User salah) {
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(cseFootball.getId(),
+                        "Disputed handover " + UUID.randomUUID(), 3, null), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
+        return transactionService.confirmHandover(staged.id(), ahmed);
     }
 
     // ── join + read ───────────────────────────────────────────────────
@@ -287,6 +325,88 @@ public class WaitlistIntegrationTest {
         assertThat(entries.get(0).getPromotedAt()).isNotNull();
 
         assertThat(waitlistService.listForBorrower(youssef)).isEmpty();
+    }
+
+    @Test
+    @Transactional
+    void disputeHandoverReleasesBorrowedUnitAndPromotesHeadWaiter() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        User youssef = seedUser("youssef@example.com");
+        Asset football = football();
+        CommunityListing cseFootball = footballListingIn("CSE Department");
+
+        TransactionResponse active = activateLoanToActive(football, cseFootball, ahmed, salah);
+        assertThat(active.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(active.reservationHeld()).isTrue();
+
+        // The new ACTIVE loan consumed Football's only AVAILABLE unit, so the
+        // asset now has 0 AVAILABLE and a waitlist join is legitimate.
+        assertThat(countUnits(football, AssetUnitStatus.AVAILABLE)).isEqualTo(0);
+        Transaction activeRow = transactionRepository.findById(active.id()).orElseThrow();
+        long releasedUnitId = activeRow.getReservedUnit().getId();
+        assertThat(activeRow.getReservedUnit().getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+
+        WaitlistEntryResponse waitResponse = waitlistService.join(
+                cseFootball.getId(),
+                new WaitlistJoinRequest("Football match practice", 3),
+                youssef);
+        assertThat(waitResponse.status()).isEqualTo(WaitlistStatus.WAITING);
+        assertThat(waitResponse.position()).isEqualTo(1);
+        int waiterTxnsBefore = borrowerTransactionsOn(football, youssef).size();
+
+        // The borrower disputes non-receipt inside the 30-minute window that
+        // confirmHandover just opened, releasing the BORROWED unit and promoting
+        // the head waiter in the same transaction.
+        TransactionResponse disputed = transactionService.disputeHandover(active.id(), salah);
+        assertThat(disputed.state()).isEqualTo(TransactionStatus.HANDOVER_DISPUTED);
+        assertThat(disputed.reservationHeld()).as("the reservation handle is released").isFalse();
+
+        // The released unit is AVAILABLE only transiently: promoteForAsset
+        // re-reserves the same unit inside this transaction, so the release is
+        // proven by unit identity against the promoted transaction.
+        List<Transaction> youssefTxns = borrowerTransactionsOn(football, youssef);
+        assertThat(youssefTxns).as("the promotion creates exactly one new transaction")
+                .hasSize(waiterTxnsBefore + 1);
+        Transaction promoted = youssefTxns.stream()
+                .filter(t -> t.getReservedUnit() != null
+                        && t.getReservedUnit().getId().longValue() == releasedUnitId)
+                .findFirst()
+                .orElseThrow();
+        assertThat(promoted.getState()).isEqualTo(TransactionStatus.PENDING);
+        assertThat(promoted.getReservedUnit()).isNotNull();
+        assertThat(promoted.getReservedUnit().getId())
+                .as("the promoted transaction owns the unit the dispute released")
+                .isEqualTo(releasedUnitId);
+        assertThat(promoted.getReservedUnit().getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        assertThat(promoted.getPurpose()).isEqualTo("Football match practice");
+        assertThat(promoted.getLender().getId()).isEqualTo(ahmed.getId());
+        assertThat(promoted.getReservationExpiresAt())
+                .as("V2.5.2: a promotion creates a real reservation with a fresh deadline")
+                .isAfter(LocalDateTime.now().plusHours(71));
+
+        // Both halves of the one transaction are recorded in the timelines.
+        assertThat(transactionMessageRepository.findByTransactionIdAndKind(promoted.getId(), MessageKind.SYSTEM))
+                .extracting(TransactionMessage::getBody)
+                .contains("Promoted from waitlist");
+        assertThat(transactionMessageRepository.findByTransactionIdAndKind(disputed.id(), MessageKind.SYSTEM))
+                .extracting(TransactionMessage::getBody)
+                .contains("Handover disputed");
+
+        // No duplicate promotion, and no partial outcome: the disputed row is
+        // terminal with its handle released, exactly one entry is PROMOTED, and
+        // the asset is left with no AVAILABLE unit and no BORROWED unit.
+        List<WaitlistEntry> entries = waitlistEntryRepository.findByAssetId(football.getId())
+                .stream().filter(e -> e.getBorrower().getId().equals(youssef.getId())).toList();
+        assertThat(entries).hasSize(1);
+        assertThat(entries.get(0).getStatus()).isEqualTo(WaitlistStatus.PROMOTED);
+        assertThat(entries.get(0).getPromotedAt()).isNotNull();
+        assertThat(waitlistService.listForBorrower(youssef)).isEmpty();
+
+        assertThat(countUnits(football, AssetUnitStatus.AVAILABLE)).isEqualTo(0);
+        assertThat(countUnits(football, AssetUnitStatus.RESERVED)).isEqualTo(2);
+        assertThat(countUnits(football, AssetUnitStatus.BORROWED)).isEqualTo(0);
     }
 
     // ── join guards ───────────────────────────────────────────────────
