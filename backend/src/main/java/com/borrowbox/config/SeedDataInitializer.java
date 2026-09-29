@@ -376,6 +376,15 @@ public class SeedDataInitializer implements ApplicationRunner {
         txn.setReservedUnit(fixtureUnit);
         txn.setReservedAt(now);
         txn.setState(TransactionStatus.APPROVED);
+        // V2.5.2: the seed deliberately leaves reservationExpiresAt NULL. A null
+        // deadline means "no expiry deadline yet" and is never treated as
+        // expired, which is what keeps the deterministic demo/Cypress baseline of
+        // one AVAILABLE + one RESERVED Football unit intact. Do not "helpfully"
+        // stamp a TTL here: a seeded APPROVED reservation that can expire would
+        // flip the fixture unit to AVAILABLE on the first sweep for this asset
+        // and silently change the seeded counts, unit statuses, and every
+        // requests-page assertion built on them.
+        txn.setReservationExpiresAt(null);
         txn.setPurpose("Football match practice");
         txn.setRequestedDurationDays(3);
         txn.setAgreedPurpose("Football match practice");

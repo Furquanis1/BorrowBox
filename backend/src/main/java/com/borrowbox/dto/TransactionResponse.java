@@ -18,6 +18,20 @@ import java.time.LocalDateTime;
  *
  * V2.2.6: returnDisputedAt is stamped by the backend clock when the lender
  * disputes the return (RETURN_DISPUTED).
+ *
+ * V2.5.2: reservationExpired is a derived read-time boolean (like dueSoon /
+ * overdue) that is true only when the state is one of PENDING /
+ * COUNTER_OFFERED / APPROVED / AWAITING_HANDOVER, the persisted
+ * reservationExpiresAt deadline is non-null, and the server clock is past it.
+ * A null deadline is never expired, and the flag is not persisted: it reports
+ * that a sweep is still owed, not that the transaction has transitioned to
+ * EXPIRED.
+ *
+ * <p>The deadline itself (transaction.reservationExpiresAt) is deliberately
+ * NOT part of this record. It is an internal scheduling detail of the
+ * expiry sweep, and exposing it would make the API contract include a
+ * timestamp that no client needs and that would have to be kept in sync with
+ * the sweep's behaviour.
  */
 public record TransactionResponse(
         Long id,
@@ -57,6 +71,7 @@ public record TransactionResponse(
         boolean overdue,
         boolean handoverWindowOpen,
         LocalDateTime returnDisputedAt,
+        boolean reservationExpired,
         LocalDateTime completedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

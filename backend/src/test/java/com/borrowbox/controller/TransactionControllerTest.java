@@ -93,6 +93,9 @@ public class TransactionControllerTest {
                 false, false,
                 false, false, false,
                 null,
+                // V2.5.2: reservationExpired (the persisted deadline is
+                // internal and deliberately absent from the API payload)
+                false,
                 null,
                 LocalDateTime.of(2026, 1, 2, 10, 0),
                 LocalDateTime.of(2026, 1, 2, 10, 0));

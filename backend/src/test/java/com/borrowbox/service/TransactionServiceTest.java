@@ -31,6 +31,9 @@ import com.borrowbox.service.TransactionEventService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -44,6 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -90,7 +94,6 @@ public class TransactionServiceTest {
     private ReputationEventService reputationEventService;
 
     private TransactionService transactionService;
-
     private User owner;
     private User borrower;
     private Asset football;
@@ -100,11 +103,7 @@ public class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
-        transactionService = new TransactionService(
-                transactionRepository, listingRepository, assetUnitRepository,
-                communityRuleRepository, membershipService, messageService,
-                evidenceRepository, evidenceStorageService, waitlistService,
-                eventService, reputationEventService, 5_242_880L);
+        buildService(72L, 48L, 72L, 168L);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);
@@ -132,6 +131,21 @@ public class TransactionServiceTest {
         listing.setCommunity(cse);
         listing.setListingStatus(ListingStatus.LISTED);
         listing.setListedAt(LocalDateTime.of(2026, 1, 1, 9, 0));
+    }
+
+    /**
+     * Builds the service with a specific set of V2.5.2 reservation TTLs so a test
+     * can assert the exact deadline a phase stamped. The leading argument is
+     * {@code reservationExpiryEnabled}.
+     */
+    private void buildService(long pendingHours, long counterHours,
+                              long approvedHours, long handoverHours) {
+        transactionService = new TransactionService(
+                transactionRepository, listingRepository, assetUnitRepository,
+                communityRuleRepository, membershipService, messageService,
+                evidenceRepository, evidenceStorageService, waitlistService,
+                eventService, reputationEventService, 5_242_880L,
+                true, pendingHours, counterHours, approvedHours, handoverHours);
     }
 
     private void stubActiveMember() {
@@ -2014,5 +2028,468 @@ public class TransactionServiceTest {
     void missingEvidenceThrowsResourceNotFound() {
         assertThatThrownBy(() -> transactionService.getEvidenceContent(9L, borrower))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // ── V2.5.2 reservation expiry ────────────────────────────────────────────
+
+    private static final String EXPIRY_SYSTEM_MESSAGE = "Reservation expired";
+
+    /**
+     * A fixture in one of the four expiring states, holding `unit` in RESERVED
+     * with a deadline `hoursAgo` hours in the past.
+     */
+    private Transaction stale(TransactionStatus state, long hoursAgo) {
+        Transaction txn = pending(unit);
+        txn.setState(state);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusHours(hoursAgo));
+        return txn;
+    }
+
+    private void stubSweepCandidates(Transaction... candidates) {
+        when(transactionRepository
+                .findByAssetIdAndStateInAndReservationExpiresAtLessThanOrderByIdAsc(
+                        eq(500L), anyList(), any(LocalDateTime.class)))
+                .thenReturn(List.of(candidates));
+    }
+
+    private void stubSaveReturnsArgument() {
+        when(transactionRepository.save(any(Transaction.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    @ParameterizedTest(name = "a stale {0} reservation expires")
+    @EnumSource(value = TransactionStatus.class,
+            names = {"PENDING", "COUNTER_OFFERED", "APPROVED", "AWAITING_HANDOVER"})
+    void expiresStaleReservationAndReleasesTheUnit(TransactionStatus state) {
+        Transaction txn = stale(state, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.EXPIRED);
+        // Reservation genuinely released...
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        verify(assetUnitRepository).save(unit);
+        // ...and the handle plus both timestamps cleared.
+        assertThat(txn.getReservedUnit()).isNull();
+        assertThat(txn.getReservedAt()).isNull();
+        assertThat(txn.getReservationExpiresAt()).isNull();
+        // Existing promotion path reused.
+        verify(waitlistService).promoteForAsset(500L);
+        // SYSTEM timeline entry + structured event, both actor-less.
+        verify(messageService).addSystemEvent(txn, EXPIRY_SYSTEM_MESSAGE);
+        verify(eventService).createEventAndDeliveries(
+                eq(txn), eq(TransactionEventType.EXPIRED), eq(null), eq(null));
+    }
+
+    @ParameterizedTest(name = "a non-expired {0} reservation is left alone")
+    @EnumSource(value = TransactionStatus.class,
+            names = {"PENDING", "COUNTER_OFFERED", "APPROVED", "AWAITING_HANDOVER"})
+    void doesNotExpireReservationWhoseDeadlineIsStillInTheFuture(TransactionStatus state) {
+        Transaction txn = pending(unit);
+        txn.setState(state);
+        txn.setReservationExpiresAt(LocalDateTime.now().plusHours(1));
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(state);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        assertThat(txn.getReservedUnit()).isNotNull();
+        assertThat(txn.getReservationExpiresAt()).isNotNull();
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+        verify(eventService, never()).createEventAndDeliveries(
+                any(Transaction.class), any(TransactionEventType.class), any(), any());
+    }
+
+    @ParameterizedTest(name = "{0} is never expired")
+    @EnumSource(value = TransactionStatus.class,
+            names = {"ACTIVE", "RETURN_INITIATED", "RETURN_REPORTED", "RETURN_DISPUTED",
+                    "REJECTED", "CANCELLED", "COMPLETED", "HANDOVER_DISPUTED"})
+    void neverExpiresNonExpiringStates(TransactionStatus state) {
+        Transaction txn = stale(state, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(state);
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void nullReservationExpiresAtIsNeverTreatedAsExpired() {
+        // The pre-V2.5.2 row shape: an old negotiation with no deadline at all.
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(null);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.PENDING);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        assertThat(txn.getReservationExpiresAt()).isNull();
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void returnDisputedKeepsItsFrozenBorrowedUnit() {
+        // The deliberate freeze must survive an expiry sweep entirely.
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_DISPUTED);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusDays(30));
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.RETURN_DISPUTED);
+        assertThat(txn.getReservedUnit()).isSameAs(unit);
+        assertThat(txn.getReservedAt()).isNotNull();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(assetUnitRepository, never()).save(any(AssetUnit.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void secondExpiryAttemptIsANoOp() {
+        Transaction txn = stale(TransactionStatus.PENDING, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+
+        transactionService.expireStaleReservations(500L);
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.EXPIRED);
+
+        // A second pass over the same (now terminal) row re-reads it under the
+        // lock, fails the state check, and writes nothing.
+        transactionService.expireStaleReservations(500L);
+
+        verify(transactionRepository, times(1)).save(any(Transaction.class));
+        verify(waitlistService, times(1)).promoteForAsset(500L);
+        verify(messageService, times(1)).addSystemEvent(any(Transaction.class), anyString());
+        verify(eventService, times(1)).createEventAndDeliveries(
+                any(Transaction.class), any(TransactionEventType.class), any(), any());
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+    }
+
+    @Test
+    void candidateThatMovedOnUnderTheLockIsSkipped() {
+        // The short-list read is unlocked, so a candidate can be moved on before
+        // the sweep locks it. Here a concurrent cancel won the race: the row is
+        // no longer in an expiring state, so the sweep must not touch it.
+        Transaction txn = stale(TransactionStatus.PENDING, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        txn.setState(TransactionStatus.CANCELLED);
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.CANCELLED);
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void candidateWhoseDeadlineWasExtendedUnderTheLockIsSkipped() {
+        // Same race, other direction: the borrower/lender pushed the deadline
+        // out after the short-list read but before the lock.
+        Transaction txn = stale(TransactionStatus.APPROVED, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        txn.setReservationExpiresAt(LocalDateTime.now().plusHours(5));
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.APPROVED);
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void candidateDeletedBeforeTheLockIsSkipped() {
+        stubSweepCandidates(stale(TransactionStatus.PENDING, 1));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.empty());
+
+        transactionService.expireStaleReservations(500L);
+
+        verify(transactionRepository, never()).save(any(Transaction.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void sweepIsSkippedWhenDisabledAndForNullAsset() {
+        // Rebuild with the feature switched off.
+        transactionService = new TransactionService(
+                transactionRepository, listingRepository, assetUnitRepository,
+                communityRuleRepository, membershipService, messageService,
+                evidenceRepository, evidenceStorageService, waitlistService,
+                eventService, reputationEventService, 5_242_880L,
+                false, 72L, 48L, 72L, 168L);
+
+        // No stubs are registered on purpose: neither call may reach the
+        // repository at all, so an unexpected query would fail the test.
+        transactionService.expireStaleReservations(500L);
+        transactionService.expireStaleReservations(null);
+
+        verify(transactionRepository, never())
+                .findByAssetIdAndStateInAndReservationExpiresAtLessThanOrderByIdAsc(
+                        anyLong(), anyList(), any(LocalDateTime.class));
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    // ── deadline stamping per phase ──────────────────────────────────────────
+
+    /**
+     * The persisted deadline is an internal detail of the sweep and is
+     * deliberately absent from {@link TransactionResponse}, so stamping is
+     * asserted on the saved entity rather than on the API payload.
+     */
+    private Transaction captureSavedTransaction() {
+        ArgumentCaptor<Transaction> captor = ArgumentCaptor.forClass(Transaction.class);
+        verify(transactionRepository).saveAndFlush(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void createStampsPendingDeadlineFromThePendingTtl() {
+        when(listingRepository.findById(701L)).thenReturn(Optional.of(listing));
+        stubActiveMember();
+        stubAvailableUnit();
+        stubSaveAndFlushReturnsArgument();
+        LocalDateTime before = LocalDateTime.now().plusHours(72);
+
+        TransactionResponse response = transactionService.create(
+                new TransactionCreateRequest(701L, "Football match practice", 3, null), borrower);
+
+        assertThat(captureSavedTransaction().getReservationExpiresAt()).isBetween(
+                before.minusMinutes(1), LocalDateTime.now().plusHours(72).plusMinutes(1));
+        assertThat(response.reservationExpired()).isFalse();
+    }
+
+    @Test
+    void counterOfferStampsCounterOfferedDeadline() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.counterOffer(
+                1L, new CounterOfferRequest(null, 5, "Saturday is fine"), owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.COUNTER_OFFERED);
+        assertThat(txn.getReservationExpiresAt())
+                .isAfter(LocalDateTime.now().plusHours(47));
+    }
+
+    @Test
+    void approveStampsApprovedDeadline() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.approve(
+                1L, new TransactionDecisionRequest("Looks good"), owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.APPROVED);
+        assertThat(txn.getReservationExpiresAt())
+                .isAfter(LocalDateTime.now().plusHours(71));
+    }
+
+    @Test
+    void acceptCounterStampsApprovedDeadline() {
+        Transaction txn = counterOffered(pending(unit));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.acceptCounter(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.APPROVED);
+        assertThat(txn.getReservationExpiresAt())
+                .isAfter(LocalDateTime.now().plusHours(71));
+    }
+
+    @Test
+    void stageHandoverStampsHandoverDeadline() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.APPROVED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.stageHandover(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+        assertThat(txn.getReservationExpiresAt())
+                .isAfter(LocalDateTime.now().plusHours(167));
+    }
+
+    @Test
+    void longLivedPendingApprovedLateGetsAFreshApprovedWindow() {
+        // The original PENDING deadline is already long past, but approval must
+        // re-stamp from now rather than inheriting a creation-based deadline
+        // that would make the freshly approved request expire immediately.
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusDays(30));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.approve(
+                1L, new TransactionDecisionRequest("still fine"), owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.APPROVED);
+        assertThat(txn.getReservationExpiresAt()).isAfter(LocalDateTime.now());
+        assertThat(response.reservationExpired()).isFalse();
+    }
+
+    @Test
+    void aLongLivedPendingRequestIsNotExpiredByItsOwnAgeAfterApproval() {
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusDays(30));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        stubSaveReturnsArgument();
+        transactionService.approve(1L, new TransactionDecisionRequest("ok"), owner);
+
+        // Now sweep: the APPROVED row is fresh, so nothing happens.
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.APPROVED);
+        verify(waitlistService, never()).promoteForAsset(anyLong());
+    }
+
+    @Test
+    void nonPositiveTtlLeavesNoDeadlineRatherThanExpiringImmediately() {
+        buildService(0L, 0L, 0L, 0L);
+        when(listingRepository.findById(701L)).thenReturn(Optional.of(listing));
+        stubActiveMember();
+        stubAvailableUnit();
+        stubSaveAndFlushReturnsArgument();
+
+        TransactionResponse response = transactionService.create(
+                new TransactionCreateRequest(701L, "Football match practice", 3, null), borrower);
+
+        assertThat(captureSavedTransaction().getReservationExpiresAt()).isNull();
+        assertThat(response.reservationExpired()).isFalse();
+    }
+
+    // ── deadline clearing ────────────────────────────────────────────────────
+
+    @Test
+    void rejectClearsTheReservationDeadline() {
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(LocalDateTime.now().plusHours(10));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.reject(
+                1L, new TransactionDecisionRequest("no"), owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.REJECTED);
+        assertThat(txn.getReservationExpiresAt()).isNull();
+        assertThat(response.reservationExpired()).isFalse();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+    }
+
+    @Test
+    void cancelClearsTheReservationDeadline() {
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(LocalDateTime.now().plusHours(10));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+
+        TransactionResponse response = transactionService.cancel(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.CANCELLED);
+        assertThat(txn.getReservationExpiresAt()).isNull();
+    }
+
+    @Test
+    void confirmHandoverClearsThePickupDeadline() {
+        // The item is now in use: the "not picked up" deadline no longer applies
+        // and the loan clock takes over.
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        txn.setAgreedDurationDays(3);
+        txn.setReservationExpiresAt(LocalDateTime.now().plusHours(20));
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+        // V2.5.1: lender must capture handover evidence before confirming.
+        uploadLenderHandoverEvidence();
+
+        TransactionResponse response = transactionService.confirmHandover(1L, owner);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(txn.getReservationExpiresAt()).isNull();
+        assertThat(response.reservationExpired()).isFalse();
+    }
+
+    // ── derived reservationExpired flag ──────────────────────────────────────
+
+    @ParameterizedTest(name = "reservationExpired is false for a live {0}")
+    @EnumSource(value = TransactionStatus.class,
+            names = {"PENDING", "COUNTER_OFFERED", "APPROVED", "AWAITING_HANDOVER"})
+    void reservationExpiredIsFalseWhileTheDeadlineIsInTheFuture(TransactionStatus state) {
+        Transaction txn = pending(unit);
+        txn.setState(state);
+        txn.setReservationExpiresAt(LocalDateTime.now().plusMinutes(1));
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThat(transactionService.view(1L, borrower).reservationExpired()).isFalse();
+    }
+
+    @Test
+    void reservationExpiredIsTrueOnlyWhenTheDeadlineHasPassed() {
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusMinutes(1));
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        TransactionResponse response = transactionService.view(1L, borrower);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.PENDING);
+        // The state has not changed: the flag reports that a sweep is still owed,
+        // not that the transaction has transitioned to EXPIRED.
+        assertThat(response.reservationExpired()).isTrue();
+    }
+
+    @Test
+    void reservationExpiredIsFalseWhenTheDeadlineIsNull() {
+        Transaction txn = pending(unit);
+        txn.setReservationExpiresAt(null);
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThat(transactionService.view(1L, borrower).reservationExpired()).isFalse();
+    }
+
+    @Test
+    void reservationExpiredIsFalseForNonExpiringStatesEvenWithAPastDeadline() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.ACTIVE);
+        txn.setReservationExpiresAt(LocalDateTime.now().minusDays(90));
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThat(transactionService.view(1L, borrower).reservationExpired()).isFalse();
+    }
+
+    @Test
+    void expiredStateIsNeverReportedAsReservationExpired() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.EXPIRED);
+        txn.setReservationExpiresAt(null);
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThat(transactionService.view(1L, borrower).reservationExpired()).isFalse();
     }
 }

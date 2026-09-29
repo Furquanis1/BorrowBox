@@ -23,6 +23,8 @@ import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.WaitlistEntryRepository;
 import com.borrowbox.service.TransactionEventService;
 import com.borrowbox.entity.TransactionEventType;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -56,6 +58,19 @@ import java.util.List;
  *  - A voluntary leave hard-deletes the WAITING row (the borrower may re-join
  *    later). PROMOTED entries are ordinary transactions already and are not
  *    left through this service.
+ *
+ * V2.5.2 stale reservation expiry:
+ *  - A promoted entry becomes a PENDING transaction holding the unit in
+ *    RESERVED, so a promotion creates a NEW reservation that must be able to
+ *    expire exactly like a directly requested one. promote() therefore stamps
+ *    the same pending TTL deadline TransactionService.create() stamps.
+ *  - join() runs the opportunistic expiry sweep before its availability gate,
+ *    so joining is not blocked by a reservation that has already lapsed. After
+ *    the sweep the gate answers "there really is nothing available", either
+ *    because the unit was still legitimately held, or because it was released
+ *    and immediately handed to the next waiter by the same sweep.
+ *  - There is still no scheduler and no @Async promotion: the sweep runs inline
+ *    on this request.
  */
 @Service
 public class WaitlistService {
@@ -69,6 +84,16 @@ public class WaitlistService {
     private final MembershipService membershipService;
     private final TransactionMessageService messageService;
     private final TransactionEventService eventService;
+    private final long pendingReservationHours;
+
+    /**
+     * Resolved lazily and through the provider on purpose. TransactionService
+     * already depends on this service (it calls promoteForAsset), so a plain
+     * constructor dependency here would form a bean-initialization cycle. The
+     * provider defers the lookup until join() actually runs, by which time both
+     * beans are fully initialised. Only the expiry sweep is ever used through it.
+     */
+    private final ObjectProvider<TransactionService> transactionServiceProvider;
 
     public WaitlistService(WaitlistEntryRepository waitlistEntryRepository,
                            CommunityListingRepository listingRepository,
@@ -76,7 +101,9 @@ public class WaitlistService {
                            TransactionRepository transactionRepository,
                            MembershipService membershipService,
                            TransactionMessageService messageService,
-                           TransactionEventService eventService) {
+                           TransactionEventService eventService,
+                           @Value("${borrowbox.reservation.pending-hours:72}") long pendingReservationHours,
+                           ObjectProvider<TransactionService> transactionServiceProvider) {
         this.waitlistEntryRepository = waitlistEntryRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
@@ -84,6 +111,8 @@ public class WaitlistService {
         this.membershipService = membershipService;
         this.messageService = messageService;
         this.eventService = eventService;
+        this.pendingReservationHours = pendingReservationHours;
+        this.transactionServiceProvider = transactionServiceProvider;
     }
 
     /**
@@ -123,6 +152,14 @@ public class WaitlistService {
             throw new BusinessRuleViolationException(
                     "You already have a waitlist position for this asset");
         }
+
+        // V2.5.2: reclaim a lapsed reservation on this asset BEFORE the
+        // availability gate, so this borrower is not pushed onto the waitlist
+        // because of a negotiation that has already expired. The sweep may also
+        // promote an existing waiter, which can take the freed unit -- that is
+        // exactly why the gate runs after the sweep and reads the committed
+        // result through its own locking read.
+        transactionServiceProvider.getObject().expireStaleReservations(asset.getId());
 
         // Availability gate using the SAME pessimistic AssetUnit lock used by
         // TransactionService.create(): if a unit is AVAILABLE, the join is rejected
@@ -242,6 +279,13 @@ public class WaitlistService {
         txn.setReservedUnit(unit);
         txn.setReservedAt(now);
         txn.setState(TransactionStatus.PENDING);
+        // V2.5.2: a promotion creates a real reservation, so it needs the same
+        // deadline a directly requested PENDING transaction gets. A non-positive
+        // configured TTL leaves it null, which means "no deadline" and is never
+        // treated as expired.
+        txn.setReservationExpiresAt(pendingReservationHours > 0
+                ? now.plusHours(pendingReservationHours)
+                : null);
         txn.setPurpose(entry.getPurpose());
         txn.setRequestedDurationDays(entry.getRequestedDurationDays());
 

@@ -18,6 +18,7 @@ const EVENT_META = {
   RETURN_REPORTED: { icon: 'bi-box-arrow-up', label: 'Handback reported' },
   LOAN_COMPLETED: { icon: 'bi-flag', label: 'Loan completed' },
   RETURN_DISPUTED: { icon: 'bi-exclamation-octagon', label: 'Return disputed' },
+  EXPIRED: { icon: 'bi-hourglass-bottom', label: 'Reservation expired' },
   WAITLIST_PROMOTED: { icon: 'bi-hourglass-split', label: 'Promoted from waitlist' },
 }
 

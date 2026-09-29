@@ -8,7 +8,18 @@ import Button from '../../components/ui/Button'
 import CounterOfferDrawer from '../../components/dashboard/CounterOfferDrawer'
 import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
 
-const REQUEST_STATES = new Set(['PENDING', 'COUNTER_OFFERED', 'APPROVED', 'AWAITING_HANDOVER'])
+// V2.5.2: the four open request states are unchanged. EXPIRED is added so a
+// lapsed reservation stays visible to both parties instead of silently
+// vanishing from the page -- otherwise the EXPIRED badge and the
+// reservationExpired suppression below could never be reached. EXPIRED is
+// terminal, so it renders with no action controls.
+const REQUEST_STATES = new Set([
+  'PENDING',
+  'COUNTER_OFFERED',
+  'APPROVED',
+  'AWAITING_HANDOVER',
+  'EXPIRED',
+])
 
 const STATE_BADGE = {
   PENDING: 'badge-warning',
@@ -20,6 +31,7 @@ const STATE_BADGE = {
   ACTIVE: 'badge-teal',
   RETURN_INITIATED: 'badge-warning',
   COMPLETED: 'badge-neutral',
+  EXPIRED: 'badge-danger',
 }
 
 const STATE_LABEL = {
@@ -32,6 +44,7 @@ const STATE_LABEL = {
   ACTIVE: 'On loan',
   RETURN_INITIATED: 'Return in progress',
   COMPLETED: 'Completed',
+  EXPIRED: 'Expired',
 }
 
 const CONVERSATION_LABEL = {
@@ -57,13 +70,20 @@ function TransactionCard({
   const state = transaction.state
   const isMine = role === 'mine'
   const agreed = ['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED'].includes(state)
-  const reservationHint = transaction.reservationHeld
-    ? state === 'ACTIVE' || state === 'RETURN_INITIATED'
-      ? 'A unit is with the borrower.'
-      : state === 'APPROVED'
-        ? 'A unit is reserved for you.'
-        : 'A unit is reserved while the request is open.'
-    : null
+  // V2.5.2: the backend releases the unit when it sweeps the expiry, but until
+  // that sweep runs reservationHeld can still be true on a lapsed
+  // reservation. Never tell a user a unit is being held for them once the
+  // deadline has passed.
+  const reservationHint =
+    transaction.reservationExpired
+      ? null
+      : transaction.reservationHeld
+        ? state === 'ACTIVE' || state === 'RETURN_INITIATED'
+          ? 'A unit is with the borrower.'
+          : state === 'APPROVED'
+            ? 'A unit is reserved for you.'
+            : 'A unit is reserved while the request is open.'
+        : null
 
   return (
     <li className="transaction-card">
@@ -124,6 +144,13 @@ function TransactionCard({
       {state === 'COMPLETED' && (
         <p className="transaction-card-note">
           Completed {transaction.completedAt ? new Date(transaction.completedAt).toLocaleDateString() : ''}.
+        </p>
+      )}
+
+      {state === 'EXPIRED' && (
+        <p className="transaction-card-note">
+          The reservation window passed before pickup, so this request was closed and any reserved
+          unit was released.
         </p>
       )}
 

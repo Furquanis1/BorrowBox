@@ -6,7 +6,10 @@ import EventTimeline from './EventTimeline'
 import { useAuth } from '../../contexts/AuthContext'
 import { eventService, requestService } from '../../services'
 
-const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
+// V2.5.2: EXPIRED is terminal, so the drawer is read-only for it. It is also
+// absent from WRITABLE_STATES, EVIDENCE_STATES, and EVIDENCE_VISIBLE_STATES, so
+// no composer, no evidence upload, and no evidence list is rendered.
+const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED', 'EXPIRED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
 const EVIDENCE_STATES = new Set(['RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
 // V2.5.1: the lender can also capture/see evidence while awaiting handover.

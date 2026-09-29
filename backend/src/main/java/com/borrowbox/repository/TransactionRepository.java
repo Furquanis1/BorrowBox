@@ -39,6 +39,27 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByAssetIdOrderByIdDesc(Long assetId);
 
+    /**
+     * V2.5.2 opportunistic expiry sweep candidate lookup.
+     *
+     * <p>Scoped to a single asset because the sweep runs on paths that are
+     * already evaluating one asset's availability, and reads only rows that
+     * already look stale. A {@code null} reservationExpiresAt can never match
+     * {@code LessThan}, which is what encodes "a NULL deadline is never
+     * expired" at the SQL level.
+     *
+     * <p>Ordered by id on purpose: several threads sweeping the same asset must
+     * take the candidate row locks in the same global order, otherwise a two-row
+     * candidate set could be locked in opposite orders and deadlock.
+     *
+     * <p>This query only short-lists candidates. It deliberately does NOT lock:
+     * the caller re-reads each candidate with
+     * {@link #findByIdForUpdate(Long)} and re-checks state and deadline under
+     * that lock before expiring anything.
+     */
+    List<Transaction> findByAssetIdAndStateInAndReservationExpiresAtLessThanOrderByIdAsc(
+            Long assetId, List<TransactionStatus> states, LocalDateTime now);
+
     Optional<Transaction> findByIdAndCommunityId(Long id, Long communityId);
 
     List<Transaction> findByCommunityIdAndState(Long communityId, TransactionStatus state);

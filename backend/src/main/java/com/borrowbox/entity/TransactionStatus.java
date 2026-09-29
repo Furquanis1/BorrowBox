@@ -26,6 +26,18 @@ package com.borrowbox.entity;
  * return-dispute resolution is later-stage scope.
  *
  * DUE_SOON / OVERDUE are derived read-time conditions, never persisted states.
+ * The same is true of the V2.5.2 derived condition `reservationExpired`, which
+ * reports that a live state's reservation deadline has passed but has not yet
+ * been swept.
+ *
+ * EXPIRED (V2.5.2) means the reservation window for a not-yet-picked-up item
+ * elapsed. It is a terminal decision branch, reached from PENDING,
+ * COUNTER_OFFERED, APPROVED or AWAITING_HANDOVER once the transaction's
+ * reservationExpiresAt deadline has actually passed; the reserved AssetUnit is
+ * released back to AVAILABLE by the same action. It does not apply to ACTIVE /
+ * RETURN_INITIATED / RETURN_REPORTED (the item is in use, the unit is BORROWED)
+ * nor to RETURN_DISPUTED (the unit is deliberately frozen), and it never
+ * applies when reservationExpiresAt is NULL.
  *
  * RESERVED is deliberately NOT a transaction state: it is a physical
  * AssetUnit status only.
@@ -42,5 +54,6 @@ public enum TransactionStatus {
     RETURN_REPORTED,
     COMPLETED,
     HANDOVER_DISPUTED,
-    RETURN_DISPUTED
+    RETURN_DISPUTED,
+    EXPIRED
 }

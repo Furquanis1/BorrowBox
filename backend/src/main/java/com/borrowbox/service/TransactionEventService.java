@@ -84,6 +84,13 @@ public class TransactionEventService {
     /**
      * Centralized, deterministic recipient resolution.
      * Only transaction participants (borrower/lender) receive events.
+     *
+     * V2.5.2: this switch has no {@code default} branch on purpose. A missing
+     * arm used to resolve to an empty recipient list, which meant a newly added
+     * event type would be persisted with zero deliveries and nobody would notice.
+     * Without a default, the switch expression must be exhaustive over
+     * TransactionEventType, so forgetting to route a new type is a compile error
+     * instead of a silent no-delivery at runtime.
      */
     private List<User> resolveRecipients(Transaction transaction, TransactionEventType eventType) {
         User borrower = transaction.getBorrower();
@@ -98,8 +105,11 @@ public class TransactionEventService {
             case EXTENSION_APPROVED, EXTENSION_REJECTED, EXTENSION_COUNTER_ACCEPTED, EXTENSION_COUNTER_REJECTED -> List.of(borrower);
             case RETURN_INITIATED, RETURN_REPORTED -> List.of(lender);
             case RETURN_DISPUTED -> List.of(borrower);
+            // V2.5.2: no actor caused this. Both participants need to know: the
+            // borrower lost the held unit, and the lender's item is back in
+            // circulation and may already have been handed to the next waiter.
+            case EXPIRED -> List.of(borrower, lender);
             case WAITLIST_PROMOTED -> List.of(borrower); // promoted waiter is the borrower of the new transaction
-            default -> List.of();
         };
     }
 

@@ -148,6 +148,23 @@ CREATE TABLE IF NOT EXISTS community_listings (
 -- V2.2.6 adds the return-dispute record (return_disputed_at /
 -- return_disputed_by), stamped by the lender's "not received" action while
 -- RETURN_DISPUTED. The disputed AssetUnit stays BORROWED.
+--
+-- V2.5.2 adds reservation expiry: reservation_expires_at is the authoritative
+-- server-clock deadline for the CURRENT reservation-bearing phase, re-stamped
+-- on every phase transition (PENDING / COUNTER_OFFERED / APPROVED /
+-- AWAITING_HANDOVER) and cleared whenever the reservation is released or the
+-- transaction reaches any terminal state. It is a persisted deadline, NOT an
+-- age: reserved_at is set once at creation and never refreshed, so it cannot
+-- express a per-phase deadline, and updated_at is deliberately never used as a
+-- semantic clock. NULL means "no deadline has been set yet" and MUST NEVER be
+-- interpreted as already expired -- an existing row with NULL simply does not
+-- expire until it next enters a phase.
+--
+-- The expiry decision itself is derived at read time (reservationExpired on
+-- TransactionResponse) exactly like DUE_SOON / OVERDUE, and the actual
+-- reclamation is an opportunistic sweep on the paths that already hold the
+-- AssetUnit availability lock. There is deliberately no scheduler and no
+-- background worker in this slice.
 CREATE TABLE IF NOT EXISTS transactions (
     id                       BIGINT       NOT NULL AUTO_INCREMENT,
     community_id             BIGINT       NOT NULL,
@@ -171,6 +188,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     decided_by               BIGINT       DEFAULT NULL,
     decision_note            VARCHAR(255) DEFAULT NULL,
     reserved_at              DATETIME(6)  DEFAULT NULL,
+    reservation_expires_at   DATETIME(6)  DEFAULT NULL,
     started_at               DATETIME(6)  DEFAULT NULL,
     due_at                   DATETIME(6)  DEFAULT NULL,
     original_due_at          DATETIME(6)  DEFAULT NULL,
@@ -196,7 +214,11 @@ CREATE TABLE IF NOT EXISTS transactions (
     CONSTRAINT uq_transactions_reserved_unit UNIQUE (reserved_unit_id),
     INDEX idx_transactions_lender_state (lender_id, state),
     INDEX idx_transactions_borrower_state (borrower_id, state),
-    INDEX idx_transactions_listing_state (listing_id, state)
+    INDEX idx_transactions_listing_state (listing_id, state),
+    -- Serves the opportunistic expiry sweep
+    -- (WHERE asset_id = ? AND state IN (...) AND reservation_expires_at < ?)
+    -- and the existing asset-scoped transaction lookup.
+    INDEX idx_transactions_asset_state (asset_id, state)
 ) ENGINE=InnoDB;
 
 -- V2.2.3 transaction conversation: one row per message in a transaction's

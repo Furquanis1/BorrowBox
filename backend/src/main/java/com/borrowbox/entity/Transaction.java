@@ -31,6 +31,11 @@ import java.time.LocalDateTime;
  * startedAt + agreedDurationDays). originalDueAt never changes; future
  * V2.2.5 extensions may modify dueAt. borrowerConfirmedAt is set only by the
  * borrower's confirm-receipt action within the handover window.
+ *
+ * V2.5.2 reservation expiry clock: reservationExpiresAt is the persisted
+ * deadline for the current reservation-bearing phase. It is re-stamped on every
+ * phase transition and cleared on release/terminal states; see its javadoc for
+ * why it is not derived from reservedAt or updatedAt.
  */
 @Entity
 @Table(name = "transactions")
@@ -117,6 +122,25 @@ public class Transaction {
 
     @Column(name = "reserved_at")
     private LocalDateTime reservedAt;
+
+    /**
+     * V2.5.2 authoritative reservation deadline for the CURRENT
+     * reservation-bearing phase (PENDING / COUNTER_OFFERED / APPROVED /
+     * AWAITING_HANDOVER), stamped from the server clock every time the
+     * transaction enters one of those phases.
+     *
+     * <p>Explicitly NOT an age counter: {@code reservedAt} is written once at
+     * creation and never refreshed, and {@code updatedAt} changes on unrelated
+     * writes, so neither can express a per-phase deadline.
+     *
+     * <p>Nullable, and {@code null} means "no deadline has been set yet". A
+     * {@code null} value is NEVER treated as already expired, so a row written
+     * before this field existed simply does not expire until it next enters a
+     * phase. The field is cleared whenever the reservation is released or the
+     * transaction reaches any terminal state.
+     */
+    @Column(name = "reservation_expires_at")
+    private LocalDateTime reservationExpiresAt;
 
     @Column(name = "started_at")
     private LocalDateTime startedAt;
@@ -348,6 +372,14 @@ public class Transaction {
 
     public void setReservedAt(LocalDateTime reservedAt) {
         this.reservedAt = reservedAt;
+    }
+
+    public LocalDateTime getReservationExpiresAt() {
+        return reservationExpiresAt;
+    }
+
+    public void setReservationExpiresAt(LocalDateTime reservationExpiresAt) {
+        this.reservationExpiresAt = reservationExpiresAt;
     }
 
     public LocalDateTime getStartedAt() {

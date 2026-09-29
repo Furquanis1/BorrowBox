@@ -28,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDateTime;
@@ -66,6 +68,9 @@ public class WaitlistServiceTest {
     @Mock
     private TransactionEventService eventService;
 
+    @Mock
+    private TransactionService transactionService;
+
     private WaitlistService waitlistService;
 
     private User owner;
@@ -81,9 +86,17 @@ public class WaitlistServiceTest {
 
     @BeforeEach
     void setUp() {
+        // A real (minimal) ObjectProvider so join() resolves the expiry sweep
+        // exactly the way the container does, without a hand-rolled stub.
+        DefaultListableBeanFactory beanFactory = new DefaultListableBeanFactory();
+        beanFactory.registerSingleton("transactionService", transactionService);
+        ObjectProvider<TransactionService> transactionServiceProvider =
+                beanFactory.getBeanProvider(TransactionService.class);
+
         waitlistService = new WaitlistService(
                 waitlistEntryRepository, listingRepository, assetUnitRepository,
-                transactionRepository, membershipService, messageService, eventService);
+                transactionRepository, membershipService, messageService, eventService,
+                72L, transactionServiceProvider);
 
         owner = new User("Ahmed", "ahmed@example.com");
         owner.setId(100L);

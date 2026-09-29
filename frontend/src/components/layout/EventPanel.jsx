@@ -20,6 +20,7 @@ const eventLabels = {
   RETURN_REPORTED: 'Return reported',
   LOAN_COMPLETED: 'Loan completed',
   RETURN_DISPUTED: 'Return disputed',
+  EXPIRED: 'Reservation expired',
   WAITLIST_PROMOTED: 'Promoted from waitlist'
 }
 

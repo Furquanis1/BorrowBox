@@ -130,6 +130,30 @@ import java.util.List;
  *    promotion in the same transaction through WaitlistService.promoteForAsset.
  *  - RETURN_DISPUTED deliberately does NOT release the unit and does NOT
  *    trigger promotion.
+ *
+ * V2.5.2 stale reservation expiry:
+ *  - transaction.reservationExpiresAt is the persisted deadline for the CURRENT
+ *    reservation-bearing phase. It is re-stamped from the server clock on entry
+ *    to PENDING / COUNTER_OFFERED / APPROVED / AWAITING_HANDOVER and cleared
+ *    whenever the reservation is released or the item leaves the reservation
+ *    phase. It is never derived from reservedAt (stamped once, never refreshed)
+ *    nor from updatedAt (changes on unrelated writes).
+ *  - Expiry is confined to those four states. ACTIVE / RETURN_INITIATED /
+ *    RETURN_REPORTED hold a BORROWED unit, and RETURN_DISPUTED deliberately
+ *    freezes its unit, so none of them are ever expired.
+ *  - A null reservationExpiresAt means "no deadline yet" and is NEVER treated as
+ *    already expired, so a row that predates V2.5.2 stays inert until it next
+ *    enters a phase.
+ *  - The derived flag reservationExpired is computed at read time exactly like
+ *    DUE_SOON / OVERDUE and is never persisted. The actual reclamation is an
+ *    opportunistic sweep (expireStaleReservations) run from the two paths that
+ *    already evaluate one asset's availability. There is deliberately no
+ *    scheduler and no background worker: with no traffic a stale reservation
+ *    simply stays stale until the next request for that asset.
+ *  - The sweep re-locks each candidate row with the same PESSIMISTIC_WRITE lock
+ *    used by every other lifecycle action, re-checks state and deadline under
+ *    that lock, and then reuses the existing releaseReservation helper and the
+ *    existing waitlist promotion path. It is idempotent.
  */
 @Service
 public class TransactionService {
@@ -152,6 +176,19 @@ public class TransactionService {
      */
     public static final int CONDITION_NOTE_MAX_LENGTH = 1000;
 
+    /**
+     * V2.5.2: the only states that hold an AssetUnit in RESERVED while nobody is
+     * actively using it, and therefore the only states a reservation deadline
+     * can expire from. ACTIVE / RETURN_INITIATED / RETURN_REPORTED hold a
+     * BORROWED unit and RETURN_DISPUTED deliberately freezes its unit, so all
+     * four are permanently excluded from expiry.
+     */
+    public static final List<TransactionStatus> EXPIRING_RESERVATION_STATES = List.of(
+            TransactionStatus.PENDING,
+            TransactionStatus.COUNTER_OFFERED,
+            TransactionStatus.APPROVED,
+            TransactionStatus.AWAITING_HANDOVER);
+
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
     private final AssetUnitRepository assetUnitRepository;
@@ -164,6 +201,11 @@ public class TransactionService {
     private final TransactionEventService eventService;
     private final ReputationEventService reputationEventService;
     private final long maxEvidenceBytes;
+    private final boolean reservationExpiryEnabled;
+    private final long pendingReservationHours;
+    private final long counterOfferReservationHours;
+    private final long approvedReservationHours;
+    private final long handoverReservationHours;
 
     public TransactionService(TransactionRepository transactionRepository,
                               CommunityListingRepository listingRepository,
@@ -176,7 +218,12 @@ public class TransactionService {
                               WaitlistService waitlistService,
                               TransactionEventService eventService,
                               ReputationEventService reputationEventService,
-                              @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes) {
+                              @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes,
+                              @Value("${borrowbox.reservation.enabled:true}") boolean reservationExpiryEnabled,
+                              @Value("${borrowbox.reservation.pending-hours:72}") long pendingReservationHours,
+                              @Value("${borrowbox.reservation.counter-offer-hours:48}") long counterOfferReservationHours,
+                              @Value("${borrowbox.reservation.approved-hours:72}") long approvedReservationHours,
+                              @Value("${borrowbox.reservation.handover-hours:168}") long handoverReservationHours) {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
@@ -189,6 +236,11 @@ public class TransactionService {
         this.eventService = eventService;
         this.reputationEventService = reputationEventService;
         this.maxEvidenceBytes = maxEvidenceBytes;
+        this.reservationExpiryEnabled = reservationExpiryEnabled;
+        this.pendingReservationHours = pendingReservationHours;
+        this.counterOfferReservationHours = counterOfferReservationHours;
+        this.approvedReservationHours = approvedReservationHours;
+        this.handoverReservationHours = handoverReservationHours;
     }
 
     /**
@@ -230,6 +282,14 @@ public class TransactionService {
             throw new BusinessRuleViolationException("You cannot request your own asset");
         }
 
+        // V2.5.2: reclaim any stale reservation on this asset BEFORE deciding
+        // availability, so a long-abandoned negotiation cannot make the asset
+        // look permanently unavailable. The sweep takes its own row locks and
+        // may promote a waiter, which may consume the unit this create is about
+        // to claim -- the availability decision below is therefore made after
+        // the sweep, never before it.
+        expireStaleReservations(asset.getId());
+
         // Primary reservation guard: pick a unit under a PESSIMISTIC_WRITE lock.
         AssetUnit unit = assetUnitRepository.findFirstByAssetIdAndStatusForUpdate(asset.getId())
                 .orElseThrow(() -> new BusinessRuleViolationException("No available unit"));
@@ -250,6 +310,7 @@ public class TransactionService {
         txn.setReservedUnit(unit);
         txn.setReservedAt(now);
         txn.setState(TransactionStatus.PENDING);
+        stampReservationDeadline(txn, pendingReservationHours);
         txn.setPurpose(request.purpose().trim());
         txn.setBorrowerNote(trimToNull(request.note()));
         txn.setRequestedDurationDays(request.requestedDurationDays());
@@ -280,6 +341,7 @@ public class TransactionService {
 
         LocalDateTime now = LocalDateTime.now();
         txn.setState(TransactionStatus.APPROVED);
+        stampReservationDeadline(txn, approvedReservationHours);
         txn.setAgreedPurpose(txn.getPurpose());
         txn.setAgreedDurationDays(txn.getRequestedDurationDays());
         txn.setAgreedAt(now);
@@ -346,6 +408,7 @@ public class TransactionService {
         txn.setCounterNote(trimToNull(request.note()));
         txn.setCounterOfferedAt(now);
         txn.setState(TransactionStatus.COUNTER_OFFERED);
+        stampReservationDeadline(txn, counterOfferReservationHours);
         txn.setDecidedAt(now);
         txn.setDecidedBy(lender);
         return toResponse(transactionRepository.save(txn));
@@ -364,6 +427,7 @@ public class TransactionService {
 
         LocalDateTime now = LocalDateTime.now();
         txn.setState(TransactionStatus.APPROVED);
+        stampReservationDeadline(txn, approvedReservationHours);
         txn.setAgreedPurpose(txn.getCounterPurpose());
         txn.setAgreedDurationDays(txn.getCounterDurationDays());
         txn.setAgreedAt(now);
@@ -425,6 +489,7 @@ public class TransactionService {
         requireState(txn, TransactionStatus.APPROVED);
 
         txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        stampReservationDeadline(txn, handoverReservationHours);
         messageService.addSystemEvent(txn, "Handover scheduled");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_SCHEDULED, actor, null);
@@ -458,6 +523,10 @@ public class TransactionService {
         LocalDateTime now = LocalDateTime.now();
         txn.setState(TransactionStatus.ACTIVE);
         txn.setStartedAt(now);
+        // V2.5.2: the item is now in the borrower's hands, so the "not picked up
+        // yet" reservation deadline is over. The unit is BORROWED from here on
+        // and the loan clock (dueAt / OVERDUE) governs the transaction instead.
+        clearReservationDeadline(txn);
         // V2.2.4: authoritative loan clock. dueAt derives from the server clock
         // and the agreed duration; originalDueAt is captured once and never
         // changes (future extensions may modify dueAt only).
@@ -922,6 +991,127 @@ public class TransactionService {
             txn.setReservedUnit(null);
             txn.setReservedAt(null);
         }
+        // V2.5.2: there is no reservation left to expire once it has been
+        // released, so the deadline is cleared here rather than at each of the
+        // three call sites (reject, cancel, expireStaleReservation). Every
+        // caller of this helper ends in a terminal state, so no path can leave a
+        // live deadline behind on a closed transaction.
+        //
+        // disputeHandover is deliberately NOT a caller: it releases a BORROWED
+        // unit via releaseBorrowedUnit and is only reachable from ACTIVE, where
+        // confirmHandover has already cleared the deadline.
+        clearReservationDeadline(txn);
+    }
+
+    /**
+     * V2.5.2: stamps a fresh reservation deadline for the phase the transaction
+     * has just entered.
+     *
+     * <p>Called on every entry to PENDING / COUNTER_OFFERED / APPROVED /
+     * AWAITING_HANDOVER, so each phase gets its own full window measured from
+     * the server clock at the moment of entry. A PENDING transaction that sits
+     * for a week and is then approved therefore receives a complete APPROVED
+     * window instead of inheriting a deadline computed from its creation time
+     * (and expiring on the spot).
+     *
+     * <p>A non-positive configured TTL is treated as "this phase has no expiry"
+     * and leaves the deadline null, so a misconfiguration degrades to the
+     * pre-V2.5.2 behaviour rather than instantly expiring live reservations.
+     */
+    private void stampReservationDeadline(Transaction txn, long hours) {
+        txn.setReservationExpiresAt(hours > 0 ? LocalDateTime.now().plusHours(hours) : null);
+    }
+
+    private void clearReservationDeadline(Transaction txn) {
+        txn.setReservationExpiresAt(null);
+    }
+
+    /**
+     * V2.5.2 derived read-time condition, mirroring DUE_SOON / OVERDUE. Never
+     * persisted.
+     *
+     * <p>True only while the transaction is in one of the four expiring states,
+     * carries a non-null deadline, and the server clock is past that deadline.
+     * A null deadline is explicitly not expired, and a terminal state is never
+     * expired even if a stale deadline were somehow still attached.
+     */
+    private boolean isReservationExpired(Transaction txn) {
+        if (!EXPIRING_RESERVATION_STATES.contains(txn.getState())) {
+            return false;
+        }
+        LocalDateTime deadline = txn.getReservationExpiresAt();
+        return deadline != null && LocalDateTime.now().isAfter(deadline);
+    }
+
+    /**
+     * V2.5.2 opportunistic stale-reservation sweep for a single asset.
+     *
+     * <p>Deliberately NOT a scheduler and NOT a background worker: it runs inline
+     * on the two request paths that already evaluate one asset's availability
+     * ({@link #create} and {@code WaitlistService.join}), so a stale
+     * reservation is reclaimed exactly when somebody would otherwise be told
+     * "no available unit" because of it. With no traffic nothing is swept, and a
+     * stale reservation is harmless until the next request for that asset.
+     *
+     * <p>Two-phase by design. The first read only short-lists candidates and
+     * deliberately takes no lock, so it cannot block a concurrent decision. Each
+     * candidate is then re-read under the same PESSIMISTIC_WRITE lock every other
+     * lifecycle action uses, and state plus deadline are re-checked under that
+     * lock before anything is written. The unlock-and-relock gap is safe because
+     * the row is re-validated: a candidate that was approved, cancelled or
+     * otherwise moved on in the meantime simply fails the re-check and is left
+     * alone.
+     *
+     * <p>Idempotent: once a transaction is EXPIRED it is no longer in
+     * EXPIRING_RESERVATION_STATES, so a second sweep cannot re-expire it, and
+     * {@code releaseReservation} is itself idempotent.
+     */
+    @Transactional
+    public void expireStaleReservations(Long assetId) {
+        if (assetId == null || !reservationExpiryEnabled) {
+            return;
+        }
+
+        List<Transaction> candidates = transactionRepository
+                .findByAssetIdAndStateInAndReservationExpiresAtLessThanOrderByIdAsc(
+                        assetId, EXPIRING_RESERVATION_STATES, LocalDateTime.now());
+
+        for (Transaction candidate : candidates) {
+            expireStaleReservation(candidate.getId());
+        }
+    }
+
+    /**
+     * Expires one candidate under its row lock. Silently does nothing when the
+     * row no longer qualifies, which is the normal outcome for a candidate that
+     * a concurrent request already moved on.
+     */
+    private void expireStaleReservation(Long id) {
+        Transaction txn = transactionRepository.findByIdForUpdate(id).orElse(null);
+        if (txn == null) {
+            return;
+        }
+        if (!EXPIRING_RESERVATION_STATES.contains(txn.getState())) {
+            return;
+        }
+        LocalDateTime deadline = txn.getReservationExpiresAt();
+        if (deadline == null || !LocalDateTime.now().isAfter(deadline)) {
+            return;
+        }
+
+        Long assetId = txn.getAsset().getId();
+
+        txn.setState(TransactionStatus.EXPIRED);
+        // Reuses the existing release helper (unit RESERVED -> AVAILABLE,
+        // reservedUnit/reservedAt/reservationExpiresAt cleared) and the existing
+        // promotion path, both inside the caller's transaction, so the reclaim
+        // and the resulting state change commit atomically.
+        releaseReservation(txn);
+        messageService.addSystemEvent(txn, "Reservation expired");
+        // No actor: this transition was caused by the server clock, not by a user.
+        waitlistService.promoteForAsset(assetId);
+        toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXPIRED, null, null);
     }
 
     /**
@@ -1302,6 +1492,7 @@ public class TransactionService {
                 isOverdue(txn),
                 isHandoverWindowOpen(txn),
                 txn.getReturnDisputedAt(),
+                isReservationExpired(txn),
                 txn.getCompletedAt(),
                 txn.getCreatedAt(),
                 txn.getUpdatedAt()

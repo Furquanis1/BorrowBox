@@ -4,6 +4,10 @@ package com.borrowbox.entity;
  * V2.2.8 transaction event types.
  * Separate from TransactionMessage SYSTEM kinds — these are structured semantic events
  * with per-recipient delivery state.
+ *
+ * V2.5.2 adds EXPIRED: the reservation window elapsed before pickup. It is
+ * addressed to the same participants as the request-lifecycle events because the
+ * borrower loses the held unit to it, so recipient resolution must be explicit.
  */
 public enum TransactionEventType {
     // Request lifecycle
@@ -30,6 +34,9 @@ public enum TransactionEventType {
     RETURN_REPORTED,
     LOAN_COMPLETED,
     RETURN_DISPUTED,
+
+    // Reservation expiry
+    EXPIRED,
 
     // Waitlist
     WAITLIST_PROMOTED
