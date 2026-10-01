@@ -933,7 +933,7 @@ public class TransactionService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Transaction not found with id: " + transactionId));
         requireParticipant(txn, actor);
-        return evidenceRepository.findByTransactionIdOrderByCapturedAtAsc(transactionId).stream()
+        return evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(transactionId).stream()
                 .map(this::toEvidenceResponse)
                 .toList();
     }

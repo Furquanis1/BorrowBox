@@ -14,6 +14,7 @@ import com.borrowbox.entity.AssetUnit;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
+import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
 import com.borrowbox.entity.Transaction;
@@ -26,6 +27,7 @@ import com.borrowbox.repository.AssetRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
+import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.TransactionService;
@@ -35,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.repository.query.parser.PartTree;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -85,6 +88,7 @@ public class TransactionIntegrationTest {
     @Autowired private AssetUnitRepository assetUnitRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
+    @Autowired private EvidenceRepository evidenceRepository;
     @Autowired private PlatformTransactionManager platformTransactionManager;
     @Value("${borrowbox.media.dir}") private String mediaDir;
 
@@ -1093,6 +1097,109 @@ public class TransactionIntegrationTest {
         assertThatThrownBy(() -> transactionService.uploadEvidence(
                 active.id(), EvidenceType.LENDER_HANDOVER, photo("late.png", new byte[]{3}), null, null, ahmed))
                 .isInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    // ── V2.5.3 deterministic evidence ordering ───────────────────────
+
+    /**
+     * V2.5.3: the evidence list sort must be a TOTAL order.
+     *
+     * <p>Two things are asserted, because on InnoDB they cannot both be pinned by
+     * observation alone:
+     *
+     * <ol>
+     *   <li>the declared sort of the repository method, which is the only place
+     *       the tiebreaker actually exists -- without it MySQL is free to return
+     *       equal-capturedAt rows in any order, and a small InnoDB table happens
+     *       to emit them in primary-key order, which would mask the regression;</li>
+     *   <li>the observable read order, which must stay chronological and must
+     *       follow ascending id for the tied pair.</li>
+     * </ol>
+     */
+    @Test
+    @Transactional
+    void evidenceOrderIsTotalAndChronologicalWhenCapturedAtValuesTie() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Ordering probe", 2, null), salah);
+        TransactionResponse approved = transactionService.approve(
+                created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+
+        Transaction txn = transactionRepository.findById(staged.id())
+                .orElseThrow(() -> new AssertionError("missing transaction " + staged.id()));
+
+        // Insert order deliberately disagrees with the intended read order, so
+        // the assertions below cannot be satisfied by returning rows in
+        // insertion or primary-key order. Row A and B share one capturedAt; row C
+        // is captured strictly later but is written first, holding the LOWEST id.
+        LocalDateTime tiedAt = LocalDateTime.now().withNano(123_456_000);
+        LocalDateTime laterAt = tiedAt.plusMinutes(5);
+
+        Evidence rowC = persistEvidence(txn, EvidenceType.LENDER_HANDOVER, "order-c.png", laterAt);
+        Evidence rowA = persistEvidence(txn, EvidenceType.LENDER_PRE_LENDING, "order-a.png", tiedAt);
+        Evidence rowB = persistEvidence(txn, EvidenceType.LENDER_PRE_LENDING, "order-b.png", tiedAt);
+
+        assertThat(rowA.getId()).as("A must be inserted before B").isLessThan(rowB.getId());
+        assertThat(rowC.getId()).as("C must be inserted before A").isLessThan(rowA.getId());
+
+        List<EvidenceResponse> listed = transactionService.listEvidence(staged.id(), ahmed);
+        assertThat(listed).hasSize(3);
+
+        // capturedAt is the primary sort key: C is the newest photo but sorts
+        // last despite owning the smallest id.
+        assertThat(listed).extracting(EvidenceResponse::id).containsExactly(
+                rowA.getId(), rowB.getId(), rowC.getId());
+        assertThat(listed).extracting(EvidenceResponse::type).containsExactly(
+                EvidenceType.LENDER_PRE_LENDING,
+                EvidenceType.LENDER_PRE_LENDING,
+                EvidenceType.LENDER_HANDOVER);
+
+        // The tie is resolved by ascending id, so the tied pair is A then B.
+        assertThat(listed.get(0).capturedAt()).isEqualTo(tiedAt);
+        assertThat(listed.get(1).capturedAt()).isEqualTo(tiedAt);
+        assertThat(listed.get(1).id()).as("tied rows fall back to ascending id").isGreaterThan(rowA.getId());
+        assertThat(listed.get(2).capturedAt()).isEqualTo(laterAt);
+
+        // Chronology is unchanged: capturedAt never decreases across the list.
+        assertThat(listed).extracting(EvidenceResponse::capturedAt).isSorted();
+
+        // Pin the declared sort of the REAL repository method (resolved by
+        // reflection, never a hardcoded literal). This is the only assertion
+        // that fails if the id tiebreaker is dropped: InnoDB happens to return
+        // equal-capturedAt rows in primary-key order, which masks the
+        // behavioural difference.
+        String listMethodName = List.of(EvidenceRepository.class.getDeclaredMethods()).stream()
+                .filter(method -> method.getName().startsWith("findByTransactionIdOrderBy"))
+                .map(java.lang.reflect.Method::getName)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "EvidenceRepository has no findByTransactionIdOrderBy* method"));
+        assertThat(listMethodName).isEqualTo("findByTransactionIdOrderByCapturedAtAscIdAsc");
+
+        List<String> declaredSort = new PartTree(listMethodName, Evidence.class)
+                .getSort().stream()
+                .map(order -> order.getProperty() + " " + (order.isAscending() ? "asc" : "desc"))
+                .toList();
+        assertThat(declaredSort).containsExactly("capturedAt asc", "id asc");
+    }
+
+    private Evidence persistEvidence(Transaction txn, EvidenceType type, String fileRef,
+                                     LocalDateTime capturedAt) {
+        Evidence evidence = new Evidence();
+        evidence.setTransaction(txn);
+        evidence.setType(type);
+        evidence.setCapturer(txn.getLender());
+        evidence.setFileRef(fileRef);
+        evidence.setContentType("image/png");
+        evidence.setSizeBytes(1L);
+        evidence.setCapturedAt(capturedAt);
+        return evidenceRepository.save(evidence);
     }
 
     @Test

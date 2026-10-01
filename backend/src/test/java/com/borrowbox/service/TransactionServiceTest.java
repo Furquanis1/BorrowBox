@@ -1970,7 +1970,7 @@ public class TransactionServiceTest {
         evidence.setContentType("image/png");
         evidence.setSizeBytes(3L);
         evidence.setCapturedAt(LocalDateTime.now());
-        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAsc(1L))
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
                 .thenReturn(List.of(evidence));
 
         List<EvidenceResponse> result = transactionService.listEvidence(1L, borrower);

@@ -11,7 +11,14 @@ import java.util.Optional;
 @Repository
 public interface EvidenceRepository extends JpaRepository<Evidence, Long> {
 
-    List<Evidence> findByTransactionIdOrderByCapturedAtAsc(Long transactionId);
+    /**
+     * V2.5.3: capturedAt is the intended chronological sort key, but MySQL
+     * DATETIME(6) ties are real when several photos are uploaded in the same
+     * microsecond or the clock is coarse, and without a tiebreaker the row
+     * order within a tie is not guaranteed. Appending id makes the ordering
+     * total and therefore reproducible for every reader of this method.
+     */
+    List<Evidence> findByTransactionIdOrderByCapturedAtAscIdAsc(Long transactionId);
 
     List<Evidence> findByTransactionIdAndType(Long transactionId, EvidenceType type);
 
