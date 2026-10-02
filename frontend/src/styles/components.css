@@ -2022,6 +2022,61 @@ select,
   white-space: nowrap;
 }
 
+/* V2.5.4 evidence timeline: the four evidence moments are always shown, so the
+   slots stack vertically. At the ~340px drawer width the old full-size
+   thumbnails plus four bordered cards pushed the lender upload panel off the
+   bottom of the drawer, so the slots stay deliberately light: no extra card
+   chrome (the shared .conversation-evidence-grid already provides the rhythm)
+   and smaller thumbnails. Existing tokens only. */
+.conversation-evidence-slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.conversation-evidence-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.conversation-evidence-slot-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.conversation-evidence-slot-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+/* Inside a slot the grid's own top margin would double up with the slot gap. */
+.conversation-evidence-slot .conversation-evidence-grid {
+  margin-top: 0;
+}
+
+.conversation-evidence-slot .conversation-evidence-item img {
+  height: 4rem;
+}
+
+/* A slot that has nothing captured yet is still a real slot, so it uses the
+   same dashed / surface-2 language as the lender upload panel. */
+.conversation-evidence-empty {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
 /* V2.5.1 lender borrow-side evidence upload (AWAITING_HANDOVER) */
 .conversation-lender-evidence {
   display: flex;

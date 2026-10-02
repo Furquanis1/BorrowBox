@@ -3,6 +3,7 @@ import Drawer from '../ui/Drawer'
 import Button from '../ui/Button'
 import Spinner from '../ui/Spinner'
 import EventTimeline from './EventTimeline'
+import EvidenceTimeline, { EVIDENCE_SLOTS } from './EvidenceTimeline'
 import { useAuth } from '../../contexts/AuthContext'
 import { eventService, requestService } from '../../services'
 
@@ -13,16 +14,9 @@ const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
 // V2.5.1: the lender can also capture/see evidence while awaiting handover.
 const EVIDENCE_VISIBLE_STATES = new Set(['AWAITING_HANDOVER', 'RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
-// V2.5.3: each label carries its role because the two handover moments are
-// otherwise indistinguishable -- LENDER_HANDOVER and BORROWER_RETURN_HANDOVER
-// both used to render as "At handover". The role is derived from the
-// EvidenceType key alone, so no backend field is involved.
-const EVIDENCE_LABELS = {
-  LENDER_PRE_LENDING: 'Lender — Pre-lending',
-  LENDER_HANDOVER: 'Lender — Handover',
-  BORROWER_PRE_RETURN: 'Borrower — Before return',
-  BORROWER_RETURN_HANDOVER: 'Borrower — Return handover',
-}
+// V2.5.4: the evidence labels live with the slots in EvidenceTimeline so the
+// timeline, the upload panel and any future view cannot drift apart.
+const evidenceLabel = (type) => EVIDENCE_SLOTS.find((slot) => slot.type === type)?.label || type
 
 function formatTime(iso) {
   if (!iso) return ''
@@ -500,34 +494,13 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
       {EVIDENCE_VISIBLE_STATES.has(state) && (
         <div className="conversation-evidence">
           <p className="conversation-return-title">Photos</p>
-          {evidenceLoading ? (
-            <div className="conversation-status">
-              <Spinner />
-            </div>
-          ) : evidence.length ? (
-            <div className="conversation-evidence-grid">
-              {evidence.map((item) => (
-                <figure className="conversation-evidence-item" key={item.id}>
-                  <img src={item.contentUrl} alt={EVIDENCE_LABELS[item.type] || item.type} />
-                  <figcaption>
-                    {EVIDENCE_LABELS[item.type] || item.type} · {item.capturerName}
-                    {item.conditionNote && ` · ${item.conditionNote}`}
-                    {item.conditionRating != null && ` · ${item.conditionRating}/5`}
-                    {item.capturedAt && (
-                      <>
-                        {' · '}
-                        <span className="conversation-evidence-time">
-                          {formatDate(item.capturedAt)} {formatTime(item.capturedAt)}
-                        </span>
-                      </>
-                    )}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          ) : (
-            <p className="conversation-return-hint">No photos were captured yet for this transaction.</p>
-          )}
+{evidenceLoading ? (
+              <div className="conversation-status">
+                <Spinner />
+              </div>
+            ) : (
+              <EvidenceTimeline evidence={evidence} />
+            )}
         </div>
       )}
 
@@ -588,7 +561,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
               {pendingUpload && (
                 <div className="conversation-evidence-pending">
                   <p className="conversation-return-title">
-                    Add {EVIDENCE_LABELS[pendingUpload.type] || pendingUpload.type} photo
+                    Add {evidenceLabel(pendingUpload.type)} photo
                   </p>
                   <p className="conversation-return-hint">
                     Optionally record the item condition for this evidence photo before uploading.

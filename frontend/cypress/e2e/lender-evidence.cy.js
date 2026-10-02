@@ -212,7 +212,11 @@ describe('Lender handover evidence (V2.5.1)', () => {
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('Awaiting handover').should('be.visible')
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Discuss pickup').click()
     cy.get('.conversation-body').should('be.visible')
-    cy.get('.conversation-lender-evidence').should('be.visible')
+    // V2.5.4 evidence timeline: the four always-present slots make the evidence
+    // section taller, so the lender upload panel can start below the fold of the
+    // drawer's inner scroll container. Scroll it into view rather than dropping
+    // the visibility assertions.
+    cy.get('.conversation-lender-evidence').scrollIntoView().should('be.visible')
     cy.get('.conversation-lender-evidence button').contains('Add pre-lend photo').should('be.visible')
     cy.get('.conversation-lender-evidence button').contains('Add handover photo').should('be.visible')
     cy.get('.conversation-lender-evidence').contains('The handover photo is required before you can confirm the handover.')
@@ -220,18 +224,18 @@ describe('Lender handover evidence (V2.5.1)', () => {
 
     // Pre-lending photo with condition metadata.
     cy.get('.conversation-lender-evidence input[type="file"]').eq(0).selectFile('cypress/fixtures/photo.png', { force: true })
-    cy.get('.conversation-evidence-pending').should('be.visible')
+    cy.get('.conversation-evidence-pending').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-pending textarea').type('Pre-lending: frame intact')
     cy.get('.conversation-evidence-pending select').select('3')
     cy.get('.conversation-evidence-pending button').contains('Upload photo').click()
-    cy.get('.conversation-lender-evidence button').contains('Pre-lend photo added', { timeout: 15000 }).should('be.visible')
+    cy.get('.conversation-lender-evidence button').contains('Pre-lend photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
 
     // Handover photo with different condition metadata.
     cy.get('.conversation-lender-evidence input[type="file"]').eq(1).selectFile('cypress/fixtures/photo.png', { force: true })
     cy.get('.conversation-evidence-pending textarea').type('Handover: handed in good order')
     cy.get('.conversation-evidence-pending select').select('4')
     cy.get('.conversation-evidence-pending button').contains('Upload photo').click()
-    cy.get('.conversation-lender-evidence button').contains('Handover photo added', { timeout: 15000 }).should('be.visible')
+    cy.get('.conversation-lender-evidence button').contains('Handover photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
     cy.get('.conversation-lender-evidence')
       .contains('The handover photo is required before you can confirm the handover.')
       .should('not.exist')
@@ -240,8 +244,8 @@ describe('Lender handover evidence (V2.5.1)', () => {
     // V2.5.3: each caption is "role — moment · capturer · note · rating · time";
     // the timestamp is asserted through its own span so this stays readable.
     cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
-    cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').should('be.visible')
-    cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').should('be.visible')
+    cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').scrollIntoView().should('be.visible')
+    cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-item .conversation-evidence-time').should('have.length', 2)
     cy.get('button[aria-label="Close"]').click()
 
@@ -277,8 +281,8 @@ describe('Lender handover evidence (V2.5.1)', () => {
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return in progress').should('be.visible')
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Conversation').click()
     cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
-    cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').should('be.visible')
-    cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').should('be.visible')
+    cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').scrollIntoView().should('be.visible')
+    cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     // ── Borrower return flow still works end to end ──
