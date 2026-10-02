@@ -2008,13 +2008,18 @@ select,
   background: var(--surface-2);
 }
 
+/* V2.5.3: the caption carries label, capturer, condition note, rating and the
+   capture timestamp, which is too much for the old single nowrap line, so the
+   metadata wraps and the timestamp stays on its own line when it has to. */
 .conversation-evidence-item figcaption {
   padding: var(--sp-1) var(--sp-2);
   font-size: 0.75rem;
   color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.conversation-evidence-time {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* V2.5.1 lender borrow-side evidence upload (AWAITING_HANDOVER) */

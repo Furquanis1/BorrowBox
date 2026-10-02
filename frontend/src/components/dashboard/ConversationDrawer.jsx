@@ -7,18 +7,21 @@ import { useAuth } from '../../contexts/AuthContext'
 import { eventService, requestService } from '../../services'
 
 // V2.5.2: EXPIRED is terminal, so the drawer is read-only for it. It is also
-// absent from WRITABLE_STATES, EVIDENCE_STATES, and EVIDENCE_VISIBLE_STATES, so
+// absent from WRITABLE_STATES and EVIDENCE_VISIBLE_STATES, so
 // no composer, no evidence upload, and no evidence list is rendered.
 const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED', 'EXPIRED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
-const EVIDENCE_STATES = new Set(['RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
 // V2.5.1: the lender can also capture/see evidence while awaiting handover.
 const EVIDENCE_VISIBLE_STATES = new Set(['AWAITING_HANDOVER', 'RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
+// V2.5.3: each label carries its role because the two handover moments are
+// otherwise indistinguishable -- LENDER_HANDOVER and BORROWER_RETURN_HANDOVER
+// both used to render as "At handover". The role is derived from the
+// EvidenceType key alone, so no backend field is involved.
 const EVIDENCE_LABELS = {
-  LENDER_PRE_LENDING: 'Pre-lending',
-  LENDER_HANDOVER: 'At handover',
-  BORROWER_PRE_RETURN: 'Before return',
-  BORROWER_RETURN_HANDOVER: 'At handover',
+  LENDER_PRE_LENDING: 'Lender — Pre-lending',
+  LENDER_HANDOVER: 'Lender — Handover',
+  BORROWER_PRE_RETURN: 'Borrower — Before return',
+  BORROWER_RETURN_HANDOVER: 'Borrower — Return handover',
 }
 
 function formatTime(iso) {
@@ -510,6 +513,14 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
                     {EVIDENCE_LABELS[item.type] || item.type} · {item.capturerName}
                     {item.conditionNote && ` · ${item.conditionNote}`}
                     {item.conditionRating != null && ` · ${item.conditionRating}/5`}
+                    {item.capturedAt && (
+                      <>
+                        {' · '}
+                        <span className="conversation-evidence-time">
+                          {formatDate(item.capturedAt)} {formatTime(item.capturedAt)}
+                        </span>
+                      </>
+                    )}
                   </figcaption>
                 </figure>
               ))}
