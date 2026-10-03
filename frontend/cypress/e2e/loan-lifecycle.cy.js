@@ -152,6 +152,14 @@ describe('V2.2.3 Loan Lifecycle', () => {
         .filter((t) => t.purpose.startsWith(marker))
         .forEach((txn) => closeMarkerTxn(txn))
     })
+    // The API pass above reverses everything a product endpoint can reach and
+    // releases each live unit via releaseReservation. HANDOVER_DISPUTED is
+    // terminal with no forward transition, so closeMarkerTxn intentionally
+    // ignores it and the marker row plus its messages/evidence/events would
+    // survive every run. cleanupEventsDb is marker-prefix scoped, so it removes
+    // only this run's rows, releases nothing (HANDOVER_DISPUTED rows carry no
+    // reserved_unit_id), and leaves the seeded fixture untouched.
+    cy.task('cleanupEventsDb', marker)
     footballCounts().then(({ available, borrowed }) => {
       expect(available).to.equal(1)
       expect(borrowed).to.equal(0)
