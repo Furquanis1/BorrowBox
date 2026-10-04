@@ -218,7 +218,12 @@ describe('V2.2.3 Transaction Conversation', () => {
 
     cy.get('.conversation-input').type('See you soon')
     cy.get('.conversation-composer button[type="submit"]').click()
-    cy.get('.conversation-body', { timeout: 15000 }).contains('See you soon').should('be.visible')
+    // V2.5.4/V2.5.5: the drawer's single scroll container (.drawer-body) now
+    // also holds the four evidence slots and the Before/After comparison, so
+    // submitting leaves it scrolled at the composer and the chat sits above the
+    // viewport. Scroll the chat into view as its own target before asserting;
+    // the message must still be genuinely visible, not merely present.
+    cy.get('.conversation-body', { timeout: 15000 }).contains('See you soon').scrollIntoView().should('be.visible')
 
 // ── Move to ACTIVE; SYSTEM event visible on the lender side ───────
     loginViaApi(ahmed)
@@ -241,19 +246,23 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.get('.transaction-card').contains('On loan').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
     cy.get('.conversation-system-body').contains('Loan started').should('be.visible')
-    cy.get('.conversation-body').contains('See you soon').should('be.visible')
+    cy.get('.conversation-body').contains('See you soon').scrollIntoView().should('be.visible')
 
     cy.get('.conversation-input').type('Enjoy the match')
     cy.get('.conversation-composer button[type="submit"]').click()
-    cy.get('.conversation-body', { timeout: 15000 }).contains('Enjoy the match').should('be.visible')
+    cy.get('.conversation-body', { timeout: 15000 }).contains('Enjoy the match').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     // ── Borrower UI: knows the plan on the loans page while ACTIVE ────
     loginViaUi(salah)
     cy.visit('/me/loans')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-body').contains('Enjoy the match').should('be.visible')
-    cy.get('.conversation-composer').should('be.visible')
+    cy.get('.conversation-body').contains('Enjoy the match').scrollIntoView().should('be.visible')
+    // The composer is the drawer's lowest section, below the timeline, the
+    // comparison and the evidence panels. It is asserted as its own scroll
+    // target; it is deliberately not required to share the viewport with the
+    // chat, which is geometrically impossible in a ~618px drawer.
+    cy.get('.conversation-composer').scrollIntoView().should('be.visible')
 
     // ── Borrower starts the return from the conversation ─────────
     cy.get('.conversation-return-action').contains('Ready to return the item?').should('be.visible')
