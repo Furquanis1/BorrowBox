@@ -243,10 +243,10 @@ describe('Lender handover evidence (V2.5.1)', () => {
     // The photos + condition metadata are visible right away in the drawer.
     // V2.5.3: each caption is "role — moment · capturer · note · rating · time";
     // the timestamp is asserted through its own span so this stays readable.
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
     cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').scrollIntoView().should('be.visible')
-    cy.get('.conversation-evidence-item .conversation-evidence-time').should('have.length', 2)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item .conversation-evidence-time').should('have.length', 2)
     cy.get('button[aria-label="Close"]').click()
 
     // ── Confirm handover now that the evidence exists ──
@@ -280,7 +280,7 @@ describe('Lender handover evidence (V2.5.1)', () => {
     cy.visit('/me/loans')
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return in progress').should('be.visible')
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
     cy.get('.conversation-evidence-item').contains('Lender — Pre-lending · Ahmed · Pre-lending: frame intact · 3/5').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-item').contains('Lender — Handover · Ahmed · Handover: handed in good order · 4/5').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()

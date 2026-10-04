@@ -1948,7 +1948,11 @@ select,
   margin-top: var(--sp-1);
 }
 
-.conversation-return-title {
+/* The before/after comparison side title is the same kind of panel label, so it
+   shares this treatment rather than repeating the typography. Adding the
+   selector only: .conversation-return-title's own computed styles are unchanged. */
+.conversation-return-title,
+.conversation-comparison-side-title {
   margin: 0;
   font-size: 0.875rem;
   font-weight: 700;
@@ -2073,6 +2077,52 @@ select,
   border: 1px dashed var(--line-strong);
   border-radius: var(--r-sm);
   background: var(--surface-2);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* V2.5.5 before/after comparison: a stacked view of the lender's pre-lending
+   photo against the borrower's pre-return photo. Stacked rather than two
+   columns, because at the ~340px drawer width a side-by-side split would halve
+   the thumbnails to roughly 55px, while stacked each side keeps the full width
+   and the shared .conversation-evidence-grid produces exactly the item width the
+   timeline slots already use. Presentation only: the comparison states no
+   verdict about the item. Existing tokens only. */
+.conversation-comparison {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+/* Same deliberately light chrome as a timeline slot, so the two views read as
+   one system rather than two. */
+.conversation-comparison-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+/* Two lines: the Before/After word, then the evidence moment it stands for. */
+.conversation-comparison-side-title {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inside a side the shared grid's own top margin would double up with the side
+   gap, exactly as it already does inside a timeline slot. */
+.conversation-comparison-side .conversation-evidence-grid {
+  margin-top: 0;
+}
+
+.conversation-comparison-side .conversation-evidence-item img {
+  height: 4rem;
+}
+
+/* The photos are shown as captured; nothing here assesses them. */
+.conversation-comparison-note {
+  margin: 0;
   font-size: 0.75rem;
   color: var(--ink-muted);
 }
@@ -2714,7 +2764,19 @@ select,
 }
 
 .conversation-drawer .conversation-body {
-  min-height: 0;
+  /* The message list is a flex child of .drawer-body. With the inherited
+     flex: 1 1 0% it was also a scroll container, so once the evidence section
+     grew past the drawer's height the flex algorithm compressed it (down to 8px
+     before this fix) and the drawer scrolled the message list to its last
+     message, pushing earlier messages outside its own viewport. flex: 1 0 auto
+     still grows the list into free space, but flex-shrink: 0 stops it being
+     compressed below the height its messages need. The drawer body stays the
+     single scroll container, so the evidence, timeline and composer are still
+     reachable and the chat never has to hide a message to make room.
+     Nothing here may overlap the sections below: pinning the message list with
+     position: sticky was tried and rejected, because it covers the evidence
+     items that scrollIntoView() brings into view. */
+  flex: 1 0 auto;
 }
 
 .conversation-timeline {

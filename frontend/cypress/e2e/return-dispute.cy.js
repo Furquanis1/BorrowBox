@@ -201,7 +201,7 @@ describe('V2.2.6 Return Dispute', () => {
     cy.get('.conversation-return-action button').contains('Confirm received').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains('Not received').should('be.visible')
     cy.get('.conversation-return-title').contains('Photos').should('be.visible')
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 3)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 3)
     cy.get('.conversation-evidence-item').first().find('img').should('be.visible')
 
     // ── RETURN_REPORTED guard rails: borrower can neither confirm nor dispute ──
@@ -236,7 +236,7 @@ describe('V2.2.6 Return Dispute', () => {
       .should('be.visible')
     cy.get('.conversation-return-action').should('not.exist')
     cy.get('.conversation-composer').should('not.exist')
-    cy.get('.conversation-evidence-item').should('have.length', 3)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item').should('have.length', 3)
     cy.get('button[aria-label="Close"]').click()
 
     // ── Loans UI shows the terminal dispute state ──

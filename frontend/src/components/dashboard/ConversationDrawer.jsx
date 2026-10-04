@@ -4,6 +4,7 @@ import Button from '../ui/Button'
 import Spinner from '../ui/Spinner'
 import EventTimeline from './EventTimeline'
 import EvidenceTimeline, { EVIDENCE_SLOTS } from './EvidenceTimeline'
+import BeforeAfterComparison from './BeforeAfterComparison'
 import { useAuth } from '../../contexts/AuthContext'
 import { eventService, requestService } from '../../services'
 
@@ -499,7 +500,13 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
                 <Spinner />
               </div>
             ) : (
-              <EvidenceTimeline evidence={evidence} />
+              <>
+                {/* The timeline stays the primary slot-oriented presentation;
+                    the comparison sits directly below it as a second view of the
+                    same loaded array. Both share this single fetch. */}
+                <EvidenceTimeline evidence={evidence} />
+                <BeforeAfterComparison evidence={evidence} />
+              </>
             )}
         </div>
       )}

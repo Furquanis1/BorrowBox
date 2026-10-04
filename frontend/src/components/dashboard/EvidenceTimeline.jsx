@@ -1,4 +1,5 @@
 import React from 'react'
+import EvidenceItemFigure from './EvidenceItemFigure'
 
 // V2.5.4: the four evidence moments are fixed by the backend EvidenceType enum,
 // and each one is always shown so the drawer reads as a four-step record of the
@@ -20,20 +21,6 @@ function deriveLabel(type) {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
-}
-
-function formatTime(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const hours = d.getHours().toString().padStart(2, '0')
-  const mins = d.getMinutes().toString().padStart(2, '0')
-  return `${hours}:${mins}`
-}
-
-function formatDate(iso) {
-  if (!iso) return ''
-  const d = new Date(iso)
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 /**
@@ -72,22 +59,7 @@ export default function EvidenceTimeline({ evidence = [] }) {
             {slot.items.length ? (
               <div className="conversation-evidence-grid">
                 {slot.items.map((item) => (
-                  <figure className="conversation-evidence-item" key={item.id}>
-                    <img src={item.contentUrl} alt={slot.label} />
-                    <figcaption>
-                      {slot.label} · {item.capturerName}
-                      {item.conditionNote && ` · ${item.conditionNote}`}
-                      {item.conditionRating != null && ` · ${item.conditionRating}/5`}
-                      {item.capturedAt && (
-                        <>
-                          {' · '}
-                          <span className="conversation-evidence-time">
-                            {formatDate(item.capturedAt)} {formatTime(item.capturedAt)}
-                          </span>
-                        </>
-                      )}
-                    </figcaption>
-                  </figure>
+                  <EvidenceItemFigure key={item.id} item={item} label={slot.label} />
                 ))}
               </div>
             ) : (

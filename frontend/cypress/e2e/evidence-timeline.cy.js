@@ -220,7 +220,7 @@ describe('Evidence labels, timestamps and ordering (V2.5.3)', () => {
     openDrawer(marker)
 
     // All four moments are present, each with its own label.
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
     cy.get('.conversation-evidence-item').contains('Lender — Pre-lending').should('exist')
     cy.get('.conversation-evidence-item').contains('Lender — Handover').should('exist')
     cy.get('.conversation-evidence-item').contains('Borrower — Before return').should('exist')
@@ -229,12 +229,12 @@ describe('Evidence labels, timestamps and ordering (V2.5.3)', () => {
     // The regression itself: the old shared "At handover" label is gone, and each
     // caption's role and moment are a single unambiguous string.
     cy.get('.conversation-evidence-item').contains('At handover').should('not.exist')
-    cy.get('.conversation-evidence-item')
+    cy.get('.conversation-evidence-slots .conversation-evidence-item')
       .eq(1)
       .find('figcaption')
       .should('contain.text', 'Lender — Handover')
       .and('not.contain.text', 'Borrower')
-    cy.get('.conversation-evidence-item')
+    cy.get('.conversation-evidence-slots .conversation-evidence-item')
       .eq(3)
       .find('figcaption')
       .should('contain.text', 'Borrower — Return handover')
@@ -244,10 +244,10 @@ describe('Evidence labels, timestamps and ordering (V2.5.3)', () => {
   it('renders a capturedAt timestamp on every evidence item', () => {
     openDrawer(marker)
 
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
 
     // One timestamp per item, each non-empty and shaped like "Sep 12 14:03".
-    cy.get('.conversation-evidence-item .conversation-evidence-time').should('have.length', 4)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item .conversation-evidence-time').should('have.length', 4)
     cy.get('.conversation-evidence-item .conversation-evidence-time').each(($el) => {
       expect($el.text().trim()).to.match(/^\w{3,}\s+\d{1,2}\s+\d{1,2}:\d{2}$/)
     })
@@ -282,7 +282,7 @@ describe('Evidence labels, timestamps and ordering (V2.5.3)', () => {
     })
 
     openDrawer(marker)
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 4)
 
     // Every rendered item appears under its own type's slot, and the order of the
     // items inside that slot is the order the API returned for that type. The
@@ -399,8 +399,8 @@ describe('Evidence timeline slots and multiplicity (V2.5.4)', () => {
 
     // Only LENDER_PRE_LENDING has anything; the other three must still be
     // present as real slots with an explicit empty state, not omitted.
-    cy.get('.conversation-evidence-empty').should('have.length', 3)
-    cy.get('.conversation-evidence-empty').each(($el) => {
+    cy.get('.conversation-evidence-slots .conversation-evidence-empty').should('have.length', 3)
+    cy.get('.conversation-evidence-slots .conversation-evidence-empty').each(($el) => {
       expect($el.text().trim()).to.equal('Not captured')
     })
 
@@ -422,7 +422,7 @@ describe('Evidence timeline slots and multiplicity (V2.5.4)', () => {
     openDrawerFromRequests(marker)
 
     // Two pre-lending photos exist in the API; both must be visible.
-    cy.get('.conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
+    cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 2)
 
     cy.get('.conversation-evidence-slot[data-evidence-type="LENDER_PRE_LENDING"]')
       .find('.conversation-evidence-item')
@@ -461,7 +461,7 @@ describe('Evidence timeline slots and multiplicity (V2.5.4)', () => {
 
     // Nothing is dropped: the rendered count equals the API count. Read inside the
     // callback so apiEvidence is already resolved.
-    cy.get('.conversation-evidence-item').should(($items) => {
+    cy.get('.conversation-evidence-slots .conversation-evidence-item').should(($items) => {
       expect($items.length).to.equal(apiEvidence.length)
     })
 
