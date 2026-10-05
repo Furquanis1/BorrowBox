@@ -267,10 +267,15 @@ describe('V2.2.3 Transaction Conversation', () => {
     // ── Borrower starts the return from the conversation ─────────
     cy.get('.conversation-return-action').contains('Ready to return the item?').should('be.visible')
     cy.get('.conversation-return-action button').contains('Start return').click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').should('be.visible')
+    // Starting the return requires clicking a control in the lower return panel,
+    // which leaves the drawer's single scroll container (.drawer-body) scrolled
+    // down and the chat above the viewport. Scroll the chat back into view as its
+    // own target; the SYSTEM entry must still be genuinely visible, not merely
+    // present in the DOM.
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').scrollIntoView().should('be.visible')
 
     // RETURN_INITIATED: the borrower now reports the physical handback.
-    cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.visible')
+    cy.get('.conversation-return-action button').contains("I've handed the item back").scrollIntoView().should('be.visible')
 
     // ── RETURN_INITIATED guard rails at the API ────────────────────
     // The lender can neither complete the loan before the handback is
@@ -305,9 +310,9 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.get('.conversation-return-action input[type="file"]').eq(1).selectFile('cypress/fixtures/photo.png', { force: true })
     cy.get('.conversation-return-action button').contains('Handover photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.enabled').scrollIntoView().click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').should('be.visible')
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action').should('not.exist')
-    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').should('be.visible')
+    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     // RETURN_REPORTED: the borrower still cannot confirm receipt.
@@ -329,7 +334,7 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.get('.transaction-card').contains('button', 'Conversation').click()
     cy.get('.conversation-return-action').contains('The borrower reported the item is back.').should('be.visible')
     cy.get('.conversation-return-action button').contains('Confirm received').click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Loan completed').should('be.visible')
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Loan completed').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     listMessages().then((res) => {

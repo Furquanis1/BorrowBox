@@ -223,7 +223,10 @@ describe('V2.2.3 Loan Lifecycle', () => {
     cy.get('.conversation-body').should('be.visible')
     cy.get('.conversation-return-action').contains('Ready to return the item?').should('be.visible')
     cy.get('.conversation-return-action button').contains('Start return').click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').should('be.visible')
+    // Same drawer-scroll adaptation as the conversation spec: the click above is
+    // in the lower return panel, so the chat holding this SYSTEM entry must be
+    // scrolled back into view before its visibility is asserted.
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Return initiated').scrollIntoView().should('be.visible')
 
     // RETURN_INITIATED: both photos are required; the UI gates the handback report.
     cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.disabled')
@@ -232,9 +235,9 @@ describe('V2.2.3 Loan Lifecycle', () => {
     cy.get('.conversation-return-action input[type="file"]').eq(1).selectFile('cypress/fixtures/photo.png', { force: true })
     cy.get('.conversation-return-action button').contains('Handover photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.enabled').scrollIntoView().click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').should('be.visible')
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action').should('not.exist')
-    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').should('be.visible')
+    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     // RETURN_REPORTED shows on Loans; the Requests inbox no longer lists it.

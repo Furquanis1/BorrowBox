@@ -188,8 +188,13 @@ describe('V2.2.6 Return Dispute', () => {
     cy.get('.conversation-return-action input[type="file"]').eq(1).selectFile('cypress/fixtures/photo.png', { force: true })
     cy.get('.conversation-return-action button').contains('Handover photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.enabled').scrollIntoView().click()
-    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').should('be.visible')
-    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').should('be.visible')
+    // The click above is in the lower return panel, so the drawer is left scrolled
+    // down and the chat is above the viewport. Scroll the chat back into view as
+    // its own target before asserting the SYSTEM entry is visible.
+    cy.get('.conversation-system-body', { timeout: 15000 }).contains('Handback reported').scrollIntoView().should('be.visible')
+    // Mirror of the line above: the status banner lives in the lower return panel,
+    // so it needs its own scroll target now that the chat has been brought up.
+    cy.get('.conversation-return-status').contains('Handback reported. Awaiting the owner').scrollIntoView().should('be.visible')
     cy.get('button[aria-label="Close"]').click()
 
     // ── Lender UI: return-side evidence is visible to the lender ──────
