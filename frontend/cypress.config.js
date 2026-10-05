@@ -121,6 +121,7 @@ function cleanupEventsDb(marker) {
     `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transaction_evidence WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transaction_messages WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM reputation_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
