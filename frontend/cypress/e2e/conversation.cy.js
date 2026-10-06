@@ -129,6 +129,8 @@ describe('V2.2.3 Transaction Conversation', () => {
         .filter((t) => t.purpose.startsWith(marker))
         .forEach((txn) => closeMarkerTxn(txn))
     })
+    // Marker-prefix scoped: removes only this run's rows and their child rows.
+    cy.task('cleanupEventsDb', marker)
   })
 
   it('both participants coordinate pickup and see the lifecycle timeline', () => {

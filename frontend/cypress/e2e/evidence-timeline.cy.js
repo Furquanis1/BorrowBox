@@ -208,6 +208,9 @@ describe('Evidence labels, timestamps and ordering (V2.5.3)', () => {
 
   after(() => {
     closeAllMarkerTxns(marker)
+    // Marker-prefix scoped safety net: removes this run's rows and their child
+    // rows. Runs before the counts below so a failing assertion can't skip it.
+    cy.task('cleanupEventsDb', marker)
     loginViaApi(ahmed)
     cy.request('GET', `/api/communities/${cseId}/listings`).then((res) => {
       const football = res.body.find((l) => l.title === 'Football')
@@ -373,6 +376,9 @@ describe('Evidence timeline slots and multiplicity (V2.5.4)', () => {
 
   after(() => {
     closeAllMarkerTxns(marker)
+    // Marker-prefix scoped safety net: removes this run's rows and their child
+    // rows. Runs before the counts below so a failing assertion can't skip it.
+    cy.task('cleanupEventsDb', marker)
     loginViaApi(ahmed)
     cy.request('GET', `/api/communities/${cseId}/listings`).then((res) => {
       const football = res.body.find((l) => l.title === 'Football')

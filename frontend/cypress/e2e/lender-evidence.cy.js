@@ -131,6 +131,8 @@ describe('Lender handover evidence (V2.5.1)', () => {
         .filter((t) => t.purpose.startsWith(marker))
         .forEach((txn) => closeMarkerTxn(txn))
     })
+    // Marker-prefix scoped: removes only this run's rows and their child rows.
+    cy.task('cleanupEventsDb', marker)
     footballCounts().then(({ available, borrowed }) => {
       expect(available).to.equal(1)
       expect(borrowed).to.equal(0)
