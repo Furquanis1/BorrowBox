@@ -45,6 +45,9 @@ function restoreReturnDispute(txnId) {
     'SET FOREIGN_KEY_CHECKS=0;',
     `DELETE FROM transaction_evidence WHERE transaction_id = ${id};`,
     `DELETE FROM transaction_messages WHERE transaction_id = ${id};`,
+    `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id = ${id});`,
+    `DELETE FROM transaction_events WHERE transaction_id = ${id};`,
+    `DELETE FROM reputation_events WHERE transaction_id = ${id};`,
     `UPDATE asset_units SET status='AVAILABLE' WHERE id = (SELECT reserved_unit_id FROM transactions WHERE id = ${id});`,
     `DELETE FROM transactions WHERE id = ${id};`,
     'SET FOREIGN_KEY_CHECKS=1;',
@@ -77,6 +80,7 @@ function restoreEvents(marker) {
     `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
     `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    `DELETE FROM transaction_messages WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
