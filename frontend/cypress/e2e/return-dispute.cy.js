@@ -143,6 +143,11 @@ describe('V2.2.6 Return Dispute', () => {
 
   after(() => {
     restoreMarkerInventory()
+    // V2.5.3: this spec keeps its terminal marker rows (restoreMarkerInventory
+    // only reverses inventory), so the condition projections those loans wrote
+    // and their asset_unit_condition_history rows are restored here explicitly,
+    // scoped to this run's marker prefix.
+    cy.task('restoreConditionHistory', marker)
     footballCounts().then(({ available, borrowed }) => {
       expect(available).to.equal(1)
       expect(borrowed).to.equal(0)

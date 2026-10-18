@@ -33,16 +33,60 @@ function dbArgs(sql) {
 }
 
 /**
+ * V2.5.3: returns the statement that puts every AssetUnit touched by the given
+ * marker-scoped asset_unit_condition_history rows back to the condition it
+ * carried before those rows were written (the previous_condition of the
+ * earliest such row). Units with no matching history row are never listed, so a
+ * cleanup that never projected a condition cannot clear a real one, and only
+ * this run's rows are considered -- historical condition history is untouched.
+ *
+ * condition is a current-state projection of history: restoring the two
+ * together is what keeps them from disagreeing after a marker is removed.
+ */
+function restoreConditionSql(historyScopeSql) {
+  return [
+    'UPDATE asset_units u',
+    'JOIN (',
+    '  SELECT asset_unit_id, MIN(id) AS first_id',
+    '  FROM asset_unit_condition_history',
+    `  WHERE ${historyScopeSql}`,
+    '  GROUP BY asset_unit_id',
+    ') m ON m.asset_unit_id = u.id',
+    'JOIN asset_unit_condition_history h ON h.id = m.first_id',
+    'SET u.condition = h.previous_condition;',
+  ].join(' ')
+}
+
+/**
+ * Marker-scoped history cleanup: restore each touched unit's condition, then
+ * drop only the history rows this marker's transactions wrote. Must run before
+ * those transactions (or their evidence) are deleted, otherwise the rows are
+ * left orphaned by a restore that disables foreign key checks.
+ */
+function restoreConditionHistorySql(historyScopeSql) {
+  return [
+    restoreConditionSql(historyScopeSql),
+    `DELETE FROM asset_unit_condition_history WHERE ${historyScopeSql};`,
+  ].join(' ')
+}
+
+/**
  * Deletes a RETURN_DISPUTED marker transaction and releases its AssetUnit back
  * to AVAILABLE so the canonical seeded fixture survives for later specs.
  * RETURN_DISPUTED is terminal by design (unit stays BORROWED), so there is no
  * product API that can reverse it; the suite restores inventory directly.
+ *
+ * The loan reached RETURN_DISPUTED only after a confirmed handover, so the unit
+ * carries a V2.5.3 condition projection and a history row keyed to this very
+ * transaction. Both are restored here because the transaction is about to
+ * disappear: a later marker-prefix sweep could no longer find them.
  */
 function restoreReturnDispute(txnId) {
   const id = Number(txnId)
   if (!Number.isInteger(id) || id <= 0) throw new Error(`Invalid transaction id: ${txnId}`)
   const sql = [
     'SET FOREIGN_KEY_CHECKS=0;',
+    restoreConditionHistorySql(`transaction_id = ${id}`),
     `DELETE FROM transaction_evidence WHERE transaction_id = ${id};`,
     `DELETE FROM transaction_messages WHERE transaction_id = ${id};`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id = ${id});`,
@@ -118,8 +162,12 @@ function cleanupEventsDb(marker) {
   if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
     throw new Error(`Invalid events marker: ${marker}`)
   }
+  const markerTxns = `(SELECT id FROM transactions WHERE purpose LIKE '${marker}%')`
   const sql = [
     'SET FOREIGN_KEY_CHECKS=0;',
+    // V2.5.3: undo this marker's condition projections and history rows before
+    // the transactions they are keyed to are deleted below.
+    restoreConditionHistorySql(`transaction_id IN ${markerTxns}`),
     `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
     `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
@@ -129,6 +177,25 @@ function cleanupEventsDb(marker) {
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
+  execFileSync('mysql', dbArgs(sql))
+  return true
+}
+
+/**
+ * V2.5.3: restores condition + asset_unit_condition_history for a marker whose
+ * transactions the spec deliberately keeps (return-dispute drives them to a
+ * terminal state and only restores inventory). Marker-prefix scoped like
+ * restoreWaitlist / restoreFlags, so only this run's rows are touched and the
+ * canonical fixture's units -- and any historical condition history -- are
+ * left exactly as they were.
+ */
+function restoreConditionHistory(marker) {
+  if (typeof marker !== 'string' || !/^[A-Za-z0-9_-]+$/.test(marker)) {
+    throw new Error(`Invalid condition-history marker: ${marker}`)
+  }
+  const sql = restoreConditionHistorySql(
+    `transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%')`,
+  )
   execFileSync('mysql', dbArgs(sql))
   return true
 }
@@ -228,6 +295,7 @@ module.exports = defineConfig({
         cleanupEventsDb,
         purgeEvents,
         restoreFlags,
+        restoreConditionHistory,
         restoreMembership,
         restoreRules,
         ensureSuspendedManager,
