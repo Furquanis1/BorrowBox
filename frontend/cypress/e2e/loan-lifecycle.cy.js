@@ -252,7 +252,7 @@ describe('V2.2.3 Loan Lifecycle', () => {
     cy.url({ timeout: 15000 }).should('include', '/me/loans')
     cy.get('.transaction-card').contains('Return reported').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-return-action').contains('The borrower reported the item is back.').should('be.visible')
+    cy.get('.conversation-return-action').contains('The borrower reported the item is back.').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains('Confirm received').click()
     cy.get('.conversation-system-body', { timeout: 15000 }).contains('Loan completed').should('be.visible')
     cy.get('button[aria-label="Close"]').click()

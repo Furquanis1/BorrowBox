@@ -207,10 +207,10 @@ describe('V2.2.6 Return Dispute', () => {
     cy.visit('/me/loans')
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return reported').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-return-action').contains('The borrower reported the item is back.').should('be.visible')
+    cy.get('.conversation-return-action').contains('The borrower reported the item is back.').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains('Confirm received').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains('Not received').should('be.visible')
-    cy.get('.conversation-return-title').contains('Photos').should('be.visible')
+    cy.get('.conversation-return-title').contains('Photos').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 3)
     cy.get('.conversation-evidence-item').first().find('img').should('be.visible')
 
