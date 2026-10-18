@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS asset_units (
     asset_id        BIGINT       NOT NULL,
     unit_identifier VARCHAR(255) DEFAULT NULL,
     status          VARCHAR(30)  NOT NULL DEFAULT 'AVAILABLE',
-    `condition`     VARCHAR(255) DEFAULT NULL,
+    `condition`     VARCHAR(1000) DEFAULT NULL,
     created_at      DATETIME(6)  NOT NULL,
     updated_at      DATETIME(6)  NOT NULL,
     PRIMARY KEY (id),
@@ -266,6 +266,33 @@ CREATE TABLE IF NOT EXISTS transaction_evidence (
     CONSTRAINT fk_transaction_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
     CONSTRAINT fk_transaction_evidence_capturer    FOREIGN KEY (capturer_id)    REFERENCES users (id),
     INDEX idx_txn_evidence_txn_captured (transaction_id, captured_at)
+) ENGINE=InnoDB;
+
+-- V2.5.3 append-only history of the asset_units.condition current-state
+-- projection. Evidence stays the immutable source record; this table only
+-- records what the projection became, when, and by which lifecycle actor.
+-- previous_condition is NULL for the first recorded observation of a unit.
+-- new_condition is the projected string exactly as stored (the conditionNote
+-- text, or "Rating: X/5" when only a rating was captured) and a row exists
+-- ONLY when usable metadata existed -- missing metadata never produces a row
+-- and never invents a description. occurred_at is server-stamped; changed_by
+-- is the lifecycle actor (lender at handover, lender at return). There is no
+-- update or delete path in the application, so the chain is only ever extended.
+CREATE TABLE IF NOT EXISTS asset_unit_condition_history (
+    id                 BIGINT        NOT NULL AUTO_INCREMENT,
+    asset_unit_id      BIGINT        NOT NULL,
+    previous_condition VARCHAR(1000) DEFAULT NULL,
+    new_condition      VARCHAR(1000) NOT NULL,
+    occurred_at        DATETIME(6)   NOT NULL,
+    changed_by         BIGINT        NOT NULL,
+    transaction_id     BIGINT        DEFAULT NULL,
+    evidence_id        BIGINT        DEFAULT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_condition_history_asset_unit  FOREIGN KEY (asset_unit_id)  REFERENCES asset_units (id),
+    CONSTRAINT fk_condition_history_changed_by  FOREIGN KEY (changed_by)      REFERENCES users (id),
+    CONSTRAINT fk_condition_history_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT fk_condition_history_evidence    FOREIGN KEY (evidence_id)    REFERENCES transaction_evidence (id),
+    INDEX idx_condition_history_unit_occurred (asset_unit_id, occurred_at)
 ) ENGINE=InnoDB;
 
 -- V2.2.7 queueing/waitlist: one row per (asset, borrower) queue position for a

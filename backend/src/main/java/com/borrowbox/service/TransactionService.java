@@ -9,6 +9,7 @@ import com.borrowbox.dto.TransactionResponse;
 import com.borrowbox.entity.Asset;
 import com.borrowbox.entity.AssetStatus;
 import com.borrowbox.entity.AssetUnit;
+import com.borrowbox.entity.AssetUnitConditionHistory;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
@@ -24,6 +25,7 @@ import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
+import com.borrowbox.repository.AssetUnitConditionHistoryRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRuleRepository;
@@ -121,8 +123,22 @@ import java.util.List;
  *    participant-only evidence access.
  *  - Each evidence row may carry optional condition metadata: conditionNote
  *    (max CONDITION_NOTE_MAX_LENGTH) and conditionRating (1-5, rejected rather
- *    than silently normalized). Condition belongs to the Evidence row, never to
- *    AssetUnit (AssetUnit.condition remains unmanaged).
+ *    than silently normalized). The Evidence row stays the immutable source of
+ *    a condition observation.
+ *
+ * V2.5.3 asset unit condition projection + history:
+ *  - confirmHandover projects the newest LENDER_HANDOVER evidence and
+ *    confirmReturn the newest BORROWER_RETURN_HANDOVER evidence onto
+ *    AssetUnit.condition, the current-state projection of what the item looked
+ *    like at that moment. Each actual change appends one
+ *    asset_unit_condition_history row inside the same lifecycle transaction.
+ *  - Evidence carrying neither a usable note nor a rating writes nothing (no
+ *    invented "Unknown"), an unchanged projection writes nothing, and no other
+ *    path -- uploadEvidence, reportHandback, disputes, reject, cancel, expiry,
+ *    extensions, waitlist promotion -- ever writes condition or history.
+ *  - Evidence itself is never modified, never re-derived and never exposed
+ *    differently: authorization, DTO shape and participant-only access are
+ *    unchanged.
  *
  * V2.2.7 queueing / waitlist:
  *  - Every transition that releases an AssetUnit to AVAILABLE (reject, cancel,
@@ -192,6 +208,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
     private final AssetUnitRepository assetUnitRepository;
+    private final AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository;
     private final CommunityRuleRepository communityRuleRepository;
     private final MembershipService membershipService;
     private final TransactionMessageService messageService;
@@ -210,6 +227,7 @@ public class TransactionService {
     public TransactionService(TransactionRepository transactionRepository,
                               CommunityListingRepository listingRepository,
                               AssetUnitRepository assetUnitRepository,
+                              AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository,
                               CommunityRuleRepository communityRuleRepository,
                               MembershipService membershipService,
                               TransactionMessageService messageService,
@@ -227,6 +245,7 @@ public class TransactionService {
         this.transactionRepository = transactionRepository;
         this.listingRepository = listingRepository;
         this.assetUnitRepository = assetUnitRepository;
+        this.assetUnitConditionHistoryRepository = assetUnitConditionHistoryRepository;
         this.communityRuleRepository = communityRuleRepository;
         this.membershipService = membershipService;
         this.messageService = messageService;
@@ -505,6 +524,10 @@ public class TransactionService {
      * handover can be confirmed. The evidence authorization guarantees that
      * such a row was uploaded by the transaction lender. Nothing else about the
      * transition (clock, reservation, accountability) is changed.
+     *
+     * V2.5.3: the newest LENDER_HANDOVER evidence is also projected onto the
+     * unit's condition and recorded in asset_unit_condition_history, in the
+     * same transaction as the transition itself.
      */
     @Transactional
     public TransactionResponse confirmHandover(Long id, User lender) {
@@ -535,6 +558,9 @@ public class TransactionService {
         txn.setOriginalDueAt(due);
         unit.setStatus(AssetUnitStatus.BORROWED);
         assetUnitRepository.save(unit);
+        // V2.5.3: the lender's handover photo is the condition observation for
+        // the borrow side; project it onto the unit just mutated above.
+        persistConditionProjection(txn, EvidenceType.LENDER_HANDOVER, lender);
         messageService.addSystemEvent(txn, "Loan started");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_STARTED, lender, null);
@@ -788,6 +814,10 @@ public class TransactionService {
      * AVAILABLE and the reservation handle is released. Only a RETURN_REPORTED
      * transaction may be completed: the lender cannot finish a loan before the
      * borrower has reported the physical handback.
+     *
+     * V2.5.3: the newest BORROWER_RETURN_HANDOVER evidence is projected onto
+     * the unit's condition and recorded in asset_unit_condition_history before
+     * the reservation handle is released and before waitlist promotion runs.
      */
     @Transactional
     public TransactionResponse confirmReturn(Long id, User lender) {
@@ -805,6 +835,11 @@ public class TransactionService {
         txn.setCompletedAt(LocalDateTime.now());
         unit.setStatus(AssetUnitStatus.AVAILABLE);
         assetUnitRepository.save(unit);
+        // V2.5.3: the borrower's return-handover photo is the condition
+        // observation for the return side. This MUST happen before the
+        // reservation handle is released and before waitlist promotion below,
+        // because the projection reads txn.getReservedUnit().
+        persistConditionProjection(txn, EvidenceType.BORROWER_RETURN_HANDOVER, lender);
 
         // Release the reservation handle so no other transaction claims this unit.
         txn.setReservedUnit(null);
@@ -1241,6 +1276,69 @@ public class TransactionService {
             throw new BusinessRuleViolationException(
                     "Both return evidence photos are required before reporting the handback");
         }
+    }
+
+    /**
+     * V2.5.3: project the newest evidence row of one handover moment onto
+     * AssetUnit.condition and append the asset_unit_condition_history row.
+     *
+     * Evidence remains the immutable source record; AssetUnit.condition is only
+     * its current-state projection, readable without replaying the loan. The
+     * evidence list is read through the existing deterministic ordering
+     * (capturedAt ASC, id ASC) and the LAST row matching the requested moment
+     * wins, so a capturedAt tie resolves by ascending id exactly as the
+     * evidence timeline does.
+     *
+     * No usable metadata (neither a non-blank note nor a rating) means no
+     * update and no history row: inventing a description the participant never
+     * wrote would be a lie, and the projection simply stays what it was. An
+     * unchanged projection is skipped too, so a re-confirmation writes nothing.
+     *
+     * Runs inside the already-open lifecycle transaction on the AssetUnit
+     * instance confirmHandover / confirmReturn have already locked and mutated:
+     * no additional lock is taken and the documented lock order is untouched.
+     * A failure while persisting the history row rolls the whole lifecycle
+     * transition back with it, so the projection and its history can never
+     * disagree.
+     */
+    private void persistConditionProjection(Transaction txn, EvidenceType moment, User actor) {
+        AssetUnit unit = txn.getReservedUnit();
+        if (unit == null) {
+            return;
+        }
+        Evidence latest = null;
+        for (Evidence candidate : evidenceRepository
+                .findByTransactionIdOrderByCapturedAtAscIdAsc(txn.getId())) {
+            if (candidate.getType() == moment) {
+                latest = candidate;
+            }
+        }
+        if (latest == null) {
+            return;
+        }
+        String note = trimToNull(latest.getConditionNote());
+        Integer rating = latest.getConditionRating();
+        if (note == null && rating == null) {
+            return;
+        }
+        String projected = note != null ? note : "Rating: " + rating + "/5";
+        String previous = unit.getCondition();
+        if (projected.equals(previous)) {
+            return;
+        }
+
+        unit.setCondition(projected);
+        assetUnitRepository.save(unit);
+
+        AssetUnitConditionHistory history = new AssetUnitConditionHistory();
+        history.setAssetUnit(unit);
+        history.setPreviousCondition(previous);
+        history.setNewCondition(projected);
+        history.setOccurredAt(LocalDateTime.now());
+        history.setChangedBy(actor);
+        history.setTransaction(txn);
+        history.setEvidence(latest);
+        assetUnitConditionHistoryRepository.save(history);
     }
 
     private EvidenceResponse toEvidenceResponse(Evidence evidence) {

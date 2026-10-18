@@ -37,7 +37,7 @@ public class AssetUnit {
     @Column(nullable = false)
     private AssetUnitStatus status = AssetUnitStatus.AVAILABLE;
 
-    @Column(name = "`condition`", length = 255)
+    @Column(name = "`condition`", length = 1000)
     private String condition;
 
     @Column(nullable = false, updatable = false)

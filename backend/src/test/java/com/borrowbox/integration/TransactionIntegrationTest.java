@@ -9,8 +9,11 @@ import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
 import com.borrowbox.dto.TransactionMessageResponse;
 import com.borrowbox.dto.TransactionResponse;
+import com.borrowbox.dto.WaitlistEntryResponse;
+import com.borrowbox.dto.WaitlistJoinRequest;
 import com.borrowbox.entity.Asset;
 import com.borrowbox.entity.AssetUnit;
+import com.borrowbox.entity.AssetUnitConditionHistory;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
@@ -21,9 +24,11 @@ import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.UserStatus;
+import com.borrowbox.entity.WaitlistStatus;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.AssetRepository;
+import com.borrowbox.repository.AssetUnitConditionHistoryRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
@@ -33,6 +38,7 @@ import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
+import com.borrowbox.service.WaitlistService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +56,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -58,6 +65,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,10 +90,12 @@ public class TransactionIntegrationTest {
     @Autowired private TransactionService transactionService;
     @Autowired private TransactionMessageService transactionMessageService;
     @Autowired private CommunityListingService listingService;
+    @Autowired private WaitlistService waitlistService;
     @Autowired private UserRepository userRepository;
     @Autowired private CommunityRepository communityRepository;
     @Autowired private AssetRepository assetRepository;
     @Autowired private AssetUnitRepository assetUnitRepository;
+    @Autowired private AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private EvidenceRepository evidenceRepository;
@@ -1234,5 +1244,226 @@ public class TransactionIntegrationTest {
                 staged.id(), EvidenceType.LENDER_HANDOVER, photo("handover.png", new byte[]{2}), null, null, ahmed);
         assertThat(transactionService.confirmHandover(staged.id(), ahmed).state())
                 .isEqualTo(TransactionStatus.ACTIVE);
+    }
+
+    // ── V2.5.3 asset unit condition projection + history ─────────────
+
+    /**
+     * V2.5.3: drives one complete loan carrying condition metadata on both
+     * sides and returns the AssetUnit it claimed, so a caller can read that
+     * unit's history chain afterwards. The pre-return photo deliberately
+     * carries its own note: it must never reach the unit's condition.
+     */
+    private Long completeLoanCarryingCondition(Asset football, User ahmed, User salah,
+                                               String handoverNote, String returnNote) {
+        long listingId = cseFootballListing(football).getId();
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listingId, "Condition history probe", 2, null), salah);
+        return completeStagedLoanCarryingCondition(
+                created.id(), ahmed, salah, handoverNote, returnNote);
+    }
+
+    /**
+     * V2.5.3: drives an already-created request through approval, handover and
+     * return with condition metadata on both sides. Split from the create so a
+     * test can queue a waiter against the reserved pool before the loan starts.
+     */
+    private Long completeStagedLoanCarryingCondition(Long createdId, User ahmed, User salah,
+                                                     String handoverNote, String returnNote) {
+        TransactionResponse approved = transactionService.approve(
+                createdId, new TransactionDecisionRequest("Ok"), ahmed);
+        TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+        transactionService.uploadEvidence(
+                staged.id(), EvidenceType.LENDER_HANDOVER,
+                photo("handover.png", new byte[]{2}), handoverNote, 5, ahmed);
+        TransactionResponse active = transactionService.confirmHandover(staged.id(), ahmed);
+
+        Transaction started = transactionRepository.findById(active.id())
+                .orElseThrow(() -> new AssertionError("missing transaction " + active.id()));
+        Long unitId = started.getReservedUnit().getId();
+
+        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN,
+                photo("before.png", new byte[]{1}), "Ignored pre-return note", 1, salah);
+        transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_RETURN_HANDOVER,
+                photo("returned.png", new byte[]{3}), returnNote, 4, salah);
+        transactionService.reportHandback(initiated.id(), salah);
+        transactionService.confirmReturn(initiated.id(), ahmed);
+        return unitId;
+    }
+
+    /**
+     * V2.5.3: two complete loans on the same unit must produce one continuous,
+     * oldest-first chain of exactly four rows: every row's previousCondition is
+     * the row before it, no row is ever rewritten (ids and timestamps strictly
+     * ascend), and the unit's current condition equals the newest row.
+     */
+    @Test
+    @Transactional
+    void conditionHistoryForOneUnitIsOrderedAndOnlyEverExtended() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        Long unitId = completeLoanCarryingCondition(
+                football, ahmed, salah, "Handed over clean", "Returned with a scratch");
+        Long secondLoanUnitId = completeLoanCarryingCondition(
+                football, ahmed, salah, "Handed over again", "Returned intact");
+
+        assertThat(secondLoanUnitId).as("the released unit is claimed again by the next loan")
+                .isEqualTo(unitId);
+
+        List<AssetUnitConditionHistory> chain =
+                assetUnitConditionHistoryRepository.findByAssetUnitIdOrderByOccurredAtAscIdAsc(unitId);
+
+        assertThat(chain).hasSize(4);
+        assertThat(chain).extracting(AssetUnitConditionHistory::getNewCondition).containsExactly(
+                "Handed over clean", "Returned with a scratch",
+                "Handed over again", "Returned intact");
+        assertThat(chain).extracting(AssetUnitConditionHistory::getPreviousCondition).containsExactly(
+                null, "Handed over clean", "Returned with a scratch", "Handed over again");
+
+        for (int i = 1; i < chain.size(); i++) {
+            assertThat(chain.get(i).getPreviousCondition())
+                    .as("row %d continues the row before it", i)
+                    .isEqualTo(chain.get(i - 1).getNewCondition());
+        }
+        assertThat(chain).extracting(AssetUnitConditionHistory::getId).isSorted();
+        assertThat(chain).extracting(AssetUnitConditionHistory::getOccurredAt).isSorted();
+        assertThat(chain).extracting(row -> row.getAssetUnit().getId()).containsOnly(unitId);
+        assertThat(chain).extracting(row -> row.getTransaction().getId()).doesNotContainNull();
+        assertThat(chain).extracting(row -> row.getEvidence().getType()).containsExactly(
+                EvidenceType.LENDER_HANDOVER, EvidenceType.BORROWER_RETURN_HANDOVER,
+                EvidenceType.LENDER_HANDOVER, EvidenceType.BORROWER_RETURN_HANDOVER);
+        assertThat(chain).allSatisfy(row ->
+                assertThat(row.getChangedBy().getId()).isEqualTo(ahmed.getId()));
+
+        AssetUnit unit = assetUnitRepository.findById(unitId).orElseThrow();
+        assertThat(unit.getCondition())
+                .isEqualTo(chain.get(chain.size() - 1).getNewCondition());
+    }
+
+    /**
+     * V2.5.3: the projection and its history row are written inside the
+     * lifecycle transaction, never beside it. When the transition rolls back,
+     * both roll back together, so the unit's condition and its history can
+     * never disagree and a failed loan leaves the seeded fixture untouched.
+     */
+    @Test
+    void conditionProjectionRollsBackWithTheLifecycleTransaction() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        long listingId = cseFootballListing(football).getId();
+
+        AtomicReference<Long> unitId = new AtomicReference<>();
+        AtomicReference<String> before = new AtomicReference<>();
+        AtomicReference<String> during = new AtomicReference<>();
+        AtomicLong historyDuring = new AtomicLong();
+
+        TransactionTemplate template = new TransactionTemplate(platformTransactionManager);
+        template.execute(status -> {
+            TransactionResponse created = transactionService.create(
+                    new TransactionCreateRequest(listingId, "Condition rollback probe", 2, null), salah);
+            TransactionResponse approved = transactionService.approve(
+                    created.id(), new TransactionDecisionRequest("Ok"), ahmed);
+            TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
+
+            Transaction held = transactionRepository.findById(staged.id())
+                    .orElseThrow(() -> new AssertionError("missing transaction " + staged.id()));
+            AssetUnit unit = held.getReservedUnit();
+            unitId.set(unit.getId());
+            before.set(unit.getCondition());
+
+            transactionService.uploadEvidence(
+                    staged.id(), EvidenceType.LENDER_HANDOVER,
+                    photo("handover.png", new byte[]{2}), "Condition probe", 4, ahmed);
+            transactionService.confirmHandover(staged.id(), ahmed);
+
+            during.set(assetUnitRepository.findById(unitId.get()).orElseThrow().getCondition());
+            historyDuring.set(assetUnitConditionHistoryRepository
+                    .findByAssetUnitIdOrderByOccurredAtAscIdAsc(unitId.get()).size());
+            status.setRollbackOnly();
+            return null;
+        });
+
+        assertThat(before.get()).isNull();
+        assertThat(during.get()).as("the projection is visible inside the transaction")
+                .isEqualTo("Condition probe");
+        assertThat(historyDuring.get()).as("one history row inside the transaction").isEqualTo(1);
+
+        AssetUnit unit = assetUnitRepository.findById(unitId.get()).orElseThrow();
+        assertThat(unit.getCondition())
+                .as("a rolled-back transition leaves no projection behind")
+                .isEqualTo(before.get());
+        assertThat(assetUnitConditionHistoryRepository
+                .findByAssetUnitIdOrderByOccurredAtAscIdAsc(unitId.get()))
+                .as("a rolled-back transition leaves no history behind")
+                .isEmpty();
+
+        // Football invariant: unit 1 AVAILABLE, unit 2 RESERVED.
+        List<AssetUnit> footballUnits = assetUnitRepository.findByAssetId(football.getId()).stream()
+                .sorted(Comparator.comparing(AssetUnit::getId))
+                .toList();
+        assertThat(footballUnits).hasSize(2);
+        assertThat(footballUnits.get(0).getId()).isEqualTo(1L);
+        assertThat(footballUnits.get(0).getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        assertThat(footballUnits.get(1).getId()).isEqualTo(2L);
+        assertThat(footballUnits.get(1).getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+    }
+
+    /**
+     * V2.5.3: waitlist promotion only moves the reservation. It must never
+     * project a condition of its own and never append a history row, so the
+     * chain the loan wrote stays exactly two rows long after the waiter has
+     * claimed the unit and the untouched unit never acquires a condition.
+     */
+    @Test
+    @Transactional
+    void waitlistPromotionNeverWritesConditionOrHistory() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        User youssef = seedUser("youssef@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+        CommunityListing listing = cseFootballListing(football);
+
+        // Reserving the last AVAILABLE unit is what makes the join legitimate.
+        TransactionResponse created = transactionService.create(
+                new TransactionCreateRequest(listing.getId(), "Promotion probe", 2, null), salah);
+        WaitlistEntryResponse queued = waitlistService.join(
+                listing.getId(), new WaitlistJoinRequest("Promotion probe", 2), youssef);
+        assertThat(queued.status()).isEqualTo(WaitlistStatus.WAITING);
+
+        Long unitId = completeStagedLoanCarryingCondition(
+                created.id(), ahmed, salah, "Handed over clean", "Returned with a scratch");
+
+        List<AssetUnitConditionHistory> chain =
+                assetUnitConditionHistoryRepository.findByAssetUnitIdOrderByOccurredAtAscIdAsc(unitId);
+        assertThat(chain).as("promotion appends no history row of its own").hasSize(2);
+        assertThat(chain).extracting(AssetUnitConditionHistory::getNewCondition).containsExactly(
+                "Handed over clean", "Returned with a scratch");
+        assertThat(chain).extracting(AssetUnitConditionHistory::getPreviousCondition)
+                .containsExactly(null, "Handed over clean");
+
+        AssetUnit unit = assetUnitRepository.findById(unitId).orElseThrow();
+        assertThat(unit.getCondition())
+                .as("the promoted reservation inherits the recorded condition untouched")
+                .isEqualTo("Returned with a scratch");
+
+        Transaction promoted = transactionRepository.findByReservedUnitId(unitId)
+                .orElseThrow(() -> new AssertionError("no reservation claimed the released unit"));
+        assertThat(promoted.getBorrower().getId()).isEqualTo(youssef.getId());
+        assertThat(promoted.getState()).isEqualTo(TransactionStatus.PENDING);
+
+        AssetUnit untouched = assetUnitRepository.findById(2L).orElseThrow();
+        assertThat(untouched.getCondition()).as("the idle unit stays unobserved").isNull();
+        assertThat(assetUnitConditionHistoryRepository
+                .findByAssetUnitIdOrderByOccurredAtAscIdAsc(untouched.getId()))
+                .as("the idle unit never joins the chain").isEmpty();
     }
 }

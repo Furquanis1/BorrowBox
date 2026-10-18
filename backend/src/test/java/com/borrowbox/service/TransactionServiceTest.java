@@ -9,6 +9,7 @@ import com.borrowbox.dto.TransactionResponse;
 import com.borrowbox.entity.Asset;
 import com.borrowbox.entity.AssetStatus;
 import com.borrowbox.entity.AssetUnit;
+import com.borrowbox.entity.AssetUnitConditionHistory;
 import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
@@ -22,6 +23,7 @@ import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
+import com.borrowbox.repository.AssetUnitConditionHistoryRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRuleRepository;
@@ -34,6 +36,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -51,6 +54,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -68,6 +72,9 @@ public class TransactionServiceTest {
 
     @Mock
     private AssetUnitRepository assetUnitRepository;
+
+    @Mock
+    private AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository;
 
     @Mock
     private CommunityRuleRepository communityRuleRepository;
@@ -142,7 +149,8 @@ public class TransactionServiceTest {
                               long approvedHours, long handoverHours) {
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
-                communityRuleRepository, membershipService, messageService,
+                assetUnitConditionHistoryRepository, communityRuleRepository,
+                membershipService, messageService,
                 evidenceRepository, evidenceStorageService, waitlistService,
                 eventService, reputationEventService, 5_242_880L,
                 true, pendingHours, counterHours, approvedHours, handoverHours);
@@ -2230,7 +2238,8 @@ public class TransactionServiceTest {
         // Rebuild with the feature switched off.
         transactionService = new TransactionService(
                 transactionRepository, listingRepository, assetUnitRepository,
-                communityRuleRepository, membershipService, messageService,
+                assetUnitConditionHistoryRepository, communityRuleRepository,
+                membershipService, messageService,
                 evidenceRepository, evidenceStorageService, waitlistService,
                 eventService, reputationEventService, 5_242_880L,
                 false, 72L, 48L, 72L, 168L);
@@ -2491,5 +2500,319 @@ public class TransactionServiceTest {
         when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
 
         assertThat(transactionService.view(1L, borrower).reservationExpired()).isFalse();
+    }
+
+    // ── V2.5.3 asset unit condition projection + history ─────────────
+
+    private Evidence conditionEvidence(long id, EvidenceType type, String note, Integer rating,
+                                       LocalDateTime capturedAt) {
+        Evidence evidence = new Evidence();
+        evidence.setId(id);
+        evidence.setType(type);
+        evidence.setConditionNote(note);
+        evidence.setConditionRating(rating);
+        evidence.setCapturedAt(capturedAt);
+        return evidence;
+    }
+
+    private LocalDateTime t(int minute) {
+        return LocalDateTime.of(2026, 3, 1, 10, minute);
+    }
+
+    /**
+     * V2.5.3: the "no write" tests below deliberately make genuinely usable
+     * evidence available, so a regression that projects on the wrong path can
+     * never hide behind "there was nothing to project". Lenient because those
+     * paths must not read the evidence list at all.
+     */
+    private void stubUsableConditionEvidence(String note) {
+        lenient().when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        9L, EvidenceType.LENDER_HANDOVER, note, 5, t(0))));
+    }
+
+    private void assertNoConditionHistoryWritten() {
+        verify(assetUnitConditionHistoryRepository, never())
+                .save(any(AssetUnitConditionHistory.class));
+    }
+
+    private AssetUnitConditionHistory capturedHistoryRow() {
+        ArgumentCaptor<AssetUnitConditionHistory> captor =
+                ArgumentCaptor.forClass(AssetUnitConditionHistory.class);
+        verify(assetUnitConditionHistoryRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    private Transaction awaitingHandoverWithEvidence() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.AWAITING_HANDOVER);
+        txn.setAgreedDurationDays(3);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        uploadLenderHandoverEvidence();
+        return txn;
+    }
+
+    private Transaction reportedReturn() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_REPORTED);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        return txn;
+    }
+
+    @Test
+    void confirmHandoverProjectsConditionNoteAndAppendsFirstHistoryRow() {
+        Transaction txn = awaitingHandoverWithEvidence();
+        Evidence observed = conditionEvidence(
+                41L, EvidenceType.LENDER_HANDOVER, "Small scratch on the valve", 4, t(5));
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(observed));
+
+        transactionService.confirmHandover(1L, owner);
+
+        assertThat(unit.getCondition()).isEqualTo("Small scratch on the valve");
+        AssetUnitConditionHistory row = capturedHistoryRow();
+        assertThat(row.getAssetUnit()).isSameAs(unit);
+        assertThat(row.getPreviousCondition()).isNull();
+        assertThat(row.getNewCondition()).isEqualTo("Small scratch on the valve");
+        assertThat(row.getChangedBy()).isSameAs(owner);
+        assertThat(row.getTransaction()).isSameAs(txn);
+        assertThat(row.getEvidence()).isSameAs(observed);
+        assertThat(row.getOccurredAt()).isNotNull();
+    }
+
+    @Test
+    void confirmHandoverFallsBackToConditionRatingWhenNoteIsBlank() {
+        awaitingHandoverWithEvidence();
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        41L, EvidenceType.LENDER_HANDOVER, "   ", 3, t(5))));
+
+        transactionService.confirmHandover(1L, owner);
+
+        assertThat(unit.getCondition()).isEqualTo("Rating: 3/5");
+        assertThat(capturedHistoryRow().getNewCondition()).isEqualTo("Rating: 3/5");
+    }
+
+    @Test
+    void confirmHandoverSelectsTheNewestLenderHandoverByCapturedAtThenId() {
+        awaitingHandoverWithEvidence();
+        Evidence earliest = conditionEvidence(
+                41L, EvidenceType.LENDER_HANDOVER, "First photo", 5, t(1));
+        Evidence tiedLowerId = conditionEvidence(
+                42L, EvidenceType.LENDER_HANDOVER, "Tied, lower id", 5, t(2));
+        Evidence tiedHigherId = conditionEvidence(
+                47L, EvidenceType.LENDER_HANDOVER, "Tied, higher id wins", 5, t(2));
+        Evidence otherMoment = conditionEvidence(
+                43L, EvidenceType.LENDER_PRE_LENDING, "Pre-lending note", 5, t(9));
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(earliest, tiedLowerId, tiedHigherId, otherMoment));
+
+        transactionService.confirmHandover(1L, owner);
+
+        assertThat(unit.getCondition()).isEqualTo("Tied, higher id wins");
+        assertThat(capturedHistoryRow().getEvidence()).isSameAs(tiedHigherId);
+    }
+
+    @Test
+    void confirmHandoverSkipsProjectionWhenEvidenceCarriesNoUsableMetadata() {
+        awaitingHandoverWithEvidence();
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        41L, EvidenceType.LENDER_HANDOVER, null, null, t(5))));
+
+        transactionService.confirmHandover(1L, owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void confirmHandoverSkipsProjectionWhenTheValueIsUnchanged() {
+        Transaction txn = awaitingHandoverWithEvidence();
+        unit.setCondition("Small scratch on the valve");
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        41L, EvidenceType.LENDER_HANDOVER, "Small scratch on the valve", 4, t(5))));
+
+        transactionService.confirmHandover(1L, owner);
+
+        assertThat(unit.getCondition()).isEqualTo("Small scratch on the valve");
+        assertThat(txn.getState()).isEqualTo(TransactionStatus.ACTIVE);
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void confirmReturnProjectsReturnHandoverBeforeWaitlistPromotion() {
+        Transaction txn = reportedReturn();
+        unit.setCondition("Handed over in good order");
+        Evidence preReturn = conditionEvidence(
+                44L, EvidenceType.BORROWER_PRE_RETURN, "Pre-return note", 5, t(1));
+        Evidence returnHandover = conditionEvidence(
+                45L, EvidenceType.BORROWER_RETURN_HANDOVER, "Returned with a scuffed corner", 3, t(6));
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(preReturn, returnHandover));
+
+        transactionService.confirmReturn(1L, owner);
+
+        assertThat(unit.getCondition()).isEqualTo("Returned with a scuffed corner");
+        AssetUnitConditionHistory row = capturedHistoryRow();
+        assertThat(row.getPreviousCondition()).isEqualTo("Handed over in good order");
+        assertThat(row.getNewCondition()).isEqualTo("Returned with a scuffed corner");
+        assertThat(row.getTransaction()).isSameAs(txn);
+        assertThat(row.getEvidence()).isSameAs(returnHandover);
+        assertThat(row.getChangedBy()).isSameAs(owner);
+
+        // The history row must land before promotion re-reads the unit pool.
+        InOrder inOrder = inOrder(assetUnitConditionHistoryRepository, waitlistService);
+        inOrder.verify(assetUnitConditionHistoryRepository).save(any(AssetUnitConditionHistory.class));
+        inOrder.verify(waitlistService).promoteForAsset(500L);
+    }
+
+    @Test
+    void confirmReturnIgnoresBorrowerPreReturnEvidence() {
+        reportedReturn();
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        44L, EvidenceType.BORROWER_PRE_RETURN, "Pre-return note", 5, t(9))));
+
+        transactionService.confirmReturn(1L, owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void confirmReturnSkipsProjectionWhenEvidenceCarriesNoUsableMetadata() {
+        reportedReturn();
+        when(evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(1L))
+                .thenReturn(List.of(conditionEvidence(
+                        45L, EvidenceType.BORROWER_RETURN_HANDOVER, "", null, t(6))));
+
+        transactionService.confirmReturn(1L, owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void rejectNeverWritesConditionOrHistory() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.reject(1L, new TransactionDecisionRequest("Busy this week"), owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void cancelNeverWritesConditionOrHistory() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.cancel(1L, borrower);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void disputeHandoverNeverWritesConditionOrHistory() {
+        Transaction txn = activeWithDue(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.disputeHandover(1L, borrower);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void disputeReturnNeverWritesConditionOrHistory() {
+        Transaction txn = reportedReturn();
+        stubMembership(100L);
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.disputeReturn(1L, owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void uploadEvidenceNeverWritesConditionOrHistory() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence saved = inv.getArgument(0);
+            saved.setId(7L);
+            return saved;
+        });
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.uploadEvidence(1L, EvidenceType.BORROWER_RETURN_HANDOVER,
+                imagePhoto(), "Captured at upload", 5, borrower);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void reportHandbackNeverWritesConditionOrHistory() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        unit.setStatus(AssetUnitStatus.BORROWED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(evidenceRepository.findByTransactionIdAndType(1L, EvidenceType.BORROWER_PRE_RETURN))
+                .thenReturn(List.of(new Evidence()));
+        when(evidenceRepository.findByTransactionIdAndType(1L, EvidenceType.BORROWER_RETURN_HANDOVER))
+                .thenReturn(List.of(new Evidence()));
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.reportHandback(1L, borrower);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void expireStaleReservationNeverWritesConditionOrHistory() {
+        Transaction txn = stale(TransactionStatus.PENDING, 1);
+        stubSweepCandidates(txn);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubSaveReturnsArgument();
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.expireStaleReservations(500L);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
+    }
+
+    @Test
+    void extensionNegotiationNeverWritesConditionOrHistory() {
+        Transaction txn = activeWithDue(unit);
+        txn.setExtensionRequestedDueAt(txn.getDueAt().plusDays(3));
+        txn.setExtensionRequestedAt(LocalDateTime.now());
+        stubExtensionRepo(txn);
+        stubUsableConditionEvidence("Would have been projected");
+
+        transactionService.acceptExtension(1L, owner);
+
+        assertThat(unit.getCondition()).isNull();
+        assertNoConditionHistoryWritten();
     }
 }

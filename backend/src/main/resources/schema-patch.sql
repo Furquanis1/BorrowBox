@@ -1,5 +1,5 @@
 -- =============================================================================
--- schema-patch.sql  (V2.5.2 -- reservation expiry)
+-- schema-patch.sql  (V2.5.2 -- reservation expiry, V2.5.3 -- condition width)
 -- =============================================================================
 -- WHY THIS FILE EXISTS
 --
@@ -26,8 +26,8 @@
 -- scratch. This patch file covers the case where you do NOT want to destroy
 -- data. It is additive, idempotent, and runs on every startup immediately after
 -- schema.sql (wired in application.properties via spring.sql.init.schema-locations).
--- It is a no-op on a fresh database, where schema.sql already created both the
--- column and the index.
+-- It is a no-op on a fresh database, where schema.sql already created every
+-- column and index.
 --
 -- WHY THE information_schema / PREPARE IDIOM
 --
@@ -42,8 +42,8 @@
 --
 -- Failure behaviour is deliberately loud: spring.sql.init.continue-on-error is
 -- left at its default (false), so a broken patch aborts startup instead of
--- leaving the schema half-upgraded. The V2.5.2 assertions below are the reason:
--- an existing database must never be assumed to already carry the new column.
+-- leaving the schema half-upgraded. The assertions below are the reason:
+-- an existing database must never be assumed to already carry a new column.
 --
 -- =============================================================================
 
@@ -87,6 +87,35 @@ SET @borrowbox_patch_ddl = (
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME = 'transactions'
       AND INDEX_NAME = 'idx_transactions_asset_state'
+);
+PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
+EXECUTE borrowbox_patch_stmt;
+DEALLOCATE PREPARE borrowbox_patch_stmt;
+
+-- ---------------------------------------------------------------------------
+-- V2.5.3 (1/1): widen asset_units.condition so the current-state projection of
+-- the newest evidence metadata fits. conditionNote is capped at 1000
+-- characters by TransactionService.CONDITION_NOTE_MAX_LENGTH, so a VARCHAR(255)
+-- column could only store it by silently truncating -- which is explicitly not
+-- allowed. A fresh database never sees this statement: schema.sql already
+-- declares VARCHAR(1000).
+--
+-- The guard is on CHARACTER_MAXIMUM_LENGTH, not on mere column presence. A
+-- database created before V2.5.3 already HAS the column, just at VARCHAR(255),
+-- so a "does it exist" test would skip exactly the databases this block is
+-- written for. Re-running after a successful widen is a no-op.
+-- ---------------------------------------------------------------------------
+SET @borrowbox_patch_ddl = (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE asset_units MODIFY COLUMN `condition` VARCHAR(1000) DEFAULT NULL',
+        'SELECT 1'
+    )
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'asset_units'
+      AND COLUMN_NAME = 'condition'
+      AND CHARACTER_MAXIMUM_LENGTH >= 1000
 );
 PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
 EXECUTE borrowbox_patch_stmt;
