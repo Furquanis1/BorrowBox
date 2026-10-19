@@ -1,6 +1,7 @@
 describe('UI states · error / empty / recovery (Slice 1)', () => {
   const ahmed = { email: 'ahmed@example.com', password: 'password123' }
   const salah = { email: 'salah@example.com', password: 'password123' }
+  const karim = { email: 'karim@example.com', password: 'password123' }
 
   let cseId
 
@@ -279,6 +280,13 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
   // nullable date fields, preserving the complete real response structure.
 
   it('loans: null completedAt and startedAt do not render "Invalid Date"', () => {
+    // Karim has a COMPLETED borrow in the canonical seed; /me/loans only
+    // renders loan cards past APPROVED (LoansPage LOAN_STATES), and salah's
+    // only seeded transaction is APPROVED.
+    cy.clearCookies()
+    cy.clearLocalStorage()
+    signInAs(karim.email, karim.password)
+
     // Intercept both loan data endpoints, let real backend respond, then nullify dates
     interceptAndNullifyDates(
       ['/api/me/requests', '/api/me/lend-requests'],
@@ -290,11 +298,18 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
 
     // Should not display "Invalid Date" anywhere
     cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
-    // Verify transaction cards render (if any loans exist in seeded data)
+    // Verify transaction cards render (karim's seeded completed loan)
     cy.get('.active-loans').should('be.visible')
   })
 
   it('loans: valid completedAt and startedAt still render correctly', () => {
+    // Karim has a COMPLETED borrow in the canonical seed; /me/loans only
+    // renders loan cards past APPROVED (LoansPage LOAN_STATES), and salah's
+    // only seeded transaction is APPROVED.
+    cy.clearCookies()
+    cy.clearLocalStorage()
+    signInAs(karim.email, karim.password)
+
     // Intercept both loan data endpoints, pass through real response with valid dates
     interceptAndPreserveDates(
       ['/api/me/requests', '/api/me/lend-requests'],
@@ -306,7 +321,7 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
 
     // Should not display "Invalid Date"
     cy.get('.transaction-card-note').should('not.contain', 'Invalid Date')
-    // Verify transaction cards render (if any loans exist in seeded data)
+    // Verify transaction cards render (karim's seeded completed loan)
     cy.get('.active-loans').should('be.visible')
   })
 
