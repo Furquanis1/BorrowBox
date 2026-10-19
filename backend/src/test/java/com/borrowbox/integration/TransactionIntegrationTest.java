@@ -1405,15 +1405,25 @@ public class TransactionIntegrationTest {
                 .as("a rolled-back transition leaves no history behind")
                 .isEmpty();
 
-        // Football invariant: unit 1 AVAILABLE, unit 2 RESERVED.
+        // Football invariant: the unit the rolled-back loan claimed is
+        // AVAILABLE again and the other seeded unit is still RESERVED. Exact
+        // database ids are not stable on a fresh database (auto-increment
+        // advances even for rolled-back inserts), so the pair is identified
+        // relative to the claimed unit, never by a hardcoded id.
         List<AssetUnit> footballUnits = assetUnitRepository.findByAssetId(football.getId()).stream()
                 .sorted(Comparator.comparing(AssetUnit::getId))
                 .toList();
         assertThat(footballUnits).hasSize(2);
-        assertThat(footballUnits.get(0).getId()).isEqualTo(1L);
-        assertThat(footballUnits.get(0).getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
-        assertThat(footballUnits.get(1).getId()).isEqualTo(2L);
-        assertThat(footballUnits.get(1).getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        AssetUnit claimed = footballUnits.stream()
+                .filter(u -> u.getId().equals(unitId.get()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("loan unit missing from Football units"));
+        AssetUnit other = footballUnits.stream()
+                .filter(u -> !u.getId().equals(unitId.get()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("second Football unit missing"));
+        assertThat(claimed.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        assertThat(other.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
     }
 
     /**
@@ -1460,7 +1470,11 @@ public class TransactionIntegrationTest {
         assertThat(promoted.getBorrower().getId()).isEqualTo(youssef.getId());
         assertThat(promoted.getState()).isEqualTo(TransactionStatus.PENDING);
 
-        AssetUnit untouched = assetUnitRepository.findById(2L).orElseThrow();
+        AssetUnit untouched = assetUnitRepository.findByAssetId(football.getId()).stream()
+                .filter(u -> !u.getId().equals(unitId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("expected a second Football unit"));
+        assertThat(untouched.getId()).as("the untouched unit is the other seeded unit").isNotEqualTo(unitId);
         assertThat(untouched.getCondition()).as("the idle unit stays unobserved").isNull();
         assertThat(assetUnitConditionHistoryRepository
                 .findByAssetUnitIdOrderByOccurredAtAscIdAsc(untouched.getId()))
