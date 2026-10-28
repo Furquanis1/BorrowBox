@@ -14,13 +14,18 @@ import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,6 +39,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 public class SeedInitializerTest {
 
+    private static final String SEED_PASSWORD = "test-" + UUID.randomUUID();
+
+    @DynamicPropertySource
+    static void seedPassword(DynamicPropertyRegistry registry) {
+        registry.add("borrowbox.seed.password", () -> SEED_PASSWORD);
+    }
+
     @Autowired private SeedDataInitializer seedDataInitializer;
     @Autowired private UserRepository userRepository;
     @Autowired private CommunityRepository communityRepository;
@@ -45,6 +57,10 @@ public class SeedInitializerTest {
     @Autowired private TransactionEventRepository transactionEventRepository;
     @Autowired private TransactionEventDeliveryRepository transactionEventDeliveryRepository;
     @Autowired private TransactionMessageRepository transactionMessageRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
+
+    @Value("${borrowbox.seed.password}")
+    private String configuredSeedPassword;
 
     // ── Idempotency ──────────────────────────────────────────────────
 
@@ -59,6 +75,9 @@ public class SeedInitializerTest {
         long unitsAfterFirst       = assetUnitRepository.count();
         long listingsAfterFirst    = communityListingRepository.count();
         long transactionsAfterFirst = transactionRepository.count();
+        String ahmedHashAfterFirst = userRepository.findByEmail("ahmed@example.com")
+                .orElseThrow()
+                .getPasswordHash();
 
         assertThat(usersAfterFirst).isGreaterThan(0);
         assertThat(membershipsAfterFirst).isGreaterThan(0);
@@ -74,6 +93,23 @@ public class SeedInitializerTest {
         assertThat(assetUnitRepository.count()).isEqualTo(unitsAfterFirst);
         assertThat(communityListingRepository.count()).isEqualTo(listingsAfterFirst);
         assertThat(transactionRepository.count()).isEqualTo(transactionsAfterFirst);
+        assertThat(userRepository.findByEmail("ahmed@example.com").orElseThrow().getPasswordHash())
+                .isEqualTo(ahmedHashAfterFirst);
+    }
+
+    @Test
+    void seededUsersUseTheConfiguredPassword() {
+        seedDataInitializer.seed();
+
+        for (String email : List.of(
+                "ahmed@example.com", "salah@example.com", "omar@example.com",
+                "youssef@example.com", "karim@example.com")) {
+            User user = userRepository.findByEmail(email).orElseThrow();
+            assertThat(user.getPasswordHash()).isNotEqualTo(configuredSeedPassword);
+            assertThat(passwordEncoder.matches(configuredSeedPassword, user.getPasswordHash()))
+                    .as("configured password for %s", email)
+                    .isTrue();
+        }
     }
 
     // ── Row-count baseline ────────────────────────────────────────────

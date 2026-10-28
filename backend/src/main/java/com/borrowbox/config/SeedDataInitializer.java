@@ -117,6 +117,9 @@ public class SeedDataInitializer implements ApplicationRunner {
     @Value("${borrowbox.seed.enabled:false}")
     private boolean seedEnabled;
 
+    @Value("${borrowbox.seed.password:}")
+    private String seedPassword;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -126,13 +129,19 @@ public class SeedDataInitializer implements ApplicationRunner {
         seed();
     }
 
+    /**
+     * Seeds the deterministic demo fixture using the explicitly configured demo
+     * password. The password is never defaulted or logged; enabling the seed
+     * without one is a configuration error.
+     */
     @Transactional
     public void seed() {
-        User ahmed = user("Ahmed", "ahmed@example.com", "password123");
-        User salah = user("Salah", "salah@example.com", "password123");
-        User omar = user("Omar", "omar@example.com", "password123");
-        User youssef = user("Youssef", "youssef@example.com", "password123");
-        User karim = user("Karim", "karim@example.com", "password123");
+        String demoPassword = requireSeedPassword();
+        User ahmed = user("Ahmed", "ahmed@example.com", demoPassword);
+        User salah = user("Salah", "salah@example.com", demoPassword);
+        User omar = user("Omar", "omar@example.com", demoPassword);
+        User youssef = user("Youssef", "youssef@example.com", demoPassword);
+        User karim = user("Karim", "karim@example.com", demoPassword);
 
         Community cse = community(
                 "CSE Department", "Computer Science academic community",
@@ -212,6 +221,16 @@ public class SeedDataInitializer implements ApplicationRunner {
                 SEED_BASE.minusDays(9).withHour(11),
                 SEED_BASE.minusDays(9).withHour(12),
                 SEED_BASE.minusDays(9).withHour(12).withMinute(30));
+    }
+
+    private String requireSeedPassword() {
+        if (seedPassword == null || seedPassword.isBlank()) {
+            throw new IllegalStateException(
+                    "Demo seeding is enabled but BORROWBOX_SEED_PASSWORD is blank. "
+                            + "Set BORROWBOX_SEED_PASSWORD (or borrowbox.seed.password) "
+                            + "to a non-blank value, or disable demo seeding.");
+        }
+        return seedPassword;
     }
 
     private User user(String fullName, String email, String rawPassword) {
