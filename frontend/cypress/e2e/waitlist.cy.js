@@ -22,10 +22,10 @@
  * so the canonical fixture survives for the rest of the suite.
  */
 describe('V2.2.7 Waitlist / Queueing', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
-  const youssef = { email: 'youssef@example.com', password: 'password123' }
-  const omar = { email: 'omar@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
+  const youssef = { email: 'youssef@example.com', password: Cypress.env('seedPassword') }
+  const omar = { email: 'omar@example.com', password: Cypress.env('seedPassword') }
 
   let marker
   let cseId

@@ -7,9 +7,9 @@ describe('Lender handover evidence (V2.5.1)', () => {
   let cseId
   let listingId
 
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
-  const omar = { email: 'omar@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
+  const omar = { email: 'omar@example.com', password: Cypress.env('seedPassword') }
 
   const loginViaApi = (user) => {
     cy.request({ method: 'POST', url: '/api/auth/login', body: user, failOnStatusCode: true })

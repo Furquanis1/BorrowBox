@@ -1,5 +1,5 @@
 describe('Manager dashboard (V2.4.2)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
   const marker = `E2EMGD242_${Date.now()}`
 
   let cseId

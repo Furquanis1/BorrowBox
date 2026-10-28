@@ -14,7 +14,7 @@
  * in the full-suite order.
  */
 describe('V2.3.1 Derived Trust Profile', () => {
-  const password = 'password123'
+  const password = Cypress.env('seedPassword')
 
   let cseId
   let listingId

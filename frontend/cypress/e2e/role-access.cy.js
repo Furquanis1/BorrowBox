@@ -1,7 +1,7 @@
 describe('Role-based access & community header states (Slice 1)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
-  const throwawayPassword = 'TestPassword123!'
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
+  const throwawayPassword = Cypress.env('testUserPassword')
 
   let cseId
   let smgrEmail

@@ -28,7 +28,7 @@
  * UI scope-selector tests are included but marked as known-environment-issues.
  */
 describe('V2.3.2 Reputation Ledger', () => {
-  const password = 'password123'
+  const password = Cypress.env('seedPassword')
 
   let cseId
   let hostelId

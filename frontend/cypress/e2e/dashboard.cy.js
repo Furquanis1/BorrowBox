@@ -1,9 +1,9 @@
 describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
   const zeroUser = {
     fullName: `Zero Shell ${Date.now()}`,
     email: `zero-shell-${Date.now()}@borrowbox.test`,
-    password: 'TestPassword123!',
+    password: Cypress.env('testUserPassword'),
   }
 
   let ahmedName

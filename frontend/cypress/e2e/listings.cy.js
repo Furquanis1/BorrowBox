@@ -1,5 +1,5 @@
 describe('Community Listings (V2.1.5)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
   const stamp = Date.now()
   const assetTitle = `Drill ${stamp}`
   let drillId
@@ -128,7 +128,7 @@ describe('Community Listings (V2.1.5)', () => {
       const fresh = {
         fullName: `Fresh ${Date.now()}`,
         email: `fresh-${Date.now()}@borrowbox.test`,
-        password: 'TestPassword123!',
+        password: Cypress.env('testUserPassword'),
       }
 
       cy.request('POST', '/api/auth/register', fresh)
@@ -154,7 +154,7 @@ describe('Community Listings (V2.1.5)', () => {
       // Karim is an ACTIVE member of Engineering Office only.
       cy.request('POST', '/api/auth/login', {
         email: 'karim@example.com',
-        password: 'password123',
+        password: Cypress.env('seedPassword'),
       })
       cy.request({ url: `/api/communities/${cseId}/listings`, failOnStatusCode: false })
         .then((r) => cy.wrap(r.status).should('eq', 401))
@@ -168,7 +168,7 @@ describe('Community Listings (V2.1.5)', () => {
 })
 
 describe('Shared inventory availability is server authoritative', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
 
   beforeEach(() => {
     cy.clearCookies()

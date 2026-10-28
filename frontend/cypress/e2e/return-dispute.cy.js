@@ -22,8 +22,8 @@
  * specs never see a missing AVAILABLE Football unit.
  */
 describe('V2.2.6 Return Dispute', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
 
   let marker
   let cseId

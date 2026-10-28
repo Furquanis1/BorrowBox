@@ -2,7 +2,7 @@ describe('Authentication Flow', () => {
   const testUser = {
     fullName: `E2E Test User ${Date.now()}`,
     email: `e2e-${Date.now()}@borrowbox.test`,
-    password: 'TestPassword123!',
+    password: Cypress.env('testUserPassword'),
   }
 
   describe('Sign Up', () => {
@@ -112,5 +112,18 @@ describe('Authentication Flow', () => {
       cy.get('.skip-link').trigger('click', { force: true })
       cy.get('#main-content').should('have.focus')
     })
+  })
+})
+
+describe('Seed configuration', () => {
+  it('uses the same environment-provided seed password as the backend', () => {
+    const seedPassword = Cypress.env('seedPassword')
+    expect(seedPassword, 'CYPRESS_SEED_PASSWORD').to.be.a('string').and.not.be.empty
+
+    cy.request({
+      method: 'POST',
+      url: '/api/auth/login',
+      body: { email: 'ahmed@example.com', password: seedPassword },
+    }).its('status').should('eq', 200)
   })
 })

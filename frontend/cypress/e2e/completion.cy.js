@@ -13,7 +13,7 @@
  *   - Cross-community shared availability (Football fixture)
  */
 describe('V2.1 Completion Flow', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
 
   let cseId, hostelId, officeId
 
@@ -136,7 +136,7 @@ describe('V2.1 Completion Flow', () => {
     // Karim owns the Spare Laptop; verify via API that it exists
     cy.request('POST', '/api/auth/login', {
       email: 'karim@example.com',
-      password: 'password123',
+      password: Cypress.env('seedPassword'),
     })
     cy.visit('/me/inventory')
     cy.url().should('include', '/me/inventory')
@@ -146,7 +146,7 @@ describe('V2.1 Completion Flow', () => {
 })
 
 describe('V2.1 Seed Baseline Verification (API)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
 
   before(() => {
     cy.request('POST', '/api/auth/login', {
@@ -203,7 +203,7 @@ describe('V2.1 Seed Baseline Verification (API)', () => {
     cy.request({
       method: 'POST',
       url: '/api/auth/login',
-      body: { email: 'karim@example.com', password: 'password123' },
+      body: { email: 'karim@example.com', password: Cypress.env('seedPassword') },
       failOnStatusCode: true,
     })
     cy.request('GET', '/api/assets').then((res) => {

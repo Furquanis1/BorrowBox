@@ -1,6 +1,6 @@
 describe('Membership review (V2.4.2)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
   const marker = `E2EMBR242_${Date.now()}`
   const memberEmail = `${marker.toLowerCase()}@borrowbox.test`
 
@@ -16,14 +16,14 @@ describe('Membership review (V2.4.2)', () => {
     cy.request('POST', '/api/auth/register', {
       fullName: marker,
       email: memberEmail,
-      password: 'TestPassword123!',
+      password: Cypress.env('testUserPassword'),
     }).then((res) => {
       throwawayId = res.body.user.id
     })
 
     cy.request('POST', '/api/auth/login', {
       email: memberEmail,
-      password: 'TestPassword123!',
+      password: Cypress.env('testUserPassword'),
     })
     cy.then(() => {
       cy.request('POST', `/api/communities/${cseId}/join`, {})

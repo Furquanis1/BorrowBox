@@ -16,8 +16,8 @@
  * close/release it and restore the canonical seeded fixture.
  */
 describe('V2.2.3 Transaction Conversation', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
 
   let marker
   let cseId

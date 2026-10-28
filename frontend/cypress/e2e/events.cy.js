@@ -16,9 +16,9 @@
  *  - No automatic event stacking
  */
 describe('V2.2.8 Transaction Events & Global Event Envelope', () => {
-  const ahmed = { email: 'ahmed@example.com', password: 'password123' }
-  const salah = { email: 'salah@example.com', password: 'password123' }
-  const youssef = { email: 'youssef@example.com', password: 'password123' }
+  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+  const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
+  const youssef = { email: 'youssef@example.com', password: Cypress.env('seedPassword') }
 
   let cseId
   let cseFootball
