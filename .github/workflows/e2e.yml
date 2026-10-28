@@ -76,7 +76,7 @@ jobs:
       - name: Guard against hardcoded Cypress passwords
         working-directory: frontend
         run: |
-          if grep -R -n --include='*.cy.js' -E "(const (ahmed|salah|omar|youssef|karim) = .*password: '|const password = '|password: ')" cypress/e2e; then
+          if grep -R -l --include='*.cy.js' -E "(const (ahmed|salah|omar|youssef|karim) = .*password: '|const password = '|password: ')" cypress/e2e; then
             echo "Test credentials must come from Cypress.env('seedPassword') or Cypress.env('testUserPassword')." >&2
             exit 1
           fi
