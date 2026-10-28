@@ -1,19 +1,41 @@
+# MYSQL_ROOT_PASSWORD, BORROWBOX_APP_DB_PASSWORD, and BORROWBOX_E2E_DB_PASSWORD
+# are required at runtime. The demo launchers load or generate them in the
+# Git-ignored .borrowbox-demo-credentials file; never commit a value.
 services:
   mysql:
     image: mysql:8.0
     container_name: borrowbox-mysql
     environment:
       MYSQL_DATABASE: borrowbox_v2
-      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required; run the demo launcher or set it explicitly}"
     ports:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "3306", "-uroot", "-prootpassword"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysql -h 127.0.0.1 -P 3306 -uroot -Nse 'SELECT 1' >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  mysql-bootstrap:
+    image: mysql:8.0
+    container_name: borrowbox-mysql-bootstrap
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: borrowbox_v2
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required; run the demo launcher or set it explicitly}"
+      BORROWBOX_APP_DB_PASSWORD: "${BORROWBOX_APP_DB_PASSWORD:?BORROWBOX_APP_DB_PASSWORD is required; run the demo launcher or set it explicitly}"
+      BORROWBOX_E2E_DB_PASSWORD: "${BORROWBOX_E2E_DB_PASSWORD:?BORROWBOX_E2E_DB_PASSWORD is required; run the demo launcher or set it explicitly}"
+    volumes:
+      - ./scripts:/bootstrap:ro
+    entrypoint: ["/bin/bash", "/bootstrap/bootstrap-mysql.sh"]
+    restart: "no"
 
   backend:
     build:
@@ -21,13 +43,19 @@ services:
     container_name: borrowbox-backend
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/borrowbox_v2
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: rootpassword
+      SPRING_DATASOURCE_USERNAME: borrowbox_app
+      SPRING_DATASOURCE_PASSWORD: "${BORROWBOX_APP_DB_PASSWORD:?BORROWBOX_APP_DB_PASSWORD is required; run the demo launcher or set it explicitly}"
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      BORROWBOX_SEED_ENABLED: "true"
+      SPRING_SQL_INIT_MODE: "${SPRING_SQL_INIT_MODE:-always}"
+      BORROWBOX_SEED_ENABLED: "${BORROWBOX_SEED_ENABLED:-false}"
+      BORROWBOX_SEED_PASSWORD: "${BORROWBOX_SEED_PASSWORD:-}"
+      APP_JWT_SECRET: "${APP_JWT_SECRET:?APP_JWT_SECRET must be set}"
+      APP_JWT_COOKIE_SECURE: "${APP_JWT_COOKIE_SECURE:-false}"
     depends_on:
       mysql:
         condition: service_healthy
+      mysql-bootstrap:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     healthcheck:

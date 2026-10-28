@@ -28,7 +28,8 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_DATABASE: borrowbox_db
-          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
         ports:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=10
@@ -44,18 +45,52 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Generate test credentials
+        run: |
+          APP_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          E2E_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          SEED_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$APP_PASSWORD"
+          echo "::add-mask::$E2E_PASSWORD"
+          echo "::add-mask::$SEED_PASSWORD"
+          echo "::add-mask::$JWT_SECRET"
+          {
+            echo "BORROWBOX_APP_DB_PASSWORD=$APP_PASSWORD"
+            echo "BORROWBOX_E2E_DB_PASSWORD=$E2E_PASSWORD"
+            echo "BORROWBOX_SEED_PASSWORD=$SEED_PASSWORD"
+            echo "APP_JWT_SECRET=$JWT_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Bootstrap database accounts
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+          MYSQL_DATABASE: borrowbox_db
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
+        run: bash scripts/bootstrap-mysql.sh
+
+      - name: Guard against hardcoded Cypress passwords
+        working-directory: frontend
+        run: |
+          if grep -R -n --include='*.cy.js' -E "(const (ahmed|salah|omar|youssef|karim) = .*password: '|const password = '|password: ')" cypress/e2e; then
+            echo "Test credentials must come from Cypress.env('seedPassword') or Cypress.env('testUserPassword')." >&2
+            exit 1
+          fi
+
       - name: Build and Start Backend
         working-directory: backend
         env:
           SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_db
-          SPRING_DATASOURCE_USERNAME: root
-          SPRING_DATASOURCE_PASSWORD: rootpassword
+          SPRING_DATASOURCE_USERNAME: borrowbox_app
+          BORROWBOX_SEED_ENABLED: 'true'
         run: |
+          export SPRING_DATASOURCE_PASSWORD="$BORROWBOX_APP_DB_PASSWORD"
           mvn -DskipTests package -q
-          nohup java -jar target/*.jar \
-            --spring.datasource.url=jdbc:mysql://127.0.0.1:3306/borrowbox_db \
-            --spring.datasource.username=root \
-            --spring.datasource.password=rootpassword &
+          nohup java -jar target/*.jar &
           echo "Waiting for backend to start..."
           for i in $(seq 1 60); do
             if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
@@ -97,9 +132,11 @@ jobs:
           CYPRESS_DB_HOST: 127.0.0.1
           CYPRESS_DB_PORT: '3306'
           CYPRESS_DB_NAME: borrowbox_db
-          CYPRESS_DB_USER: root
-          CYPRESS_DB_PASSWORD: rootpassword
-        run: npx cypress run --headless --browser chrome
+          CYPRESS_DB_USER: borrowbox_e2e
+        run: |
+          export CYPRESS_DB_PASSWORD="$BORROWBOX_E2E_DB_PASSWORD"
+          export CYPRESS_SEED_PASSWORD="$BORROWBOX_SEED_PASSWORD"
+          npx cypress run --headless --browser chrome
 
       - name: Upload Cypress Screenshots on Failure
         if: failure()

@@ -17,6 +17,8 @@ backend/media/
 
 # Logs and local capture files
 *-logs.txt
+backend/test-run.log
+backend/test-run-tail.txt
 .git-status.txt
 .git-branch.txt
 .git-remote.txt
