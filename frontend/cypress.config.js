@@ -1,35 +1,102 @@
 const { defineConfig } = require('cypress')
 const { execFileSync } = require('child_process')
+const crypto = require('crypto')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 
 /**
  * DB connection for the suite's fixture-restoration task. Values are read from
  * the environment; credentials are never embedded in this source file. Missing
- * variables fail loudly instead of falling back to hardcoded values.
+ * variables fail loudly instead of falling back to hardcoded values. The
+ * password is written to a protected temporary option file, never passed in
+ * argv, and the file is removed even when mysql fails.
  */
-function dbArgs(sql) {
-  const required = [
-    'CYPRESS_DB_HOST',
-    'CYPRESS_DB_PORT',
-    'CYPRESS_DB_NAME',
-    'CYPRESS_DB_USER',
-    'CYPRESS_DB_PASSWORD',
-  ]
-  const missing = required.filter((name) => !process.env[name])
-  if (missing.length) {
-    throw new Error(
-      `Missing Cypress DB environment variable(s): ${missing.join(', ')}. ` +
-        `Set ${required.join(', ')} before running the suite; credentials are ` +
-        'never embedded in source.',
-    )
+function requiredEnv(name) {
+  const value = process.env[name]
+  if (!value) {
+    throw new Error(`Missing Cypress DB environment variable: ${name}.`)
   }
-  return [
-    `--host=${process.env.CYPRESS_DB_HOST}`,
-    `--port=${process.env.CYPRESS_DB_PORT}`,
-    `--user=${process.env.CYPRESS_DB_USER}`,
-    `--password=${process.env.CYPRESS_DB_PASSWORD}`,
-    process.env.CYPRESS_DB_NAME,
-    `--execute=${sql}`,
-  ]
+  return value
+}
+
+function validateIdentifier(value, name) {
+  if (!/^[A-Za-z0-9_]+$/.test(value)) {
+    throw new Error(`${name} must contain only letters, digits, and underscores.`)
+  }
+}
+
+function validatePort(value) {
+  if (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 65535) {
+    throw new Error('CYPRESS_DB_PORT must be between 1 and 65535.')
+  }
+  return value
+}
+
+function escapeOptionValue(value, name) {
+  if (/[\x00\r\n]/.test(value)) {
+    throw new Error(`${name} must not contain NUL, CR, or LF characters.`)
+  }
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function restrictOptionFile(file) {
+  if (process.platform === 'win32') {
+    const identity = process.env.USERDOMAIN
+      ? `${process.env.USERDOMAIN}\\${process.env.USERNAME}`
+      : os.userInfo().username
+    try {
+      execFileSync('icacls', [file, '/inheritance:r', '/grant:r', `${identity}:F`], {
+        stdio: 'ignore',
+      })
+    } catch {
+      throw new Error('Could not restrict permissions on the temporary MySQL option file.')
+    }
+  } else {
+    fs.chmodSync(file, 0o600)
+  }
+}
+
+function createMysqlOptionFile() {
+  const database = requiredEnv('CYPRESS_DB_NAME')
+  validateIdentifier(database, 'CYPRESS_DB_NAME')
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'borrowbox-cypress-db-'))
+  const file = path.join(dir, 'client.cnf')
+  const content = [
+    '[client]',
+    `host="${escapeOptionValue(requiredEnv('CYPRESS_DB_HOST'), 'CYPRESS_DB_HOST')}"`,
+    `port=${validatePort(requiredEnv('CYPRESS_DB_PORT'))}`,
+    `user="${escapeOptionValue(requiredEnv('CYPRESS_DB_USER'), 'CYPRESS_DB_USER')}"`,
+    `password="${escapeOptionValue(requiredEnv('CYPRESS_DB_PASSWORD'), 'CYPRESS_DB_PASSWORD')}"`,
+    'protocol=TCP',
+    'connect-timeout=10',
+    'default-character-set=utf8mb4',
+    '',
+  ].join('\n')
+
+  try {
+    fs.writeFileSync(file, content, { mode: 0o600 })
+    restrictOptionFile(file)
+  } catch (error) {
+    fs.rmSync(dir, { recursive: true, force: true })
+    throw error
+  }
+
+  return { database, dir, file }
+}
+
+function runMysql(sql) {
+  const { database, dir, file } = createMysqlOptionFile()
+  try {
+    execFileSync('mysql', [`--defaults-file=${file}`, database], {
+      input: sql,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  return true
 }
 
 /**
@@ -96,7 +163,7 @@ function restoreReturnDispute(txnId) {
     `DELETE FROM transactions WHERE id = ${id};`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -111,7 +178,7 @@ function restoreWaitlist(marker) {
     throw new Error(`Invalid waitlist marker: ${marker}`)
   }
   const sql = `DELETE FROM waitlist_entries WHERE purpose LIKE '${marker}%';`
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -128,7 +195,7 @@ function restoreEvents(marker) {
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -154,7 +221,7 @@ function purgeEvents() {
     'DELETE FROM transaction_events;',
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -177,7 +244,7 @@ function cleanupEventsDb(marker) {
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -196,7 +263,7 @@ function restoreConditionHistory(marker) {
   const sql = restoreConditionHistorySql(
     `transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%')`,
   )
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -213,7 +280,7 @@ function restoreFlags(marker) {
     `DELETE FROM flags WHERE note LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -233,7 +300,7 @@ function restoreMembership({ userId, communityId }) {
     `DELETE FROM users WHERE id = ${uid};`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -254,7 +321,7 @@ function ensureSuspendedManager({ userId, communityId }) {
     `VALUES (${uid}, ${cid}, 'MANAGER', 'SUSPENDED', 'ADMIN', NOW(6), NOW(6))`,
     `ON DUPLICATE KEY UPDATE role='MANAGER', status='SUSPENDED', updated_at = NOW(6)`,
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
@@ -271,11 +338,15 @@ function restoreRules({ communityId, ruleType }) {
     `DELETE FROM community_rules WHERE community_id = ${cid} AND rule_type = '${ruleType}';`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
-  execFileSync('mysql', dbArgs(sql))
+  runMysql(sql)
   return true
 }
 
 module.exports = defineConfig({
+  env: {
+    seedPassword: process.env.CYPRESS_SEED_PASSWORD || process.env.BORROWBOX_SEED_PASSWORD || '',
+    testUserPassword: process.env.CYPRESS_TEST_USER_PASSWORD || `E2e-${crypto.randomUUID()}`,
+  },
   e2e: {
     baseUrl: process.env.CYPRESS_BASE_URL || 'http://localhost:3000',
     supportFile: 'cypress/support/e2e.js',
