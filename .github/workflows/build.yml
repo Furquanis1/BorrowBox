@@ -19,16 +19,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  ci-secret-check:
+    name: Validate CI database secret
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require CI_MYSQL_ROOT_PASSWORD
+        env:
+          CI_MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
+        run: |
+          if [ -z "${CI_MYSQL_ROOT_PASSWORD:-}" ]; then
+            echo "::error title=Missing CI secret::The CI_MYSQL_ROOT_PASSWORD repository secret is not available to this workflow run. Configure it in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
   backend-test:
     name: Backend Build & Test
     runs-on: ubuntu-latest
+    needs: ci-secret-check
 
     services:
       mysql:
         image: mysql:8.0
         env:
           MYSQL_DATABASE: borrowbox_db
-          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_ROOT_HOST: "%"
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
         ports:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
@@ -44,13 +59,39 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Generate test credentials
+        run: |
+          TEST_DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          E2E_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+          echo "::add-mask::$TEST_DB_PASSWORD"
+          echo "::add-mask::$E2E_PASSWORD"
+          echo "::add-mask::$JWT_SECRET"
+          {
+            echo "BORROWBOX_APP_DB_PASSWORD=$TEST_DB_PASSWORD"
+            echo "BORROWBOX_E2E_DB_PASSWORD=$E2E_PASSWORD"
+            echo "APP_JWT_SECRET=$JWT_SECRET"
+          } >> "$GITHUB_ENV"
+
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Bootstrap database accounts
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: '3306'
+          MYSQL_DATABASE: borrowbox_db
+          MYSQL_ROOT_USER: root
+          MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
+          BORROWBOX_APP_DB_USER: borrowbox_ci_test
+        run: bash scripts/bootstrap-mysql.sh
+
       - name: Run Backend Tests
         working-directory: backend
         env:
           SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_db
-          SPRING_DATASOURCE_USERNAME: root
-          SPRING_DATASOURCE_PASSWORD: rootpassword
-        run: mvn clean test
+          SPRING_DATASOURCE_USERNAME: borrowbox_ci_test
+        run: SPRING_DATASOURCE_PASSWORD="$BORROWBOX_APP_DB_PASSWORD" mvn clean test
 
       - name: Package Backend JAR
         working-directory: backend
@@ -106,4 +147,9 @@ jobs:
           tags: borrowbox-frontend:latest
 
       - name: Verify Docker Compose Config
-        run: docker compose config
+        env:
+          MYSQL_ROOT_PASSWORD: compose-config-root-only
+          BORROWBOX_APP_DB_PASSWORD: compose-config-app-only
+          BORROWBOX_E2E_DB_PASSWORD: compose-config-e2e-only
+          APP_JWT_SECRET: compose-config-jwt-only
+        run: docker compose config --quiet
