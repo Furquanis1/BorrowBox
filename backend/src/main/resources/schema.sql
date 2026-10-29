@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     email         VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     status        VARCHAR(30)  NOT NULL DEFAULT 'ACTIVE',
+    user_role     VARCHAR(20)  NOT NULL DEFAULT 'USER',
     created_at    DATETIME(6)  NOT NULL,
     updated_at    DATETIME(6)  NOT NULL,
     PRIMARY KEY (id),
@@ -433,4 +434,28 @@ CREATE TABLE IF NOT EXISTS flags (
     INDEX idx_flags_community_status (community_id, status),
     INDEX idx_flags_transaction      (transaction_id),
     INDEX idx_flags_occurred         (occurred_at)
+) ENGINE=InnoDB;
+
+-- V2.6.0 notifications: per-recipient notification about a transaction event.
+-- recipient_id is the user who should see it; transaction_id references the
+-- triggering transaction (nullable so the table can later support non-transaction
+-- notifications without a schema change). status is UNREAD / READ / DISMISSED;
+-- read_at is stamped when the recipient marks it read.
+CREATE TABLE IF NOT EXISTS notifications (
+    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    recipient_id    BIGINT       NOT NULL,
+    recipient_email VARCHAR(255) NOT NULL,
+    transaction_id  BIGINT       DEFAULT NULL,
+    type            VARCHAR(40)  NOT NULL,
+    title           VARCHAR(255) NOT NULL,
+    message         VARCHAR(2000) DEFAULT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'UNREAD',
+    read_at         DATETIME(6)  DEFAULT NULL,
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),
+    CONSTRAINT fk_notifications_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    INDEX idx_notifications_recipient_status (recipient_id, status),
+    INDEX idx_notifications_recipient_created (recipient_id, created_at)
 ) ENGINE=InnoDB;

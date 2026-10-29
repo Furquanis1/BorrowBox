@@ -19,6 +19,7 @@ import com.borrowbox.entity.CommunityStatus;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
@@ -217,6 +218,7 @@ public class TransactionService {
     private final WaitlistService waitlistService;
     private final TransactionEventService eventService;
     private final ReputationEventService reputationEventService;
+    private final NotificationService notificationService;
     private final long maxEvidenceBytes;
     private final boolean reservationExpiryEnabled;
     private final long pendingReservationHours;
@@ -236,6 +238,7 @@ public class TransactionService {
                               WaitlistService waitlistService,
                               TransactionEventService eventService,
                               ReputationEventService reputationEventService,
+                              NotificationService notificationService,
                               @Value("${borrowbox.evidence.max-size-bytes:5242880}") long maxEvidenceBytes,
                               @Value("${borrowbox.reservation.enabled:true}") boolean reservationExpiryEnabled,
                               @Value("${borrowbox.reservation.pending-hours:72}") long pendingReservationHours,
@@ -254,6 +257,7 @@ public class TransactionService {
         this.waitlistService = waitlistService;
         this.eventService = eventService;
         this.reputationEventService = reputationEventService;
+        this.notificationService = notificationService;
         this.maxEvidenceBytes = maxEvidenceBytes;
         this.reservationExpiryEnabled = reservationExpiryEnabled;
         this.pendingReservationHours = pendingReservationHours;
@@ -369,6 +373,8 @@ public class TransactionService {
         txn.setDecisionNote(note(request));
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_APPROVED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.LOAN_APPROVED,
+                "Loan request approved", "Your loan request was approved.", txn.getId());
         return response;
     }
 
@@ -395,6 +401,8 @@ public class TransactionService {
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_REJECTED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.LOAN_REJECTED,
+                "Loan request rejected", "Your loan request was rejected.", txn.getId());
         return response;
     }
 
@@ -493,6 +501,10 @@ public class TransactionService {
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_CANCELLED, actor, null);
+        notificationService.create(txn.getBorrower(), NotificationType.LOAN_CANCELLED,
+                "Loan request cancelled", "Your loan request was cancelled.", txn.getId());
+        notificationService.create(txn.getLender(), NotificationType.LOAN_CANCELLED,
+                "Loan request cancelled", "The loan request was cancelled.", txn.getId());
         return response;
     }
 
@@ -512,6 +524,10 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Handover scheduled");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_SCHEDULED, actor, null);
+        notificationService.create(txn.getBorrower(), NotificationType.HANDOVER_SCHEDULED,
+                "Handover scheduled", "Handover has been scheduled.", txn.getId());
+        notificationService.create(txn.getLender(), NotificationType.HANDOVER_SCHEDULED,
+                "Handover scheduled", "Handover has been scheduled.", txn.getId());
         return response;
     }
 
@@ -564,6 +580,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Loan started");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_STARTED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.LOAN_STARTED,
+                "Loan started", "Your loan has started.", txn.getId());
         return response;
     }
 
@@ -589,6 +607,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Borrower confirmed receipt");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_CONFIRMED, borrower, null);
+        notificationService.create(txn.getLender(), NotificationType.RECEIPT_CONFIRMED,
+                "Receipt confirmed", "The borrower confirmed receipt of the item.", txn.getId());
         return response;
     }
 
@@ -650,6 +670,8 @@ public class TransactionService {
                 : null;
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REQUESTED, borrower, payload);
+        notificationService.create(txn.getLender(), NotificationType.EXTENSION_REQUESTED,
+                "Extension requested", "The borrower requested an extension.", txn.getId());
         return response;
     }
 
@@ -671,6 +693,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Extension approved");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_APPROVED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_APPROVED,
+                "Extension approved", "Your extension request was approved.", txn.getId());
         return response;
     }
 
@@ -690,6 +714,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Extension rejected");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REJECTED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_REJECTED,
+                "Extension rejected", "Your extension request was rejected.", txn.getId());
         return response;
     }
 
@@ -718,6 +744,8 @@ public class TransactionService {
                 : null;
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTERED, lender, payload);
+        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_COUNTERED,
+                "Extension countered", "The lender countered your extension request.", txn.getId());
         return response;
     }
 
@@ -739,6 +767,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Extension counter accepted");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_ACCEPTED, borrower, null);
+        notificationService.create(txn.getLender(), NotificationType.EXTENSION_COUNTER_ACCEPTED,
+                "Extension counter accepted", "The borrower accepted your extension counter.", txn.getId());
         return response;
     }
 
@@ -758,6 +788,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Extension counter rejected");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_REJECTED, borrower, null);
+        notificationService.create(txn.getLender(), NotificationType.EXTENSION_COUNTER_REJECTED,
+                "Extension counter rejected", "The borrower rejected your extension counter.", txn.getId());
         return response;
     }
 
@@ -781,6 +813,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Return initiated");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_INITIATED, borrower, null);
+        notificationService.create(txn.getLender(), NotificationType.RETURN_INITIATED,
+                "Return initiated", "The borrower has initiated the return.", txn.getId());
         return response;
     }
 
@@ -805,6 +839,8 @@ public class TransactionService {
         messageService.addSystemEvent(txn, "Handback reported");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_REPORTED, borrower, null);
+        notificationService.create(txn.getLender(), NotificationType.RETURN_HANDOVER_REPORTED,
+                "Return handback reported", "The borrower has reported returning the item.", txn.getId());
         return response;
     }
 
@@ -850,6 +886,10 @@ public class TransactionService {
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
         eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_COMPLETED, lender, null);
+        notificationService.create(txn.getBorrower(), NotificationType.LOAN_COMPLETED,
+                "Loan completed", "Your loan has been completed.", txn.getId());
+        notificationService.create(txn.getLender(), NotificationType.LOAN_COMPLETED,
+                "Loan completed", "The loan has been completed.", txn.getId());
         reputationEventService.recordLoanCompleted(txn);
         return response;
     }

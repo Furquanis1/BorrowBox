@@ -120,3 +120,68 @@ SET @borrowbox_patch_ddl = (
 PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
 EXECUTE borrowbox_patch_stmt;
 DEALLOCATE PREPARE borrowbox_patch_stmt;
+
+-- ---------------------------------------------------------------------------
+-- V2.6.0: persisted authorization role.
+--
+-- The column is named user_role, not role: ROLE is a reserved word in MySQL
+-- 8.0, so an unquoted `role` column would break both the DDL and Hibernate's
+-- generated DML. The column is added with a NOT NULL 'USER' default so every
+-- existing row is explicitly a regular user. Administrator access is never
+-- granted automatically; it requires an out-of-band provisioning step.
+-- schema.sql already carries the column on fresh databases, so this block is a
+-- no-op there and only alters databases created before this version.
+-- ---------------------------------------------------------------------------
+SET @borrowbox_patch_ddl = (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE users ADD COLUMN user_role VARCHAR(20) NOT NULL DEFAULT ''USER'' AFTER status',
+        'SELECT 1'
+    )
+    FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'users'
+      AND COLUMN_NAME = 'user_role'
+);
+PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
+EXECUTE borrowbox_patch_stmt;
+DEALLOCATE PREPARE borrowbox_patch_stmt;
+
+-- ---------------------------------------------------------------------------
+-- V2.6.0: notifications table.
+--
+-- One row per notification sent to a user about a transaction event.
+-- Nullable transaction_id allows future non-transaction notifications without
+-- a schema change. Status is UNREAD / READ / DISMISSED; read_at is stamped
+-- when the recipient marks it read.
+-- ---------------------------------------------------------------------------
+SET @borrowbox_patch_ddl = (
+    SELECT IF(
+        COUNT(*) = 0,
+        'CREATE TABLE notifications ('
+        'id              BIGINT       NOT NULL AUTO_INCREMENT,'
+        'recipient_id    BIGINT       NOT NULL,'
+        'recipient_email VARCHAR(255) NOT NULL,'
+        'transaction_id  BIGINT       DEFAULT NULL,'
+        'type            VARCHAR(40)  NOT NULL,'
+        'title           VARCHAR(255) NOT NULL,'
+        'message         VARCHAR(2000) DEFAULT NULL,'
+        'status          VARCHAR(20)  NOT NULL DEFAULT ''UNREAD'','
+        'read_at         DATETIME(6)  DEFAULT NULL,'
+        'created_at      DATETIME(6)  NOT NULL,'
+        'updated_at      DATETIME(6)  NOT NULL,'
+        'PRIMARY KEY (id),'
+        'CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),'
+        'CONSTRAINT fk_notifications_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),'
+        'INDEX idx_notifications_recipient_status (recipient_id, status),'
+        'INDEX idx_notifications_recipient_created (recipient_id, created_at)'
+        ') ENGINE=InnoDB',
+        'SELECT 1'
+    )
+    FROM information_schema.TABLES
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'notifications'
+);
+PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
+EXECUTE borrowbox_patch_stmt;
+DEALLOCATE PREPARE borrowbox_patch_stmt;
