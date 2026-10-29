@@ -63,13 +63,16 @@ jobs:
         run: |
           TEST_DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
           E2E_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          SEED_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
           JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
           echo "::add-mask::$TEST_DB_PASSWORD"
           echo "::add-mask::$E2E_PASSWORD"
+          echo "::add-mask::$SEED_PASSWORD"
           echo "::add-mask::$JWT_SECRET"
           {
             echo "BORROWBOX_APP_DB_PASSWORD=$TEST_DB_PASSWORD"
             echo "BORROWBOX_E2E_DB_PASSWORD=$E2E_PASSWORD"
+            echo "BORROWBOX_SEED_PASSWORD=$SEED_PASSWORD"
             echo "APP_JWT_SECRET=$JWT_SECRET"
           } >> "$GITHUB_ENV"
 
