@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useEvents } from '../../contexts/EventContext'
 import Avatar from '../ui/Avatar'
 import EventPanel from './EventPanel'
+import NotificationBell from '../ui/NotificationBell'
 
 export default function UserBar() {
   const { user, signOut } = useAuth()
@@ -72,6 +73,7 @@ export default function UserBar() {
       </nav>
 
       <div className="userbar-actions">
+        <NotificationBell />
         <div className="avatar-menu" ref={menuRef}>
           <button
             type="button"
