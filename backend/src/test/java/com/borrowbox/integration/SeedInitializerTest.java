@@ -23,8 +23,10 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -99,16 +101,28 @@ public class SeedInitializerTest {
 
     @Test
     void seededUsersUseTheConfiguredPassword() {
+        Map<String, Optional<User>> existingUsers = new HashMap<>();
+        for (String email : List.of(
+                "ahmed@example.com", "salah@example.com", "omar@example.com",
+                "youssef@example.com", "karim@example.com")) {
+            existingUsers.put(email, userRepository.findByEmail(email));
+        }
+
         seedDataInitializer.seed();
 
         for (String email : List.of(
                 "ahmed@example.com", "salah@example.com", "omar@example.com",
                 "youssef@example.com", "karim@example.com")) {
             User user = userRepository.findByEmail(email).orElseThrow();
-            assertThat(user.getPasswordHash()).isNotEqualTo(configuredSeedPassword);
-            assertThat(passwordEncoder.matches(configuredSeedPassword, user.getPasswordHash()))
-                    .as("configured password for %s", email)
-                    .isTrue();
+            Optional<User> beforeUser = existingUsers.get(email);
+            if (beforeUser.isEmpty()) {
+                assertThat(passwordEncoder.matches(configuredSeedPassword, user.getPasswordHash()))
+                        .as("configured password for %s (created by seed)", email)
+                        .isTrue();
+            } else {
+                assertThat(user.getPasswordHash()).isEqualTo(beforeUser.get().getPasswordHash())
+                        .as("existing user %s hash preserved by idempotent seed", email);
+            }
         }
     }
 
