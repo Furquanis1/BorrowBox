@@ -27,7 +27,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_DATABASE: borrowbox_db
+          MYSQL_DATABASE: borrowbox_ci_test
           MYSQL_ROOT_HOST: "%"
           MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
         ports:
@@ -69,7 +69,7 @@ jobs:
         env:
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: '3306'
-          MYSQL_DATABASE: borrowbox_db
+          MYSQL_DATABASE: borrowbox_ci_test
           MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
         run: bash scripts/bootstrap-mysql.sh
 
@@ -84,11 +84,11 @@ jobs:
       - name: Build and Start Backend
         working-directory: backend
         env:
-          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_db
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_ci_test
           SPRING_DATASOURCE_USERNAME: borrowbox_app
+          SPRING_DATASOURCE_PASSWORD: ${{ env.BORROWBOX_APP_DB_PASSWORD }}
           BORROWBOX_SEED_ENABLED: 'true'
         run: |
-          export SPRING_DATASOURCE_PASSWORD="$BORROWBOX_APP_DB_PASSWORD"
           mvn -DskipTests package -q
           nohup java -jar target/*.jar &
           echo "Waiting for backend to start..."
@@ -131,7 +131,7 @@ jobs:
           CYPRESS_BASE_URL: http://localhost:3000
           CYPRESS_DB_HOST: 127.0.0.1
           CYPRESS_DB_PORT: '3306'
-          CYPRESS_DB_NAME: borrowbox_db
+          CYPRESS_DB_NAME: borrowbox_ci_test
           CYPRESS_DB_USER: borrowbox_e2e
         run: |
           export CYPRESS_DB_PASSWORD="$BORROWBOX_E2E_DB_PASSWORD"

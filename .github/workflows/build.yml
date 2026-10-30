@@ -41,7 +41,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_DATABASE: borrowbox_db
+          MYSQL_DATABASE: borrowbox_ci_test
           MYSQL_ROOT_HOST: "%"
           MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
         ports:
@@ -83,7 +83,7 @@ jobs:
         env:
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: '3306'
-          MYSQL_DATABASE: borrowbox_db
+          MYSQL_DATABASE: borrowbox_ci_test
           MYSQL_ROOT_USER: root
           MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
           BORROWBOX_APP_DB_USER: borrowbox_ci_test
@@ -92,9 +92,10 @@ jobs:
       - name: Run Backend Tests
         working-directory: backend
         env:
-          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_db
+          SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_ci_test
           SPRING_DATASOURCE_USERNAME: borrowbox_ci_test
-        run: SPRING_DATASOURCE_PASSWORD="$BORROWBOX_APP_DB_PASSWORD" mvn clean test
+          SPRING_DATASOURCE_PASSWORD: ${{ env.BORROWBOX_APP_DB_PASSWORD }}
+        run: mvn clean test -Dspring.datasource.url=jdbc:mysql://127.0.0.1:3306/borrowbox_ci_test -Dspring.datasource.username=borrowbox_ci_test -Dspring.datasource.password=${BORROWBOX_APP_DB_PASSWORD}
 
       - name: Package Backend JAR
         working-directory: backend
