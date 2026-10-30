@@ -7,6 +7,7 @@ import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
+import com.borrowbox.repository.NotificationPreferenceRepository;
 import com.borrowbox.repository.NotificationRepository;
 import com.borrowbox.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -27,11 +28,14 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final UserRepository userRepository;
+    private final NotificationPreferenceRepository preferenceRepository;
 
     public NotificationService(NotificationRepository notificationRepository,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               NotificationPreferenceRepository preferenceRepository) {
         this.notificationRepository = notificationRepository;
         this.userRepository = userRepository;
+        this.preferenceRepository = preferenceRepository;
     }
 
     /**
@@ -50,6 +54,12 @@ public class NotificationService {
     public Notification create(User recipient, NotificationType type, String title,
                                String message, Long transactionId) {
         requireUser(recipient);
+        // Skip notification if the user has opted out of this type.
+        if (preferenceRepository.findByUserIdAndType(recipient.getId(), type)
+                .map(p -> !p.isEnabled())
+                .orElse(false)) {
+            return null;
+        }
         Notification n = new Notification();
         n.setRecipient(recipient);
         n.setRecipientEmail(recipient.getEmail());
@@ -104,13 +114,23 @@ public class NotificationService {
         return toResponse(notificationRepository.save(n));
     }
 
+    /**
+     * Returns true if a notification already exists for the given user,
+     * type, and transaction. Used for idempotent seed of notifications.
+     */
+    public boolean notificationExists(User user, NotificationType type, Long transactionId) {
+        requireUser(user);
+        return notificationRepository.existsByRecipientIdAndTypeAndTransactionId(
+                user.getId(), type, transactionId);
+    }
+
     private void requireUser(User user) {
         if (user == null) {
             throw new UnauthorizedException("Authentication is required");
         }
     }
 
-    private NotificationResponse toResponse(Notification n) {
+    public NotificationResponse toResponse(Notification n) {
         return new NotificationResponse(
                 n.getId(),
                 n.getType(),
@@ -119,7 +139,8 @@ public class NotificationService {
                 n.getTransactionId(),
                 n.getStatus(),
                 n.getCreatedAt(),
-                n.getReadAt()
+                n.getReadAt(),
+                n.getRecipientEmail()
         );
     }
 }

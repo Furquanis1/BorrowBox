@@ -22,6 +22,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -42,6 +45,9 @@ public class TransactionEventServiceTest {
     @Mock
     private TransactionRepository transactionRepository;
 
+    @Mock
+    private WebhookDeliveryService webhookDeliveryService;
+
     private TransactionEventService eventService;
 
     private User lender;
@@ -52,7 +58,7 @@ public class TransactionEventServiceTest {
     @BeforeEach
     void setUp() {
         eventService = new TransactionEventService(
-                eventRepository, deliveryRepository, transactionRepository);
+                eventRepository, deliveryRepository, transactionRepository, webhookDeliveryService);
 
         lender = new User("Ahmed", "ahmed@example.com");
         lender.setId(100L);
@@ -154,5 +160,22 @@ public class TransactionEventServiceTest {
         assertThat(timeline.get(0).actorId()).isNull();
         assertThat(timeline.get(0).actorName()).isNull();
         assertThat(timeline.get(0).eventType()).isEqualTo(TransactionEventType.REQUEST_APPROVED);
+    }
+
+    @Test
+    void createEventAndDeliveriesDelegatesWebhookRecordCreation() {
+        when(eventRepository.saveAndFlush(any(TransactionEvent.class))).thenAnswer(invocation -> {
+            TransactionEvent event = invocation.getArgument(0);
+            event.setId(77L);
+            return event;
+        });
+
+        eventService.createEventAndDeliveries(
+                txn, TransactionEventType.LOAN_STARTED, lender, null);
+
+        verify(eventRepository).saveAndFlush(any(TransactionEvent.class));
+        verify(deliveryRepository, times(2)).save(any());
+        verify(webhookDeliveryService).createDeliveriesForEvent(
+                any(TransactionEvent.class), eq(List.of(borrower, lender)));
     }
 }

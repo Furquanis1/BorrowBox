@@ -1,6 +1,7 @@
 package com.borrowbox.integration;
 
 import com.borrowbox.dto.NotificationResponse;
+import com.borrowbox.entity.Notification;
 import com.borrowbox.entity.NotificationStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.UserStatus;
@@ -88,9 +89,10 @@ public class NotificationIntegrationTest {
     void markAsReadUpdatesStatus() {
         User user = createUser("read-" + UUID.randomUUID() + "@example.com");
 
-        NotificationResponse created = notificationService.create(user,
+        Notification createdEntity = notificationService.create(user,
                 com.borrowbox.entity.NotificationType.LOAN_APPROVED,
                 "Loan approved", "Your loan request was approved.", null);
+        NotificationResponse created = notificationService.toResponse(createdEntity);
 
         NotificationResponse marked = notificationService.markAsRead(created.id(), user);
 
@@ -107,9 +109,10 @@ public class NotificationIntegrationTest {
         User owner = createUser("owner-" + UUID.randomUUID() + "@example.com");
         User other = createUser("other-" + UUID.randomUUID() + "@example.com");
 
-        NotificationResponse created = notificationService.create(owner,
+        Notification createdEntity = notificationService.create(owner,
                 com.borrowbox.entity.NotificationType.LOAN_APPROVED,
                 "Loan approved", "Your loan request was approved.", null);
+        NotificationResponse created = notificationService.toResponse(createdEntity);
 
         assertThatThrownBy(() -> notificationService.markAsRead(created.id(), other))
                 .isInstanceOf(ResourceNotFoundException.class)

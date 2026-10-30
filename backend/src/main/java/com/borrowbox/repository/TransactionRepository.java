@@ -39,6 +39,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByAssetIdOrderByIdDesc(Long assetId);
 
+    List<Transaction> findByStateAndDueAtBetween(TransactionStatus state, LocalDateTime from, LocalDateTime to);
+
+    List<Transaction> findByStateAndDueAtBefore(TransactionStatus state, LocalDateTime before);
+
     /**
      * V2.5.2 opportunistic expiry sweep candidate lookup.
      *

@@ -19,6 +19,7 @@ public record NotificationResponse(
         Long transactionId,
         NotificationStatus status,
         LocalDateTime createdAt,
-        LocalDateTime readAt
+        LocalDateTime readAt,
+        String recipientEmail
 ) {
 }

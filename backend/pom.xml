@@ -33,6 +33,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Apache HttpClient 5: custom DNS resolution for SSRF-safe webhook delivery -->
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+
         <!-- Spring Boot Data JPA: Database access and ORM -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

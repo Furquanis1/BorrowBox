@@ -14,6 +14,7 @@ import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.TransactionEventDeliveryRepository;
 import com.borrowbox.repository.TransactionEventRepository;
 import com.borrowbox.repository.TransactionRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,13 +38,23 @@ public class TransactionEventService {
     private final TransactionEventRepository eventRepository;
     private final TransactionEventDeliveryRepository deliveryRepository;
     private final TransactionRepository transactionRepository;
+    private final WebhookDeliveryService webhookDeliveryService;
+
+    @Autowired
+    public TransactionEventService(TransactionEventRepository eventRepository,
+                                   TransactionEventDeliveryRepository deliveryRepository,
+                                   TransactionRepository transactionRepository,
+                                   WebhookDeliveryService webhookDeliveryService) {
+        this.eventRepository = eventRepository;
+        this.deliveryRepository = deliveryRepository;
+        this.transactionRepository = transactionRepository;
+        this.webhookDeliveryService = webhookDeliveryService;
+    }
 
     public TransactionEventService(TransactionEventRepository eventRepository,
                                    TransactionEventDeliveryRepository deliveryRepository,
                                    TransactionRepository transactionRepository) {
-        this.eventRepository = eventRepository;
-        this.deliveryRepository = deliveryRepository;
-        this.transactionRepository = transactionRepository;
+        this(eventRepository, deliveryRepository, transactionRepository, null);
     }
 
     /**
@@ -78,6 +89,10 @@ public class TransactionEventService {
             delivery.setRecipient(recipient);
             delivery.setStatus(TransactionEventDeliveryStatus.UNREAD);
             deliveryRepository.save(delivery);
+        }
+
+        if (webhookDeliveryService != null) {
+            webhookDeliveryService.createDeliveriesForEvent(savedEvent, recipients);
         }
     }
 

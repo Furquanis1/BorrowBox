@@ -100,6 +100,9 @@ public class TransactionServiceTest {
     @Mock
     private ReputationEventService reputationEventService;
 
+    @Mock
+    private NotificationService notificationService;
+
     private TransactionService transactionService;
     private User owner;
     private User borrower;
@@ -152,7 +155,8 @@ public class TransactionServiceTest {
                 assetUnitConditionHistoryRepository, communityRuleRepository,
                 membershipService, messageService,
                 evidenceRepository, evidenceStorageService, waitlistService,
-                eventService, reputationEventService, 5_242_880L,
+                eventService, reputationEventService, notificationService,
+                5_242_880L,
                 true, pendingHours, counterHours, approvedHours, handoverHours);
     }
 
@@ -2241,7 +2245,8 @@ public class TransactionServiceTest {
                 assetUnitConditionHistoryRepository, communityRuleRepository,
                 membershipService, messageService,
                 evidenceRepository, evidenceStorageService, waitlistService,
-                eventService, reputationEventService, 5_242_880L,
+                eventService, reputationEventService, notificationService,
+                5_242_880L,
                 false, 72L, 48L, 72L, 168L);
 
         // No stubs are registered on purpose: neither call may reach the

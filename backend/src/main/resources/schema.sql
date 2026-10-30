@@ -456,6 +456,71 @@ CREATE TABLE IF NOT EXISTS notifications (
     PRIMARY KEY (id),
     CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),
     CONSTRAINT fk_notifications_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
+    CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id),
     INDEX idx_notifications_recipient_status (recipient_id, status),
     INDEX idx_notifications_recipient_created (recipient_id, created_at)
+) ENGINE=InnoDB;
+
+-- V2.6.0 notification preferences: per-user opt-in/out per notification type.
+-- Default is enabled (true). When a user opts out (enabled = false), the
+-- notification service skips creating notifications of that type for that user.
+-- UNIQUE(user_id, type) ensures at most one preference row per user/type pair.
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    id            BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id       BIGINT       NOT NULL,
+    type          VARCHAR(40)  NOT NULL,
+    enabled       BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at    DATETIME(6)  NOT NULL,
+    updated_at    DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_notification_preferences_user FOREIGN KEY (user_id) REFERENCES users (id),
+    CONSTRAINT uq_notification_preferences_user_type UNIQUE (user_id, type)
+) ENGINE=InnoDB;
+
+-- V2.6.0 notification guard: ensure at most one notification per
+-- user/type/transaction combination to prevent duplicate alerts.
+ALTER TABLE notifications
+ADD CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id);
+
+-- V2.6.0 webhook endpoints: user-configured URLs for outbound event delivery.
+-- Each endpoint has a secret token used to sign outgoing requests.
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+    id              BIGINT       NOT NULL AUTO_INCREMENT,
+    user_id         BIGINT       NOT NULL,
+    name            VARCHAR(255) NOT NULL,
+    url             VARCHAR(2048) NOT NULL,
+    secret_token    VARCHAR(255) NOT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',
+    created_at      DATETIME(6)  NOT NULL,
+    updated_at      DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_webhook_endpoints_user FOREIGN KEY (user_id) REFERENCES users (id)
+) ENGINE=InnoDB;
+
+-- V2.6.0 webhook deliveries: per-delivery record for outbound webhook
+-- notifications. Tracks attempts, response status, and retry information.
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id               BIGINT       NOT NULL AUTO_INCREMENT,
+    endpoint_id      BIGINT       NOT NULL,
+    event_id         VARCHAR(255) NOT NULL,
+    event_type       VARCHAR(40)  NOT NULL,
+    transaction_id   BIGINT       DEFAULT NULL,
+    payload          TEXT         NULL,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    http_status_code INT          DEFAULT NULL,
+    response_body    VARCHAR(2000) DEFAULT NULL,
+    error_message    VARCHAR(2000) DEFAULT NULL,
+    attempt_number   INT          NOT NULL DEFAULT 1,
+    next_retry_at    DATETIME(6)  DEFAULT NULL,
+    claim_token      VARCHAR(64)  DEFAULT NULL,
+    claimed_at       DATETIME(6)  DEFAULT NULL,
+    claim_expires_at DATETIME(6)  DEFAULT NULL,
+    created_at       DATETIME(6)  NOT NULL,
+    updated_at       DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT fk_webhook_deliveries_endpoint FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints (id),
+    CONSTRAINT uq_webhook_delivery_event_endpoint UNIQUE (event_id, endpoint_id),
+    INDEX idx_webhook_deliveries_endpoint_status (endpoint_id, status),
+    INDEX idx_webhook_deliveries_next_retry (next_retry_at),
+    INDEX idx_webhook_deliveries_status_claim_expiry (status, claim_expires_at)
 ) ENGINE=InnoDB;

@@ -2,6 +2,7 @@ package com.borrowbox.repository;
 
 import com.borrowbox.entity.Notification;
 import com.borrowbox.entity.NotificationStatus;
+import com.borrowbox.entity.NotificationType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -19,4 +20,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     List<Notification> findByRecipientIdOrderByCreatedAtDescIdDesc(Long recipientId);
 
     long countByRecipientIdAndStatus(Long recipientId, NotificationStatus status);
+
+    boolean existsByRecipientIdAndTypeAndTransactionId(Long recipientId, NotificationType type, Long transactionId);
 }
