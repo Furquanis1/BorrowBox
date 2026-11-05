@@ -228,10 +228,11 @@ SET @borrowbox_patch_ddl = (
         'ALTER TABLE notifications ADD CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id)',
         'SELECT 1'
     )
-    FROM information_schema.COLUMNS
+    FROM information_schema.STATISTICS
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME = 'notifications'
-      AND COLUMN_NAME = 'recipient_id'
+      AND INDEX_NAME = 'uq_notifications_user_type_transaction'
+      AND NON_UNIQUE = 0
 );
 PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
 EXECUTE borrowbox_patch_stmt;
