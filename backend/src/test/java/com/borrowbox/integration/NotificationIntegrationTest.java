@@ -41,7 +41,7 @@ public class NotificationIntegrationTest {
         User u = new User("Test User", email);
         u.setPasswordHash(passwordEncoder.encode("password"));
         u.setStatus(UserStatus.ACTIVE);
-        return userRepository.save(u);
+        return userRepository.saveAndFlush(u);
     }
 
     @Test
@@ -50,7 +50,7 @@ public class NotificationIntegrationTest {
         User lender = createUser("lender-" + UUID.randomUUID() + "@example.com");
 
         notificationService.create(borrower, com.borrowbox.entity.NotificationType.LOAN_APPROVED,
-                "Loan approved", "Your loan request was approved.", 1L);
+                "Loan approved", "Your loan request was approved.", null);
 
         List<NotificationResponse> borrowerNotifications =
                 notificationService.listForUser(borrower);

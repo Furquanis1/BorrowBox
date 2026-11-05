@@ -32,6 +32,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    @ExceptionHandler(ResourceConflictException.class)
+    public ResponseEntity<Object> handleConflict(ResourceConflictException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("error", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<Object> handleUnauthorized(UnauthorizedException ex) {
         Map<String, Object> body = new HashMap<>();
