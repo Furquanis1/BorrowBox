@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -87,7 +88,7 @@ public class WebhookDeliveryService {
                                   WebhookEndpointRepository endpointRepository,
                                   ObjectMapper objectMapper,
                                   RestClient restClient,
-                                  TaskExecutor taskExecutor) {
+                                  @Qualifier("taskScheduler") TaskExecutor taskExecutor) {
         this(deliveryRepository, endpointRepository, objectMapper, restClient, taskExecutor,
                 new WebhookUrlValidator(), new WebhookSignatureService());
     }
@@ -97,7 +98,7 @@ public class WebhookDeliveryService {
                                   WebhookEndpointRepository endpointRepository,
                                   ObjectMapper objectMapper,
                                   RestClient restClient,
-                                  TaskExecutor taskExecutor,
+                                  @Qualifier("taskScheduler") TaskExecutor taskExecutor,
                                   WebhookUrlValidator urlValidator,
                                   WebhookSignatureService signatureService) {
         this.deliveryRepository = deliveryRepository;
