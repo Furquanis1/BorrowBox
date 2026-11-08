@@ -204,9 +204,9 @@ public class FlagIntegrationTest {
 
     @Test
     void flagLinkedToSeedTransactionPersistsAndQueriesByTransaction() {
+        Transaction backing = seedCseTransaction();
         User ahmed = seedUser("ahmed@example.com");
         Community community = cse();
-        Transaction backing = seedCseTransaction();
 
         Flag created = flagService.createFlag(community.getId(), backing, FlagType.HANDOVER_DISPUTED,
                 ahmed, "disputed handover", ahmed);

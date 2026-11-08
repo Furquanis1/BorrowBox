@@ -6,5 +6,6 @@ package com.borrowbox.entity;
 public enum NotificationStatus {
     UNREAD,
     READ,
-    DISMISSED
+    DISMISSED,
+    SUPPRESSED
 }

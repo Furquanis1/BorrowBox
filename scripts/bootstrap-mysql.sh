@@ -19,6 +19,10 @@
 #   MYSQL_DATABASE (default: borrowbox_v2)
 #   BORROWBOX_APP_DB_USER (default: borrowbox_app)
 #   BORROWBOX_E2E_DB_USER (default: borrowbox_e2e)
+#   BORROWBOX_LEGACY_DB_USER (default: borrowbox_legacy)
+#   BORROWBOX_LEGACY_DB_PASSWORD (optional; when set, provisions the dedicated
+#       borrowbox_legacy_test database and account used by destructive migration
+#       tests. When unset, legacy provisioning is skipped.)
 #
 set -euo pipefail
 
@@ -29,6 +33,8 @@ MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
 MYSQL_DATABASE="${MYSQL_DATABASE:-borrowbox_v2}"
 APP_USER="${BORROWBOX_APP_DB_USER:-borrowbox_app}"
 E2E_USER="${BORROWBOX_E2E_DB_USER:-borrowbox_e2e}"
+LEGACY_DATABASE="borrowbox_legacy_test"
+LEGACY_USER="${BORROWBOX_LEGACY_DB_USER:-borrowbox_legacy}"
 
 fail() {
     echo "[ERROR] $*" >&2
@@ -91,6 +97,15 @@ validate_port
 validate_sql_password "$BORROWBOX_APP_DB_PASSWORD" "BORROWBOX_APP_DB_PASSWORD"
 validate_sql_password "$BORROWBOX_E2E_DB_PASSWORD" "BORROWBOX_E2E_DB_PASSWORD"
 
+if [ "$MYSQL_DATABASE" = "$LEGACY_DATABASE" ]; then
+    fail "MYSQL_DATABASE must not be the destructive legacy test database."
+fi
+
+if [ -n "${BORROWBOX_LEGACY_DB_PASSWORD:-}" ]; then
+    validate_identifier "$LEGACY_USER" "BORROWBOX_LEGACY_DB_USER"
+    validate_sql_password "$BORROWBOX_LEGACY_DB_PASSWORD" "BORROWBOX_LEGACY_DB_PASSWORD"
+fi
+
 if ! command -v "$MYSQL_CMD" >/dev/null 2>&1; then
     fail "mysql client not found in PATH."
 fi
@@ -145,3 +160,18 @@ GRANT SELECT, INSERT, UPDATE, DELETE
 SQL
 
 echo "[OK] Database accounts ready in $MYSQL_DATABASE (app: $APP_USER, e2e: $E2E_USER)."
+
+if [ -n "${BORROWBOX_LEGACY_DB_PASSWORD:-}" ]; then
+    "$MYSQL_CMD" --defaults-file="$option_file" <<SQL
+CREATE DATABASE IF NOT EXISTS \`$LEGACY_DATABASE\`
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS '$LEGACY_USER'@'%' IDENTIFIED BY '$BORROWBOX_LEGACY_DB_PASSWORD';
+ALTER USER '$LEGACY_USER'@'%' IDENTIFIED BY '$BORROWBOX_LEGACY_DB_PASSWORD';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, DROP, TRIGGER
+    ON \`$LEGACY_DATABASE\`.* TO '$LEGACY_USER'@'%';
+SQL
+    echo "[OK] Legacy migration database ready in $LEGACY_DATABASE (user: $LEGACY_USER)."
+else
+    echo "[INFO] BORROWBOX_LEGACY_DB_PASSWORD not set; skipped legacy test database provisioning."
+fi

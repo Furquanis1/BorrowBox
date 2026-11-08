@@ -39,9 +39,28 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByAssetIdOrderByIdDesc(Long assetId);
 
-    List<Transaction> findByStateAndDueAtBetween(TransactionStatus state, LocalDateTime from, LocalDateTime to);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select t from Transaction t
+            where t.state = :state
+              and t.dueAt between :from and :to
+            order by t.dueAt asc, t.id asc
+            """)
+    List<Transaction> findSchedulerDueSoonForUpdate(
+            @Param("state") TransactionStatus state,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 
-    List<Transaction> findByStateAndDueAtBefore(TransactionStatus state, LocalDateTime before);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select t from Transaction t
+            where t.state = :state
+              and t.dueAt < :before
+            order by t.dueAt asc, t.id asc
+            """)
+    List<Transaction> findSchedulerOverdueForUpdate(
+            @Param("state") TransactionStatus state,
+            @Param("before") LocalDateTime before);
 
     /**
      * V2.5.2 opportunistic expiry sweep candidate lookup.

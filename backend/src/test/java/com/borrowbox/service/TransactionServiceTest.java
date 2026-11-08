@@ -16,7 +16,9 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.ListingStatus;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionEvent;
 import com.borrowbox.entity.TransactionEventType;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
@@ -113,6 +115,8 @@ public class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(eventService.createEventAndDeliveries(any(), any(), any(), any()))
+                .thenReturn(Optional.of(new TransactionEvent()));
         buildService(72L, 48L, 72L, 168L);
 
         owner = new User("Ahmed", "ahmed@example.com");
@@ -844,6 +848,9 @@ public class TransactionServiceTest {
         unit.setStatus(AssetUnitStatus.BORROWED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        TransactionEvent event = new TransactionEvent();
+        when(eventService.createEventAndDeliveries(any(), any(), any(), any()))
+                .thenReturn(Optional.of(event));
 
         TransactionResponse response = transactionService.confirmReturn(1L, owner);
 
@@ -856,6 +863,10 @@ public class TransactionServiceTest {
         verify(messageService).addSystemEvent(any(Transaction.class), eq("Loan completed"));
         verify(waitlistService).promoteForAsset(500L);
         verify(eventService).createEventAndDeliveries(eq(txn), eq(TransactionEventType.LOAN_COMPLETED), eq(owner), eq(null));
+        verify(notificationService).createForEvent(eq(event), eq(borrower),
+                eq(NotificationType.LOAN_COMPLETED), anyString(), anyString());
+        verify(notificationService).createForEvent(eq(event), eq(owner),
+                eq(NotificationType.LOAN_COMPLETED), anyString(), anyString());
     }
 
     @Test

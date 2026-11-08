@@ -23,13 +23,13 @@ import java.time.LocalDateTime;
  * The notification is owned by its recipient ({@code recipient_id}) and may
  * reference the transaction ({@code transaction_id}) that triggered it.
  *
- * <p>Idempotency note: notifications are created only inside the same
- * {@code @Transactional} method as the transaction state change that triggers
- * them. Because each transaction state transition happens at most once
- * (forward-only state machine guarded by {@code requireState}), the same
- * notification type is created at most once per transaction. There is no
- * separate dedup table; retries after a successful transition are no-ops at the
- * state layer rather than producing duplicate notifications.
+ * <p>Idempotency note: transaction-event notifications are uniquely identified
+ * by {@code (recipient_id, source_event_id, type)} and scheduled reminders by
+ * {@code (recipient_id, dedupe_key)}. Creation uses an atomic insert-or-ignore
+ * followed by a locked read of the canonical row, so retries and concurrent
+ * creators converge on the same notification without changing its fields.
+ * Historical event notifications keep both columns null; historical scheduled
+ * reminders may have only their dedupe key backfilled by the migration.
  */
 @Entity
 @Table(name = "notifications")
@@ -49,6 +49,12 @@ public class Notification {
 
     @Column(name = "transaction_id")
     private Long transactionId;
+
+    @Column(name = "source_event_id")
+    private Long sourceEventId;
+
+    @Column(name = "dedupe_key")
+    private String dedupeKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -118,6 +124,22 @@ public class Notification {
 
     public void setTransactionId(Long transactionId) {
         this.transactionId = transactionId;
+    }
+
+    public Long getSourceEventId() {
+        return sourceEventId;
+    }
+
+    public void setSourceEventId(Long sourceEventId) {
+        this.sourceEventId = sourceEventId;
+    }
+
+    public String getDedupeKey() {
+        return dedupeKey;
+    }
+
+    public void setDedupeKey(String dedupeKey) {
+        this.dedupeKey = dedupeKey;
     }
 
     public NotificationType getType() {

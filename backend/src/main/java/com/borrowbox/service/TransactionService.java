@@ -372,9 +372,10 @@ public class TransactionService {
         txn.setDecidedBy(lender);
         txn.setDecisionNote(note(request));
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_APPROVED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.LOAN_APPROVED,
-                "Loan request approved", "Your loan request was approved.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_APPROVED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.LOAN_APPROVED, "Loan request approved",
+                        "Your loan request was approved."));
         return response;
     }
 
@@ -400,9 +401,10 @@ public class TransactionService {
         // transaction. No-op when nobody is waiting or nothing became available.
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_REJECTED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.LOAN_REJECTED,
-                "Loan request rejected", "Your loan request was rejected.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_REJECTED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.LOAN_REJECTED, "Loan request rejected",
+                        "Your loan request was rejected."));
         return response;
     }
 
@@ -500,11 +502,15 @@ public class TransactionService {
         // transaction. No-op when nobody is waiting or nothing became available.
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_CANCELLED, actor, null);
-        notificationService.create(txn.getBorrower(), NotificationType.LOAN_CANCELLED,
-                "Loan request cancelled", "Your loan request was cancelled.", txn.getId());
-        notificationService.create(txn.getLender(), NotificationType.LOAN_CANCELLED,
-                "Loan request cancelled", "The loan request was cancelled.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_CANCELLED, actor, null)
+                .ifPresent(event -> {
+                    notificationService.createForEvent(event, txn.getBorrower(),
+                            NotificationType.LOAN_CANCELLED, "Loan request cancelled",
+                            "Your loan request was cancelled.");
+                    notificationService.createForEvent(event, txn.getLender(),
+                            NotificationType.LOAN_CANCELLED, "Loan request cancelled",
+                            "The loan request was cancelled.");
+                });
         return response;
     }
 
@@ -523,11 +529,15 @@ public class TransactionService {
         stampReservationDeadline(txn, handoverReservationHours);
         messageService.addSystemEvent(txn, "Handover scheduled");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_SCHEDULED, actor, null);
-        notificationService.create(txn.getBorrower(), NotificationType.HANDOVER_SCHEDULED,
-                "Handover scheduled", "Handover has been scheduled.", txn.getId());
-        notificationService.create(txn.getLender(), NotificationType.HANDOVER_SCHEDULED,
-                "Handover scheduled", "Handover has been scheduled.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_SCHEDULED, actor, null)
+                .ifPresent(event -> {
+                    notificationService.createForEvent(event, txn.getBorrower(),
+                            NotificationType.HANDOVER_SCHEDULED, "Handover scheduled",
+                            "Handover has been scheduled.");
+                    notificationService.createForEvent(event, txn.getLender(),
+                            NotificationType.HANDOVER_SCHEDULED, "Handover scheduled",
+                            "Handover has been scheduled.");
+                });
         return response;
     }
 
@@ -579,9 +589,10 @@ public class TransactionService {
         persistConditionProjection(txn, EvidenceType.LENDER_HANDOVER, lender);
         messageService.addSystemEvent(txn, "Loan started");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_STARTED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.LOAN_STARTED,
-                "Loan started", "Your loan has started.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_STARTED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.LOAN_STARTED, "Loan started",
+                        "Your loan has started."));
         return response;
     }
 
@@ -606,9 +617,10 @@ public class TransactionService {
         txn.setBorrowerConfirmedAt(LocalDateTime.now());
         messageService.addSystemEvent(txn, "Borrower confirmed receipt");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_CONFIRMED, borrower, null);
-        notificationService.create(txn.getLender(), NotificationType.RECEIPT_CONFIRMED,
-                "Receipt confirmed", "The borrower confirmed receipt of the item.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.HANDOVER_CONFIRMED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.RECEIPT_CONFIRMED, "Receipt confirmed",
+                        "The borrower confirmed receipt of the item."));
         return response;
     }
 
@@ -669,9 +681,10 @@ public class TransactionService {
                 ? String.format("{\"newDueAt\":\"%s\"}", request.newDueAt().toString())
                 : null;
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REQUESTED, borrower, payload);
-        notificationService.create(txn.getLender(), NotificationType.EXTENSION_REQUESTED,
-                "Extension requested", "The borrower requested an extension.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REQUESTED, borrower, payload)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.EXTENSION_REQUESTED, "Extension requested",
+                        "The borrower requested an extension."));
         return response;
     }
 
@@ -692,9 +705,10 @@ public class TransactionService {
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension approved");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_APPROVED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_APPROVED,
-                "Extension approved", "Your extension request was approved.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_APPROVED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.EXTENSION_APPROVED, "Extension approved",
+                        "Your extension request was approved."));
         return response;
     }
 
@@ -713,9 +727,10 @@ public class TransactionService {
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension rejected");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REJECTED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_REJECTED,
-                "Extension rejected", "Your extension request was rejected.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_REJECTED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.EXTENSION_REJECTED, "Extension rejected",
+                        "Your extension request was rejected."));
         return response;
     }
 
@@ -743,9 +758,10 @@ public class TransactionService {
                 ? String.format("{\"offeredDueAt\":\"%s\"}", request.newDueAt().toString())
                 : null;
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTERED, lender, payload);
-        notificationService.create(txn.getBorrower(), NotificationType.EXTENSION_COUNTERED,
-                "Extension countered", "The lender countered your extension request.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTERED, lender, payload)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.EXTENSION_COUNTERED, "Extension countered",
+                        "The lender countered your extension request."));
         return response;
     }
 
@@ -766,9 +782,10 @@ public class TransactionService {
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension counter accepted");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_ACCEPTED, borrower, null);
-        notificationService.create(txn.getLender(), NotificationType.EXTENSION_COUNTER_ACCEPTED,
-                "Extension counter accepted", "The borrower accepted your extension counter.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_ACCEPTED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.EXTENSION_COUNTER_ACCEPTED, "Extension counter accepted",
+                        "The borrower accepted your extension counter."));
         return response;
     }
 
@@ -787,9 +804,10 @@ public class TransactionService {
         clearExtensionNegotiation(txn);
         messageService.addSystemEvent(txn, "Extension counter rejected");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_REJECTED, borrower, null);
-        notificationService.create(txn.getLender(), NotificationType.EXTENSION_COUNTER_REJECTED,
-                "Extension counter rejected", "The borrower rejected your extension counter.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.EXTENSION_COUNTER_REJECTED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.EXTENSION_COUNTER_REJECTED, "Extension counter rejected",
+                        "The borrower rejected your extension counter."));
         return response;
     }
 
@@ -812,9 +830,10 @@ public class TransactionService {
         txn.setState(TransactionStatus.RETURN_INITIATED);
         messageService.addSystemEvent(txn, "Return initiated");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_INITIATED, borrower, null);
-        notificationService.create(txn.getLender(), NotificationType.RETURN_INITIATED,
-                "Return initiated", "The borrower has initiated the return.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_INITIATED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.RETURN_INITIATED, "Return initiated",
+                        "The borrower has initiated the return."));
         return response;
     }
 
@@ -838,9 +857,10 @@ public class TransactionService {
         txn.setState(TransactionStatus.RETURN_REPORTED);
         messageService.addSystemEvent(txn, "Handback reported");
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_REPORTED, borrower, null);
-        notificationService.create(txn.getLender(), NotificationType.RETURN_HANDOVER_REPORTED,
-                "Return handback reported", "The borrower has reported returning the item.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.RETURN_REPORTED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.RETURN_HANDOVER_REPORTED, "Return handback reported",
+                        "The borrower has reported returning the item."));
         return response;
     }
 
@@ -885,11 +905,15 @@ public class TransactionService {
         // same transaction. No-op when nobody is waiting.
         waitlistService.promoteForAsset(txn.getAsset().getId());
         TransactionResponse response = toResponse(transactionRepository.save(txn));
-        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_COMPLETED, lender, null);
-        notificationService.create(txn.getBorrower(), NotificationType.LOAN_COMPLETED,
-                "Loan completed", "Your loan has been completed.", txn.getId());
-        notificationService.create(txn.getLender(), NotificationType.LOAN_COMPLETED,
-                "Loan completed", "The loan has been completed.", txn.getId());
+        eventService.createEventAndDeliveries(txn, TransactionEventType.LOAN_COMPLETED, lender, null)
+                .ifPresent(event -> {
+                    notificationService.createForEvent(event, txn.getBorrower(),
+                            NotificationType.LOAN_COMPLETED, "Loan completed",
+                            "Your loan has been completed.");
+                    notificationService.createForEvent(event, txn.getLender(),
+                            NotificationType.LOAN_COMPLETED, "Loan completed",
+                            "The loan has been completed.");
+                });
         reputationEventService.recordLoanCompleted(txn);
         return response;
     }
