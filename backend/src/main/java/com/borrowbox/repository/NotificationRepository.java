@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Repository for {@link Notification} rows (V2.6).
@@ -22,4 +23,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     long countByRecipientIdAndStatus(Long recipientId, NotificationStatus status);
 
     boolean existsByRecipientIdAndTypeAndTransactionId(Long recipientId, NotificationType type, Long transactionId);
+
+    Optional<Notification> findByRecipientIdAndTypeAndTransactionId(
+            Long recipientId, NotificationType type, Long transactionId);
 }
