@@ -477,11 +477,6 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     CONSTRAINT uq_notification_preferences_user_type UNIQUE (user_id, type)
 ) ENGINE=InnoDB;
 
--- V2.6.0 notification guard: ensure at most one notification per
--- user/type/transaction combination to prevent duplicate alerts.
-ALTER TABLE notifications
-ADD CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id);
-
 -- V2.6.0 webhook endpoints: user-configured URLs for outbound event delivery.
 -- Each endpoint has a secret token used to sign outgoing requests.
 CREATE TABLE IF NOT EXISTS webhook_endpoints (

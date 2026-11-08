@@ -39,16 +39,19 @@ public class NotificationService {
     }
 
     /**
-     * Creates a notification for the given recipient. Runs inside the caller's
-     * transaction (typically a transaction lifecycle transition), so the
-     * notification commits atomically with the state change that triggered it.
+     * Creates or reactivates a notification for the given recipient. Runs
+     * inside the caller's transaction (typically a transaction lifecycle
+     * transition), so the notification commits atomically with the state change
+     * that triggered it. If a notification already exists for the same
+     * recipient, type, and transaction, it is reset to unread and refreshed
+     * instead of inserting a duplicate.
      *
      * @param recipient   the user who should receive this notification
      * @param type        the notification type
      * @param title       short user-facing title
      * @param message     full user-facing message
      * @param transactionId the related transaction, or null if none
-     * @return the created notification
+     * @return the created or reactivated notification
      */
     @Transactional
     public Notification create(User recipient, NotificationType type, String title,
@@ -60,7 +63,9 @@ public class NotificationService {
                 .orElse(false)) {
             return null;
         }
-        Notification n = new Notification();
+        Notification n = notificationRepository
+                .findByRecipientIdAndTypeAndTransactionId(recipient.getId(), type, transactionId)
+                .orElseGet(Notification::new);
         n.setRecipient(recipient);
         n.setRecipientEmail(recipient.getEmail());
         n.setTransactionId(transactionId);
@@ -68,6 +73,10 @@ public class NotificationService {
         n.setTitle(title);
         n.setMessage(message);
         n.setStatus(NotificationStatus.UNREAD);
+        n.setReadAt(null);
+        if (n.getId() != null) {
+            n.setCreatedAt(LocalDateTime.now());
+        }
         return notificationRepository.save(n);
     }
 

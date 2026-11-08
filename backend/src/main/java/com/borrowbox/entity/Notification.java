@@ -23,13 +23,12 @@ import java.time.LocalDateTime;
  * The notification is owned by its recipient ({@code recipient_id}) and may
  * reference the transaction ({@code transaction_id}) that triggered it.
  *
- * <p>Idempotency note: notifications are created only inside the same
+ * <p>Idempotency note: notifications are created inside the same
  * {@code @Transactional} method as the transaction state change that triggers
- * them. Because each transaction state transition happens at most once
- * (forward-only state machine guarded by {@code requireState}), the same
- * notification type is created at most once per transaction. There is no
- * separate dedup table; retries after a successful transition are no-ops at the
- * state layer rather than producing duplicate notifications.
+ * them. The unique (recipient, type, transaction) constraint permits at most one
+ * notification row per combination. If a lifecycle event of the same type
+ * happens again for the same transaction (for example, a later extension
+ * cycle), the existing row is reactivated instead of inserting a duplicate.
  */
 @Entity
 @Table(name = "notifications")
@@ -67,7 +66,7 @@ public class Notification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     @Column(nullable = false)

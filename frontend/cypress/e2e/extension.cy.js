@@ -17,6 +17,7 @@
 describe('V2.2.5 Loan Extensions', () => {
   const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
   const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
+  const appHost = new URL(Cypress.config('baseUrl')).hostname
 
   let marker
   let cseId
@@ -44,8 +45,26 @@ describe('V2.2.5 Loan Extensions', () => {
     cy.request({ method: 'POST', url: '/api/me/events/read-all' })
   }
 
+  const expectCurrentUser = (user) =>
+    cy.request('GET', '/api/auth/me').then((res) => {
+      const actualEmail = res.body && res.body.user ? res.body.user.email : undefined
+      expect(res.status, '/api/auth/me status').to.equal(200)
+      expect(actualEmail, '/api/auth/me email').to.equal(user.email)
+    })
+
+  const expectSingleJwtCookie = () =>
+    cy.getCookies({ domain: appHost, log: false }).then((cookies) => {
+      const jwtCookies = cookies.filter((cookie) => cookie.name === 'jwt')
+      expect(jwtCookies.length, 'exactly one jwt cookie').to.equal(1)
+      const value = jwtCookies[0] && jwtCookies[0].value
+      expect(typeof value === 'string' && value.length > 0, 'jwt cookie has a value').to.equal(true)
+    })
+
   const loginViaApi = (user) => {
+    cy.clearCookies({ domain: appHost })
     cy.request({ method: 'POST', url: '/api/auth/login', body: user, failOnStatusCode: true })
+    expectSingleJwtCookie()
+    expectCurrentUser(user)
   }
 
   // V2.2.6: system-issued evidence uploads; binary content is arbitrary
@@ -449,6 +468,7 @@ describe('V2.2.5 Loan Extensions', () => {
 
     // Counter offers obey the same date rules and are lender-only.
     loginViaApi(salah)
+    expectCurrentUser(salah)
     post(() => `/api/transactions/${txnId}/extension-request`, { newDueAt: requestedDueAt }).then((res) => {
       expect(res.body.extensionRequestPending).to.equal(true)
     })
@@ -498,5 +518,14 @@ describe('V2.2.5 Loan Extensions', () => {
       expect(available).to.equal(1)
       expect(borrowed).to.equal(0)
     })
+  })
+
+  it('keeps each API-only login bound to the most recently requested user', () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      loginViaApi(salah)
+      expectCurrentUser(salah)
+      loginViaApi(ahmed)
+      expectCurrentUser(ahmed)
+    }
   })
 })

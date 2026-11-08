@@ -12,6 +12,7 @@ import com.borrowbox.entity.AssetUnitStatus;
 import com.borrowbox.entity.Community;
 import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.MessageKind;
+import com.borrowbox.entity.Notification;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionEvent;
 import com.borrowbox.entity.TransactionEventDelivery;
@@ -25,6 +26,7 @@ import com.borrowbox.repository.AssetRepository;
 import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
+import com.borrowbox.repository.NotificationRepository;
 import com.borrowbox.repository.TransactionEventDeliveryRepository;
 import com.borrowbox.repository.TransactionEventRepository;
 import com.borrowbox.repository.TransactionMessageRepository;
@@ -82,6 +84,7 @@ public class ReservationExpiryIntegrationTest {
     @Autowired private TransactionEventRepository transactionEventRepository;
     @Autowired private TransactionEventDeliveryRepository transactionEventDeliveryRepository;
     @Autowired private TransactionMessageRepository transactionMessageRepository;
+    @Autowired private NotificationRepository notificationRepository;
 
     // ── Helpers ───────────────────────────────────────────────────────
 
@@ -563,9 +566,11 @@ public class ReservationExpiryIntegrationTest {
      *
      * <p>Children are deleted explicitly, in FK order, because no repository in
      * this codebase exposes a {@code deleteByTransactionId}. Only deliveries,
-     * events, and messages can exist for this flow: evidence requires an
-     * explicit upload, reputation is recorded on completion or dispute, and
-     * flags are never touched by create/approve/expire.
+     * events, messages, and notifications can exist for this flow: evidence
+     * requires an explicit upload, reputation is recorded on completion or
+     * dispute, and flags are never touched by create/approve/expire. Approve
+     * creates a notification referencing the transaction, so it must be removed
+     * before the transaction itself.
      */
     private void cleanup(Asset football, String purpose, long reservedBefore) {
         for (Transaction txn : transactionRepository.findByAssetIdOrderByIdDesc(football.getId())) {
@@ -581,6 +586,11 @@ public class ReservationExpiryIntegrationTest {
                     transactionEventRepository.findByTransactionIdOrderByCreatedAtAsc(txn.getId()));
             transactionMessageRepository.deleteAll(
                     transactionMessageRepository.findByTransactionIdOrderByCreatedAtAsc(txn.getId()));
+            List<Notification> notifications = notificationRepository.findAll().stream()
+                    .filter(n -> txn.getId().equals(n.getTransactionId()))
+                    .toList();
+            notificationRepository.deleteAll(notifications);
+            notificationRepository.flush();
 
             if (txn.getReservedUnit() != null) {
                 AssetUnit unit = txn.getReservedUnit();

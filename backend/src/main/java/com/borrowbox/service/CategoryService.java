@@ -2,9 +2,12 @@ package com.borrowbox.service;
 
 import com.borrowbox.dto.CategoryCreateRequest;
 import com.borrowbox.entity.Category;
+import com.borrowbox.exception.ForeignKeyDeleteConflictTranslator;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.repository.CategoryRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -12,9 +15,12 @@ import java.util.List;
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
+    private final ForeignKeyDeleteConflictTranslator deleteConflictTranslator;
 
-    public CategoryService(CategoryRepository categoryRepository) {
+    public CategoryService(CategoryRepository categoryRepository,
+                           ForeignKeyDeleteConflictTranslator deleteConflictTranslator) {
         this.categoryRepository = categoryRepository;
+        this.deleteConflictTranslator = deleteConflictTranslator;
     }
 
     public List<Category> getAllCategories() {
@@ -41,9 +47,15 @@ public class CategoryService {
         return categoryRepository.save(existingCategory);
     }
 
+    @Transactional
     public void deleteCategory(Long id) {
         Category existingCategory = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
-        categoryRepository.delete(existingCategory);
+        try {
+            categoryRepository.delete(existingCategory);
+            categoryRepository.flush();
+        } catch (DataIntegrityViolationException ex) {
+            throw deleteConflictTranslator.translate(ex);
+        }
     }
 }
