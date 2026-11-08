@@ -36,6 +36,13 @@ public class NotificationService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS");
     private static final Set<NotificationType> SCHEDULED_TYPES =
             Set.of(NotificationType.LOAN_DUE_SOON, NotificationType.LOAN_OVERDUE);
+    private static final Set<NotificationType> EXTENSION_TYPES = Set.of(
+            NotificationType.EXTENSION_REQUESTED,
+            NotificationType.EXTENSION_APPROVED,
+            NotificationType.EXTENSION_REJECTED,
+            NotificationType.EXTENSION_COUNTERED,
+            NotificationType.EXTENSION_COUNTER_ACCEPTED,
+            NotificationType.EXTENSION_COUNTER_REJECTED);
 
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository preferenceRepository;
@@ -51,6 +58,11 @@ public class NotificationService {
      * event. The event must already be persisted and this method must run inside
      * the caller's transaction so the notification commits atomically with the
      * transaction state change and event row.
+     *
+     * <p>Extension notification types preserve the V2.6.1 reactivation behavior:
+     * a later extension event for the same recipient, type, and transaction
+     * resets the existing row to unread instead of inserting a new row. Replaying
+     * the same source event returns the existing row unchanged.
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<Notification> createForEvent(TransactionEvent event,
@@ -67,7 +79,39 @@ public class NotificationService {
         Long transactionId = event.getTransaction() != null
                 ? event.getTransaction().getId()
                 : null;
-        NotificationStatus initialStatus = isOptedOut(recipientId, type)
+        boolean extensionNotification = EXTENSION_TYPES.contains(type);
+        boolean optedOut = isOptedOut(recipientId, type);
+
+        if (extensionNotification) {
+            if (optedOut) {
+                return Optional.empty();
+            }
+            Optional<Notification> existing = notificationRepository
+                    .findFirstByRecipientIdAndTypeAndTransactionIdOrderByIdAsc(
+                            recipientId, type, transactionId);
+            if (existing.isPresent()) {
+                Notification notification = existing.get();
+                if (event.getId().equals(notification.getSourceEventId())) {
+                    return notification.getStatus() == NotificationStatus.SUPPRESSED
+                            ? Optional.empty()
+                            : Optional.of(notification);
+                }
+                notification.setRecipient(recipient);
+                notification.setRecipientEmail(recipient.getEmail());
+                notification.setTransactionId(transactionId);
+                notification.setType(type);
+                notification.setTitle(title);
+                notification.setMessage(message);
+                notification.setStatus(NotificationStatus.UNREAD);
+                notification.setReadAt(null);
+                notification.setSourceEventId(event.getId());
+                notification.setDedupeKey(null);
+                notification.setCreatedAt(LocalDateTime.now());
+                return Optional.of(notificationRepository.save(notification));
+            }
+        }
+
+        NotificationStatus initialStatus = optedOut
                 ? NotificationStatus.SUPPRESSED
                 : NotificationStatus.UNREAD;
 

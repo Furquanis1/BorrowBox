@@ -224,6 +224,40 @@ public class NotificationIdempotencyIntegrationTest {
     }
 
     @Test
+    void extensionEventReplayAfterMarkReadPreservesSameRow() {
+        Transaction txn = seededTransaction();
+        User borrower = txn.getBorrower();
+        TransactionEvent event = persistEvent(txn, TransactionEventType.EXTENSION_REQUESTED);
+
+        Notification created = notificationService.createForEvent(event, borrower,
+                NotificationType.EXTENSION_REQUESTED,
+                "Extension requested", "Extension requested").orElseThrow();
+        Long notificationId = created.getId();
+        Long sourceEventId = created.getSourceEventId();
+        LocalDateTime createdAt = created.getCreatedAt();
+
+        assertThat(sourceEventId).isEqualTo(event.getId());
+
+        Notification marked = notificationRepository.findById(
+                notificationService.markAsRead(notificationId, borrower).id()).orElseThrow();
+        LocalDateTime firstReadAt = marked.getReadAt();
+
+        Notification replayed = notificationService.createForEvent(event, borrower,
+                NotificationType.EXTENSION_REQUESTED,
+                "Changed extension title", "Changed extension message").orElseThrow();
+
+        assertThat(replayed.getId()).isEqualTo(notificationId);
+        assertThat(replayed.getSourceEventId()).isEqualTo(sourceEventId);
+        assertThat(replayed.getStatus()).isEqualTo(NotificationStatus.READ);
+        assertThat(replayed.getReadAt()).isEqualTo(firstReadAt);
+        assertThat(replayed.getCreatedAt()).isEqualTo(createdAt);
+        assertThat(replayed.getTitle()).isEqualTo("Extension requested");
+        assertThat(replayed.getMessage()).isEqualTo("Extension requested");
+        assertThat(eventRowCount(borrower.getId(), event.getId(),
+                NotificationType.EXTENSION_REQUESTED)).isEqualTo(1);
+    }
+
+    @Test
     void eventReplayCannotOverwriteCanonicalDuplicateFields() {
         Transaction txn = seededTransaction();
         User borrower = txn.getBorrower();

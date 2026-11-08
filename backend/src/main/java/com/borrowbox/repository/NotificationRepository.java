@@ -103,4 +103,11 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Optional<Notification> findByIdAndRecipientIdForUpdate(
             @Param("id") Long id,
             @Param("recipientId") Long recipientId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Notification> findFirstByRecipientIdAndTypeAndTransactionIdOrderByIdAsc(
+            Long recipientId, NotificationType type, Long transactionId);
+
+    Optional<Notification> findByRecipientIdAndTypeAndTransactionId(
+            Long recipientId, NotificationType type, Long transactionId);
 }

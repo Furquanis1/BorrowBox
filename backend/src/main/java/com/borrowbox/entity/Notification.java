@@ -30,6 +30,10 @@ import java.time.LocalDateTime;
  * creators converge on the same notification without changing its fields.
  * Historical event notifications keep both columns null; historical scheduled
  * reminders may have only their dedupe key backfilled by the migration.
+ *
+ * <p>Extension lifecycle notifications are the compatibility exception: a later
+ * extension event for the same recipient, type, and transaction reactivates the
+ * existing row instead of inserting a new one.
  */
 @Entity
 @Table(name = "notifications")
@@ -73,7 +77,7 @@ public class Notification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     @Column(nullable = false)

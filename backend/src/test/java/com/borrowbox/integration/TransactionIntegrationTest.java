@@ -20,6 +20,9 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
+import com.borrowbox.entity.Notification;
+import com.borrowbox.entity.NotificationStatus;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
@@ -33,8 +36,10 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.EvidenceRepository;
+import com.borrowbox.repository.NotificationRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.service.NotificationService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
@@ -98,6 +103,8 @@ public class TransactionIntegrationTest {
     @Autowired private AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
+    @Autowired private NotificationRepository notificationRepository;
+    @Autowired private NotificationService notificationService;
     @Autowired private EvidenceRepository evidenceRepository;
     @Autowired private PlatformTransactionManager platformTransactionManager;
     @Value("${borrowbox.media.dir}") private String mediaDir;
@@ -684,6 +691,42 @@ public class TransactionIntegrationTest {
         TransactionResponse rejected = transactionService.rejectExtension(active.id(), ahmed);
         assertThat(rejected.dueAt()).isEqualTo(originalDue);
         assertThat(rejected.extensionRequestedDueAt()).isNull();
+    }
+
+    @Test
+    @Transactional
+    void extensionRequestCanRepeatAfterReject() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        LocalDateTime originalDue = active.dueAt();
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(3), "First"), salah);
+        Notification requested = notificationRepository
+                .findByRecipientIdAndTypeAndTransactionId(
+                        ahmed.getId(), NotificationType.EXTENSION_REQUESTED, active.id())
+                .orElseThrow();
+        Long originalNotificationId = requested.getId();
+        notificationService.markAsRead(requested.getId(), ahmed);
+
+        transactionService.rejectExtension(active.id(), ahmed);
+
+        TransactionResponse repeated = transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(2), "Second"), salah);
+
+        assertThat(repeated.extensionRequestPending()).isTrue();
+        assertThat(repeated.extensionRequestedDueAt()).isEqualTo(originalDue.plusDays(2));
+        assertThat(notificationRepository.findByRecipientIdAndTypeAndTransactionId(
+                ahmed.getId(), NotificationType.EXTENSION_REQUESTED, active.id()))
+                .hasValueSatisfying(notification -> {
+                    assertThat(notification.getId()).isEqualTo(originalNotificationId);
+                    assertThat(notification.getStatus()).isEqualTo(NotificationStatus.UNREAD);
+                    assertThat(notification.getReadAt()).isNull();
+                });
     }
 
     @Test
