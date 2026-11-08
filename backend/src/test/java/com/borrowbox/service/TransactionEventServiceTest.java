@@ -170,9 +170,11 @@ public class TransactionEventServiceTest {
             return event;
         });
 
-        eventService.createEventAndDeliveries(
+        Optional<TransactionEvent> saved = eventService.createEventAndDeliveries(
                 txn, TransactionEventType.LOAN_STARTED, lender, null);
 
+        assertThat(saved).isPresent();
+        assertThat(saved.orElseThrow().getId()).isEqualTo(77L);
         verify(eventRepository).saveAndFlush(any(TransactionEvent.class));
         verify(deliveryRepository, times(2)).save(any());
         verify(webhookDeliveryService).createDeliveriesForEvent(

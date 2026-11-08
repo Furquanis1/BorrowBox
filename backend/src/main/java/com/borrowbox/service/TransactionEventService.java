@@ -65,15 +65,16 @@ public class TransactionEventService {
      * @param eventType   the semantic event type
      * @param actor       the user who triggered the transition (null for system events like waitlist promotion)
      * @param payload     optional JSON payload for structured event data
+     * @return the persisted event, or empty when the event type has no recipients
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void createEventAndDeliveries(Transaction transaction,
-                                         TransactionEventType eventType,
-                                         User actor,
-                                         String payload) {
+    public Optional<TransactionEvent> createEventAndDeliveries(Transaction transaction,
+                                                               TransactionEventType eventType,
+                                                               User actor,
+                                                               String payload) {
         List<User> recipients = resolveRecipients(transaction, eventType);
         if (recipients.isEmpty()) {
-            return;
+            return Optional.empty();
         }
 
         TransactionEvent event = new TransactionEvent();
@@ -94,6 +95,7 @@ public class TransactionEventService {
         if (webhookDeliveryService != null) {
             webhookDeliveryService.createDeliveriesForEvent(savedEvent, recipients);
         }
+        return Optional.of(savedEvent);
     }
 
     /**

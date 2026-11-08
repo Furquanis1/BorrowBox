@@ -577,6 +577,11 @@ public class ReservationExpiryIntegrationTest {
             if (!purpose.equals(txn.getPurpose())) {
                 continue;
             }
+            List<Notification> notifications = notificationRepository.findAll().stream()
+                    .filter(n -> txn.getId().equals(n.getTransactionId()))
+                    .toList();
+            notificationRepository.deleteAll(notifications);
+            notificationRepository.flush();
             for (TransactionEvent event
                     : transactionEventRepository.findByTransactionIdOrderByCreatedAtAsc(txn.getId())) {
                 transactionEventDeliveryRepository.deleteAll(
@@ -586,11 +591,6 @@ public class ReservationExpiryIntegrationTest {
                     transactionEventRepository.findByTransactionIdOrderByCreatedAtAsc(txn.getId()));
             transactionMessageRepository.deleteAll(
                     transactionMessageRepository.findByTransactionIdOrderByCreatedAtAsc(txn.getId()));
-            List<Notification> notifications = notificationRepository.findAll().stream()
-                    .filter(n -> txn.getId().equals(n.getTransactionId()))
-                    .toList();
-            notificationRepository.deleteAll(notifications);
-            notificationRepository.flush();
 
             if (txn.getReservedUnit() != null) {
                 AssetUnit unit = txn.getReservedUnit();

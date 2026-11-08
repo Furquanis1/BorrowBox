@@ -219,7 +219,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     -- Serves the opportunistic expiry sweep
     -- (WHERE asset_id = ? AND state IN (...) AND reservation_expires_at < ?)
     -- and the existing asset-scoped transaction lookup.
-    INDEX idx_transactions_asset_state (asset_id, state)
+    INDEX idx_transactions_asset_state (asset_id, state),
+    -- Serves the notification scheduler's due-soon/overdue candidate scans.
+    INDEX idx_transactions_state_due_at (state, due_at)
 ) ENGINE=InnoDB;
 
 -- V2.2.3 transaction conversation: one row per message in a transaction's
@@ -439,13 +441,19 @@ CREATE TABLE IF NOT EXISTS flags (
 -- V2.6.0 notifications: per-recipient notification about a transaction event.
 -- recipient_id is the user who should see it; transaction_id references the
 -- triggering transaction (nullable so the table can later support non-transaction
--- notifications without a schema change). status is UNREAD / READ / DISMISSED;
--- read_at is stamped when the recipient marks it read.
+-- notifications without a schema change). status is UNREAD / READ / DISMISSED /
+-- SUPPRESSED; read_at is stamped when the recipient marks it read. Event
+-- notifications are deduplicated by (recipient_id, source_event_id, type) and
+-- scheduled reminders by (recipient_id, dedupe_key). Historical event rows keep
+-- both new columns null; historical scheduled reminders may have only dedupe_key
+-- backfilled by schema-patch.sql.
 CREATE TABLE IF NOT EXISTS notifications (
     id              BIGINT       NOT NULL AUTO_INCREMENT,
     recipient_id    BIGINT       NOT NULL,
     recipient_email VARCHAR(255) NOT NULL,
     transaction_id  BIGINT       DEFAULT NULL,
+    source_event_id BIGINT       DEFAULT NULL,
+    dedupe_key      VARCHAR(255) DEFAULT NULL,
     type            VARCHAR(40)  NOT NULL,
     title           VARCHAR(255) NOT NULL,
     message         VARCHAR(2000) DEFAULT NULL,
@@ -456,7 +464,10 @@ CREATE TABLE IF NOT EXISTS notifications (
     PRIMARY KEY (id),
     CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),
     CONSTRAINT fk_notifications_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
-    CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id),
+    CONSTRAINT fk_notifications_source_event FOREIGN KEY (source_event_id) REFERENCES transaction_events (id),
+    CONSTRAINT uq_notifications_recipient_source_event_type UNIQUE (recipient_id, source_event_id, type),
+    CONSTRAINT uq_notifications_recipient_dedupe UNIQUE (recipient_id, dedupe_key),
+    INDEX idx_notifications_source_event (source_event_id),
     INDEX idx_notifications_recipient_status (recipient_id, status),
     INDEX idx_notifications_recipient_created (recipient_id, created_at)
 ) ENGINE=InnoDB;

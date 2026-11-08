@@ -47,7 +47,7 @@ jobs:
         ports:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=5
-        command: --skip-name-resolve
+        command: --skip-name-resolve --log-bin-trust-function-creators=1
 
     steps:
       - name: Checkout repository
@@ -64,15 +64,18 @@ jobs:
         run: |
           TEST_DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
           E2E_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
+          LEGACY_DB_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
           SEED_PASSWORD="$(openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_')"
           JWT_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
           echo "::add-mask::$TEST_DB_PASSWORD"
           echo "::add-mask::$E2E_PASSWORD"
+          echo "::add-mask::$LEGACY_DB_PASSWORD"
           echo "::add-mask::$SEED_PASSWORD"
           echo "::add-mask::$JWT_SECRET"
           {
             echo "BORROWBOX_APP_DB_PASSWORD=$TEST_DB_PASSWORD"
             echo "BORROWBOX_E2E_DB_PASSWORD=$E2E_PASSWORD"
+            echo "BORROWBOX_LEGACY_DB_PASSWORD=$LEGACY_DB_PASSWORD"
             echo "BORROWBOX_SEED_PASSWORD=$SEED_PASSWORD"
             echo "APP_JWT_SECRET=$JWT_SECRET"
           } >> "$GITHUB_ENV"
@@ -88,6 +91,7 @@ jobs:
           MYSQL_ROOT_USER: root
           MYSQL_ROOT_PASSWORD: ${{ secrets.CI_MYSQL_ROOT_PASSWORD }}
           BORROWBOX_APP_DB_USER: borrowbox_ci_test
+          BORROWBOX_LEGACY_DB_USER: borrowbox_legacy
         run: bash scripts/bootstrap-mysql.sh
 
       - name: Run Backend Tests
@@ -96,6 +100,9 @@ jobs:
           SPRING_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_ci_test
           SPRING_DATASOURCE_USERNAME: borrowbox_ci_test
           SPRING_DATASOURCE_PASSWORD: ${{ env.BORROWBOX_APP_DB_PASSWORD }}
+          BORROWBOX_LEGACY_DATASOURCE_URL: jdbc:mysql://127.0.0.1:3306/borrowbox_legacy_test
+          BORROWBOX_LEGACY_DATASOURCE_USERNAME: borrowbox_legacy
+          BORROWBOX_LEGACY_DATASOURCE_PASSWORD: ${{ env.BORROWBOX_LEGACY_DB_PASSWORD }}
         run: mvn clean test -Dspring.datasource.url=jdbc:mysql://127.0.0.1:3306/borrowbox_ci_test -Dspring.datasource.username=borrowbox_ci_test -Dspring.datasource.password=${BORROWBOX_APP_DB_PASSWORD}
 
       - name: Package Backend JAR
