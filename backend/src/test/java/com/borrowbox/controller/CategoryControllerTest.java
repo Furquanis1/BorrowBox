@@ -2,8 +2,10 @@ package com.borrowbox.controller;
 
 import com.borrowbox.dto.CategoryCreateRequest;
 import com.borrowbox.entity.Category;
+import com.borrowbox.exception.ResourceConflictException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.security.AuthorizationService;
 import com.borrowbox.service.CategoryService;
 import com.borrowbox.service.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -42,6 +45,9 @@ public class CategoryControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private AuthorizationService authorizationService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -105,6 +111,18 @@ public class CategoryControllerTest {
     }
 
     @Test
+    void deleteCategoryReturnsConflictWhenReferenced() throws Exception {
+        Mockito.doThrow(new ResourceConflictException(
+                        "Cannot delete because related records still reference this resource."))
+                .when(categoryService).deleteCategory(4L);
+
+        mockMvc.perform(delete("/api/categories/4"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error")
+                        .value("Cannot delete because related records still reference this resource."));
+    }
+
+    @Test
     void getCategoryByIdNotFoundReturns404() throws Exception {
         Mockito.when(categoryService.getCategoryById(eq(99L)))
                 .thenThrow(new ResourceNotFoundException("Category not found with id: 99"));
@@ -123,5 +141,61 @@ public class CategoryControllerTest {
                 .content(objectMapper.writeValueAsString(invalidReq)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.name").exists());
+    }
+
+    @Test
+    void getAllCategoriesReturnsForbiddenWhenUnauthenticated() throws Exception {
+        Mockito.doThrow(new AccessDeniedException("denied")).when(authorizationService).requireAuthenticated();
+
+        mockMvc.perform(get("/api/categories"))
+                .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(categoryService);
+    }
+
+    @Test
+    void getCategoryByIdReturnsForbiddenWhenUnauthenticated() throws Exception {
+        Mockito.doThrow(new AccessDeniedException("denied")).when(authorizationService).requireAuthenticated();
+
+        mockMvc.perform(get("/api/categories/2"))
+                .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(categoryService);
+    }
+
+    @Test
+    void createCategoryReturnsForbiddenWhenNotAdmin() throws Exception {
+        Mockito.doThrow(new AccessDeniedException("denied")).when(authorizationService).requireAdmin();
+        CategoryCreateRequest req = new CategoryCreateRequest("Books", "Reading materials");
+
+        mockMvc.perform(post("/api/categories")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(categoryService);
+    }
+
+    @Test
+    void updateCategoryReturnsForbiddenWhenNotAdmin() throws Exception {
+        Mockito.doThrow(new AccessDeniedException("denied")).when(authorizationService).requireAdmin();
+        CategoryCreateRequest req = new CategoryCreateRequest("Updated Books", "Updated description");
+
+        mockMvc.perform(put("/api/categories/3")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(categoryService);
+    }
+
+    @Test
+    void deleteCategoryReturnsForbiddenWhenNotAdmin() throws Exception {
+        Mockito.doThrow(new AccessDeniedException("denied")).when(authorizationService).requireAdmin();
+
+        mockMvc.perform(delete("/api/categories/4"))
+                .andExpect(status().isForbidden());
+
+        Mockito.verifyNoInteractions(categoryService);
     }
 }

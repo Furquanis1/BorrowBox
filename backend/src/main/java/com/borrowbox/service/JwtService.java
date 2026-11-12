@@ -2,6 +2,7 @@ package com.borrowbox.service;
 
 import com.borrowbox.entity.User;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
@@ -13,7 +14,6 @@ import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Function;
 
 @Service
 public class JwtService {
@@ -37,17 +37,49 @@ public class JwtService {
     }
 
     public String extractEmail(String token) {
-        return extractClaim(token, Claims::getSubject);
+        Claims claims = parseClaimsOrNull(token);
+        return claims == null ? null : claims.getSubject();
+    }
+
+    public Long extractUserId(String token) {
+        Claims claims = parseClaimsOrNull(token);
+        return claims == null ? null : userId(claims);
     }
 
     public boolean isTokenValid(String token, User user) {
-        final String email = extractEmail(token);
-        return email != null && email.equals(user.getEmail()) && !isTokenExpired(token);
+        if (user == null || user.getId() == null) {
+            return false;
+        }
+
+        Claims claims = parseClaimsOrNull(token);
+        if (claims == null) {
+            return false;
+        }
+
+        Long tokenUserId = userId(claims);
+        String email = claims.getSubject();
+        Date expiration = claims.getExpiration();
+
+        return user.getId().equals(tokenUserId)
+                && user.getEmail() != null
+                && user.getEmail().equals(email)
+                && expiration != null
+                && expiration.after(new Date());
     }
 
-    private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = extractAllClaims(token);
-        return claimsResolver.apply(claims);
+    private Long userId(Claims claims) {
+        Object value = claims.get("userId");
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String string && !string.isBlank()) {
+            try {
+                return Long.valueOf(string);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private String createToken(Map<String, Object> claims, String subject) {
@@ -62,20 +94,17 @@ public class JwtService {
                 .compact();
     }
 
-    private boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
-    }
-
-    private Date extractExpiration(String token) {
-        return extractClaim(token, Claims::getExpiration);
-    }
-
-    private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
-                .build()
-                .parseClaimsJws(token)
-                .getBody();
+    private Claims parseClaimsOrNull(String token) {
+        Key signingKey = getSigningKey();
+        try {
+            return Jwts.parserBuilder()
+                    .setSigningKey(signingKey)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+        } catch (JwtException | IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private Key getSigningKey() {

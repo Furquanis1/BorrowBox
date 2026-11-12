@@ -2,6 +2,7 @@ package com.borrowbox.controller;
 
 import com.borrowbox.dto.CategoryCreateRequest;
 import com.borrowbox.entity.Category;
+import com.borrowbox.security.AuthorizationService;
 import com.borrowbox.service.CategoryService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,34 +23,41 @@ import java.util.List;
 public class CategoryController {
 
     private final CategoryService categoryService;
+    private final AuthorizationService authorizationService;
 
-    public CategoryController(CategoryService categoryService) {
+    public CategoryController(CategoryService categoryService, AuthorizationService authorizationService) {
         this.categoryService = categoryService;
+        this.authorizationService = authorizationService;
     }
 
     @GetMapping
     public ResponseEntity<List<Category>> getAllCategories() {
+        authorizationService.requireAuthenticated();
         return ResponseEntity.ok(categoryService.getAllCategories());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Category> getCategoryById(@PathVariable Long id) {
+        authorizationService.requireAuthenticated();
         return ResponseEntity.ok(categoryService.getCategoryById(id));
     }
 
     @PostMapping
     public ResponseEntity<Category> createCategory(@Valid @RequestBody CategoryCreateRequest request) {
+        authorizationService.requireAdmin();
         Category createdCategory = categoryService.createCategory(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(createdCategory);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Category> updateCategory(@PathVariable Long id, @Valid @RequestBody CategoryCreateRequest request) {
+        authorizationService.requireAdmin();
         return ResponseEntity.ok(categoryService.updateCategory(id, request));
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteCategory(@PathVariable Long id) {
+        authorizationService.requireAdmin();
         categoryService.deleteCategory(id);
         return ResponseEntity.noContent().build();
     }

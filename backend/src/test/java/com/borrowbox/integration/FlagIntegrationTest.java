@@ -204,6 +204,7 @@ public class FlagIntegrationTest {
 
     @Test
     void flagLinkedToSeedTransactionPersistsAndQueriesByTransaction() {
+        seedDataInitializer.seed();
         User ahmed = seedUser("ahmed@example.com");
         Community community = cse();
         Transaction backing = seedCseTransaction();
