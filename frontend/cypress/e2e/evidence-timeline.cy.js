@@ -1,3 +1,5 @@
+const { evidencePhotoBlob } = require('../support/evidencePhoto')
+
 // V2.5.3: evidence presentation -- role-explicit moment labels, the capturedAt
 // timestamp on every row, and the rendered sequence following the server's
 // chronological order (capturedAt ASC, id ASC).
@@ -42,7 +44,7 @@ const post = (build) => cy.wrap(null).then(() => cy.request({ method: 'POST', ur
 const photoForm = (type, conditionNote, conditionRating) => {
   const form = new FormData()
   form.append('type', type)
-  form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+  form.append('file', evidencePhotoBlob(), 'photo.png')
   if (conditionNote != null) form.append('conditionNote', conditionNote)
   if (conditionRating != null) form.append('conditionRating', String(conditionRating))
   return form

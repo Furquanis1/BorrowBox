@@ -34,6 +34,19 @@ class EvidenceStorageServiceTest {
     }
 
     @Test
+    void dataIsReadableByAnotherServiceInstanceUsingTheSameDirectory() throws IOException {
+        String ref = service().store(new byte[]{4, 5, 6});
+
+        EvidenceStorageService restarted = service();
+
+        assertThat(restarted.load(ref)).containsExactly(4, 5, 6);
+        try (var files = Files.list(tempDir)) {
+            assertThat(files.map(path -> path.getFileName().toString()))
+                    .containsExactly(ref);
+        }
+    }
+
+    @Test
     void deleteRemovesStoredFile() {
         EvidenceStorageService storage = service();
         String ref = storage.store(new byte[]{1});

@@ -5,9 +5,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -32,10 +34,20 @@ public class EvidenceStorageService {
     public String store(byte[] content) {
         String ref = UUID.randomUUID().toString();
         Path path = root.resolve(ref);
+        Path temporaryPath = root.resolve(ref + ".tmp");
         try {
             Files.createDirectories(root);
-            Files.write(path, content);
+            Files.write(temporaryPath, content);
+            try {
+                Files.move(temporaryPath, path, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ex) {
+                Files.move(temporaryPath, path);
+            }
         } catch (IOException ex) {
+            try {
+                Files.deleteIfExists(temporaryPath);
+            } catch (IOException ignored) {
+            }
             delete(ref);
             throw new IllegalStateException("Could not store evidence", ex);
         }

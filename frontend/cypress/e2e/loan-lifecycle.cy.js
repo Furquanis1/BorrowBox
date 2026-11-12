@@ -1,3 +1,5 @@
+const { evidencePhotoBlob } = require('../support/evidencePhoto')
+
 /**
  * V2.2.3 Loan Lifecycle Coverage
  *
@@ -48,14 +50,14 @@ describe('V2.2.3 Loan Lifecycle', () => {
   }
 
   // V2.2.6: system-issued evidence uploads. The browser builds a multipart body;
-  // the binary content is arbitrary (only content-type + size are validated).
+  // the binary content is a real PNG because the backend validates the bytes.
   // `buildTxnId` may be a value or a thunk; the id is read at execution time.
   const uploadPhoto = (buildTxnId, type) =>
     cy.wrap(null).then(() => {
       const id = typeof buildTxnId === 'function' ? buildTxnId() : buildTxnId
       const form = new FormData()
       form.append('type', type)
-      form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+      form.append('file', evidencePhotoBlob(), 'photo.png')
       return cy.request({ method: 'POST', url: `/api/transactions/${id}/evidence`, body: form, failOnStatusCode: true })
     })
 

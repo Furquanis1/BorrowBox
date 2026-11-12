@@ -9,7 +9,7 @@ REM  Usage:
 REM    run_demo.bat            Start all services (build if needed)
 REM    run_demo.bat --build    Force a full rebuild of all images
 REM    run_demo.bat --stop     Stop and remove all containers
-REM    run_demo.bat --clean    Stop containers, remove volumes, and clear demo credentials
+REM    run_demo.bat --clean    Stop containers, remove ALL volumes (database + evidence), and clear demo credentials
 REM ──────────────────────────────────────────────────────────
 
 echo.
@@ -314,6 +314,7 @@ echo [OK]    Containers stopped.
 goto :eof
 
 :do_clean
+echo [WARN]  --clean permanently deletes the demo database and all stored evidence photos.
 echo [INFO]  Stopping containers and removing volumes...
 call :ensure_compose_interpolation_defaults
 if errorlevel 1 exit /b 1
@@ -323,7 +324,7 @@ if errorlevel 1 (
     exit /b 1
 )
 if exist "%CREDENTIALS_FILE%" del /q "%CREDENTIALS_FILE%" >nul 2>&1
-echo [OK]    Containers stopped, volumes removed, and local demo credentials cleared.
+echo [OK]    Containers stopped, database/evidence volumes removed, and local demo credentials cleared.
 goto :eof
 
 :do_start_build

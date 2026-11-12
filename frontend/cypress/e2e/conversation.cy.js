@@ -1,3 +1,5 @@
+const { evidencePhotoBlob } = require('../support/evidencePhoto')
+
 /**
  * V2.2.3 Transaction Conversation Coverage
  *
@@ -28,14 +30,14 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.request({ method: 'POST', url: '/api/auth/login', body: user, failOnStatusCode: true })
   }
 
-  // V2.2.6: system-issued evidence uploads; binary content is arbitrary
-  // (only content-type + size are validated by the backend).
+  // V2.2.6: system-issued evidence uploads; the backend validates the bytes
+  // are a real PNG or JPEG, so this helper sends the shared valid PNG fixture.
   const uploadPhoto = (buildTxnId, type) =>
     cy.wrap(null).then(() => {
       const id = typeof buildTxnId === 'function' ? buildTxnId() : buildTxnId
       const form = new FormData()
       form.append('type', type)
-      form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+      form.append('file', evidencePhotoBlob(), 'photo.png')
       return cy.request({ method: 'POST', url: `/api/transactions/${id}/evidence`, body: form, failOnStatusCode: true })
     })
 

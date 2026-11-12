@@ -548,7 +548,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
               <input
                 ref={lenderPreRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg"
                 hidden
                 onChange={(event) => {
                   handleSelectLenderPhoto('LENDER_PRE_LENDING', event.target.files[0])
@@ -558,7 +558,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
               <input
                 ref={lenderHandoverRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg"
                 hidden
                 onChange={(event) => {
                   handleSelectLenderPhoto('LENDER_HANDOVER', event.target.files[0])
@@ -697,7 +697,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
               <input
                 ref={preRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg"
                 hidden
                 onChange={(event) => {
                   handleUploadEvidence('BORROWER_PRE_RETURN', event.target.files[0])
@@ -707,7 +707,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
               <input
                 ref={handoverRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg"
                 hidden
                 onChange={(event) => {
                   handleUploadEvidence('BORROWER_RETURN_HANDOVER', event.target.files[0])
