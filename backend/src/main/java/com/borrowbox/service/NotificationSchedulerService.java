@@ -22,9 +22,10 @@ import java.util.List;
  * hours) or overdue (past due date), and sends notifications to the borrower
  * (and lender for overdue) accordingly.
  *
- * Duplicate prevention: each notification type + transaction combination is
- * created at most once, enforced by the UNIQUE(user_id, type, transaction_id)
- * constraint on the notifications table plus an existence check before insert.
+ * Duplicate prevention: scheduled reminders are state notifications, so each
+ * recipient/type/transaction combination is created at most once. This is
+ * enforced by the explicit existence check before insert; notifications for
+ * repeatable transaction events are append-only and may legitimately repeat.
  */
 @Service
 public class NotificationSchedulerService {

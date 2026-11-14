@@ -134,6 +134,23 @@ After startup:
   - `mysql_data` for MySQL data.
   - `media_data` for evidence photos.
 
+## CORS and deployment topology
+
+The backend's `CorsConfig` currently allows only localhost and 127.0.0.1 origins
+on ports 3000 and 5173. A same-origin deployment that serves the frontend and
+reverse-proxies `/api` through the same origin, as the bundled Nginx container
+does, does not require cross-origin browser access. A separately hosted frontend
+is a different origin and requires an explicitly configured and reviewed backend
+CORS allowlist. Because browsers can send an `Origin` header on non-GET requests
+even when the page and API share an origin, verify the deployed origin against
+the backend allowlist (or the proxy's header handling) before treating a new
+hostname as production-ready.
+
+The final Cypress production-preview run used a temporary proxy that removed the
+`Origin` request header. That made the suite pass without exercising the real
+browser CORS path; it does not demonstrate that an arbitrary cross-origin
+production deployment works.
+
 ## Evidence storage
 
 Evidence image bytes live only in the `media_data` volume. MySQL stores the
@@ -217,11 +234,11 @@ volume, and the launchers never rotate it automatically.
 
 The `mysql-bootstrap` service runs on every local start and uses the stored root
 password once to ensure `borrowbox_app` and `borrowbox_e2e` exist. It uses
-`CREATE USER IF NOT EXISTS` and does not run `ALTER USER`, so it cannot silently
-change a password stored in an existing volume. If an app account already exists
-with a different password, the backend fails authentication; use the credential
-that account already has, or perform an explicit coordinated rotation. The
-backend never falls back to root.
+`CREATE USER IF NOT EXISTS` followed by `ALTER USER`, so the configured
+application and E2E passwords are applied during every bootstrap run. Backend
+credentials must match the latest bootstrap configuration; changing credentials
+therefore requires coordinating the bootstrap configuration with a backend
+restart so the backend uses the new value. The backend never falls back to root.
 
 - The launchers never delete a volume automatically. Only the explicit,
   destructive `--clean` action removes the `mysql_data` and `media_data`
@@ -477,7 +494,9 @@ known evidence content URL and the backend health endpoint.
   `mysql_data` named volume. Its stored root password does not change when the
   credential file changes.
 - The mysql-bootstrap service creates app/E2E accounts with idempotent
-  `CREATE USER IF NOT EXISTS`; it never silently rotates existing passwords.
+  `CREATE USER IF NOT EXISTS` and applies the configured passwords with
+  `ALTER USER` on every start; keep backend credentials aligned with the latest
+  bootstrap configuration and restart the backend after changing them.
 - The demo scripts wait up to 120 seconds for the backend health endpoint before
   timing out.
 - The backend runs as the non-root `borrowbox` user and owns `/app/media`.

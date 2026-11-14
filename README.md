@@ -8,7 +8,7 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-57_Tests_Passing-green?logo=cypress)
+![Cypress](https://img.shields.io/badge/Cypress-161_Tests_Passing-green?logo=cypress)
 
 ---
 
@@ -91,7 +91,7 @@ V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction eng
 | **Frontend SPA** | React 18.2, Vite 5, React Router 7, Custom CSS Design System |
 | **API Docs** | Springdoc OpenAPI 3.0 / Swagger UI |
 | **DevOps & Containerization** | Multi-stage Docker builds, Docker Compose, Nginx reverse proxy, launch scripts (`run_demo.bat` / `run_demo.sh`) |
-| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (57 automated tests) |
+| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (161 automated tests across 23 specs) |
 | **CI/CD** | GitHub Actions ([build.yml](.github/workflows/build.yml), [e2e.yml](.github/workflows/e2e.yml), [deploy.yml](.github/workflows/deploy.yml)) |
 
 ---
@@ -266,7 +266,7 @@ npm run build
 ```
 *Validates modules, compiles JSX, bundles CSS, and confirms production asset generation with zero errors.*
 
-### Run Cypress End-to-End Tests (57 Tests)
+### Run Cypress End-to-End Tests (161 Tests across 23 Specs)
 With the application running on `http://localhost:3000`, and a seeded backend:
 ```bash
 cd frontend
@@ -346,8 +346,8 @@ Here are practical solutions for common local development and runtime issues:
 
 ### 8. Application Account Authentication Fails
 - **Symptom:** The backend reports `Access denied for user 'borrowbox_app'`.
-- **Cause:** The `mysql_data` volume contains an app account with a password that does not match `BORROWBOX_APP_DB_PASSWORD`; bootstrap uses `CREATE USER IF NOT EXISTS` and deliberately does not alter existing users.
-- **Fix:** Use the credential the existing account already has, or perform an explicit coordinated `ALTER USER` and update `.borrowbox-demo-credentials`. Do not switch the backend to root.
+- **Cause:** The bootstrap service applies the configured passwords on every start with `CREATE USER IF NOT EXISTS` followed by `ALTER USER` for `borrowbox_app` and `borrowbox_e2e`. An authentication failure means the backend's datasource password does not match the latest bootstrap configuration.
+- **Fix:** Set the backend's `BORROWBOX_APP_DB_PASSWORD`/`SPRING_DATASOURCE_PASSWORD` to the value in `.borrowbox-demo-credentials` or the deployment secret store, restart the backend after bootstrap completes, and do not switch the backend to root.
 
 ### 9. Inspecting Container Logs
 - **Backend logs:** `docker compose logs -f backend`
@@ -379,8 +379,8 @@ BorrowBox/
 │   ├── src/test/java/        # Unit, service, controller, and integration tests
 │   └── Dockerfile
 ├── frontend/                 # React 18 + Vite SPA
-│   ├── cypress/              # Cypress E2E tests (6 spec files, 57 tests)
-│   │   └── e2e/              # auth, landing, dashboard, listings, completion, loan-lifecycle
+│   ├── cypress/              # Cypress E2E tests (23 spec files, 161 tests)
+│   │   └── e2e/              # auth, community, listings, loans, evidence, extensions, flags, reputation, rules, waitlists
 │   ├── src/
 │   │   ├── components/       # UI components
 │   │   ├── contexts/         # React Contexts (AuthContext)

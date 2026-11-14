@@ -23,13 +23,11 @@ import java.time.LocalDateTime;
  * The notification is owned by its recipient ({@code recipient_id}) and may
  * reference the transaction ({@code transaction_id}) that triggered it.
  *
- * <p>Idempotency note: notifications are created only inside the same
- * {@code @Transactional} method as the transaction state change that triggers
- * them. Because each transaction state transition happens at most once
- * (forward-only state machine guarded by {@code requireState}), the same
- * notification type is created at most once per transaction. There is no
- * separate dedup table; retries after a successful transition are no-ops at the
- * state layer rather than producing duplicate notifications.
+ * <p>Notifications are append-only event records. Repeatable transaction
+ * events (for example extension request/reject cycles) create a new row each
+ * time, so the same recipient/type/transaction combination may appear more than
+ * once. Scheduled reminders such as LOAN_DUE_SOON and LOAN_OVERDUE are
+ * deduplicated by NotificationSchedulerService before insert.
  */
 @Entity
 @Table(name = "notifications")

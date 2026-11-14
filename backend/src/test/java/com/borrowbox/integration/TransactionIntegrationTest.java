@@ -20,6 +20,7 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
@@ -38,6 +39,7 @@ import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
+import com.borrowbox.service.NotificationService;
 import com.borrowbox.service.WaitlistService;
 import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.Test;
@@ -100,6 +102,7 @@ public class TransactionIntegrationTest {
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
     @Autowired private EvidenceRepository evidenceRepository;
+    @Autowired private NotificationService notificationService;
     @Autowired private PlatformTransactionManager platformTransactionManager;
     @Value("${borrowbox.media.dir}") private String mediaDir;
 
@@ -685,6 +688,39 @@ public class TransactionIntegrationTest {
         TransactionResponse rejected = transactionService.rejectExtension(active.id(), ahmed);
         assertThat(rejected.dueAt()).isEqualTo(originalDue);
         assertThat(rejected.extensionRequestedDueAt()).isNull();
+    }
+
+    @Test
+    @Transactional
+    void repeatedExtensionRequestThenRejectCreatesSeparateNotifications() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        LocalDateTime originalDue = active.dueAt();
+
+        transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(3), "First"), salah);
+        transactionService.rejectExtension(active.id(), ahmed);
+
+        TransactionResponse secondRequest = transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(5), "Second"), salah);
+        TransactionResponse secondRejected = transactionService.rejectExtension(active.id(), ahmed);
+
+        assertThat(secondRequest.extensionRequestPending()).isTrue();
+        assertThat(secondRejected.dueAt()).isEqualTo(originalDue);
+        assertThat(secondRejected.extensionRequestedAt()).isNull();
+
+        assertThat(notificationService.listForUser(ahmed))
+                .filteredOn(n -> n.type() == NotificationType.EXTENSION_REQUESTED
+                        && active.id().equals(n.transactionId()))
+                .hasSize(2);
+        assertThat(notificationService.listForUser(salah))
+                .filteredOn(n -> n.type() == NotificationType.EXTENSION_REJECTED
+                        && active.id().equals(n.transactionId()))
+                .hasSize(2);
     }
 
     @Test

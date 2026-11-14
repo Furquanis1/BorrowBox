@@ -24,10 +24,10 @@
 --
 -- which drops and recreates borrowbox_v2 so schema.sql rebuilds every table from
 -- scratch. This patch file covers the case where you do NOT want to destroy
--- data. It is additive, idempotent, and runs on every startup immediately after
--- schema.sql (wired in application.properties via spring.sql.init.schema-locations).
--- It is a no-op on a fresh database, where schema.sql already created every
--- column and index.
+-- data. It is idempotent and runs on every startup immediately after schema.sql
+-- (wired in application.properties via spring.sql.init.schema-locations). It is
+-- a no-op on a fresh database, where schema.sql already created every column
+-- and index.
 --
 -- WHY THE information_schema / PREPARE IDIOM
 --
@@ -217,15 +217,15 @@ EXECUTE borrowbox_patch_stmt;
 DEALLOCATE PREPARE borrowbox_patch_stmt;
 
 -- ---------------------------------------------------------------------------
--- V2.6.0: notifications table uniqueness constraint.
---
--- Ensures at most one notification per (user, type, transaction) combination,
--- making the seed process idempotent across scheduler runs.
+-- V2.6.0: notifications are append-only events, so the old uniqueness
+-- constraint is too broad for repeatable events such as extension request /
+-- reject cycles. Drop it when present and keep a non-unique lookup index for
+-- the scheduler's explicit existence check.
 -- ---------------------------------------------------------------------------
 SET @borrowbox_patch_ddl = (
     SELECT IF(
-        COUNT(*) = 0,
-        'ALTER TABLE notifications ADD CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id)',
+        COUNT(*) > 0,
+        'ALTER TABLE notifications DROP INDEX uq_notifications_user_type_transaction',
         'SELECT 1'
     )
     FROM information_schema.STATISTICS
@@ -233,6 +233,21 @@ SET @borrowbox_patch_ddl = (
       AND TABLE_NAME = 'notifications'
       AND INDEX_NAME = 'uq_notifications_user_type_transaction'
       AND NON_UNIQUE = 0
+);
+PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
+EXECUTE borrowbox_patch_stmt;
+DEALLOCATE PREPARE borrowbox_patch_stmt;
+
+SET @borrowbox_patch_ddl = (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE notifications ADD INDEX idx_notifications_user_type_transaction (recipient_id, type, transaction_id)',
+        'SELECT 1'
+    )
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'notifications'
+      AND INDEX_NAME = 'idx_notifications_user_type_transaction'
 );
 PREPARE borrowbox_patch_stmt FROM @borrowbox_patch_ddl;
 EXECUTE borrowbox_patch_stmt;
