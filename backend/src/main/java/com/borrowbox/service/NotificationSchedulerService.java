@@ -50,7 +50,7 @@ public class NotificationSchedulerService {
      * Notifications are sent only once per transaction per type.
      */
     @Scheduled(fixedDelayString = "${borrowbox.notification.check-interval-seconds:300}")
-    @Transactional(readOnly = true)
+    @Transactional
     public void checkDueSoonAndOverdue() {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime dueSoonThreshold = now.plusHours(24);
