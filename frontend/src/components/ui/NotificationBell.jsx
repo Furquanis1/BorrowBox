@@ -1,25 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useApp } from '../../contexts/AppContext'
 import { notificationService } from '../../services'
-
-const TYPE_LABELS = {
-  LOAN_APPROVED: 'Loan approved',
-  LOAN_REJECTED: 'Loan rejected',
-  LOAN_CANCELLED: 'Loan cancelled',
-  HANDOVER_SCHEDULED: 'Handover scheduled',
-  LOAN_STARTED: 'Loan started',
-  RECEIPT_CONFIRMED: 'Receipt confirmed',
-  RETURN_INITIATED: 'Return initiated',
-  RETURN_HANDOVER_REPORTED: 'Return handback reported',
-  RETURN_DISPUTED: 'Return disputed',
-  LOAN_COMPLETED: 'Loan completed',
-  EXTENSION_REQUESTED: 'Extension requested',
-  EXTENSION_APPROVED: 'Extension approved',
-  EXTENSION_REJECTED: 'Extension rejected',
-  EXTENSION_COUNTERED: 'Extension countered',
-  EXTENSION_COUNTER_ACCEPTED: 'Extension counter accepted',
-  EXTENSION_COUNTER_REJECTED: 'Extension counter rejected',
-}
 
 export default function NotificationBell() {
   const { showToast } = useApp()
@@ -27,46 +8,106 @@ export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [markingIds, setMarkingIds] = useState(() => new Set())
+
+  const containerRef = useRef(null)
+  const notificationsRef = useRef([])
+  const fetchInFlightRef = useRef(false)
+  const hasLoadedRef = useRef(false)
+  const dataVersionRef = useRef(0)
+  const markingIdsRef = useRef(new Set())
 
   const fetchNotifications = useCallback(async () => {
-    setLoading(true)
+    if (fetchInFlightRef.current) return
+    fetchInFlightRef.current = true
+    const versionAtStart = dataVersionRef.current
+    if (!hasLoadedRef.current) setLoading(true)
     try {
       const [notifs, countRes] = await Promise.all([
         notificationService.listNotifications(),
         notificationService.getUnreadCount(),
       ])
+      if (versionAtStart !== dataVersionRef.current) return
+      notificationsRef.current = notifs
       setNotifications(notifs)
       setUnreadCount(countRes)
     } catch (err) {
       console.error('Failed to fetch notifications:', err)
     } finally {
+      fetchInFlightRef.current = false
+      hasLoadedRef.current = true
       setLoading(false)
     }
   }, [])
 
-  const handleMarkAsRead = async (id) => {
+  const handleMarkAsRead = useCallback(async (id) => {
+    if (markingIdsRef.current.has(id)) return
+
+    markingIdsRef.current.add(id)
+    setMarkingIds(new Set(markingIdsRef.current))
+
     try {
-      await notificationService.markAsRead(id)
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, status: 'READ', readAt: new Date().toISOString() } : n))
+      const updated = await notificationService.markAsRead(id)
+      const next = notificationsRef.current.map((notification) =>
+        notification.id === id
+          ? { ...notification, ...(updated || {}) }
+          : notification
       )
-      setUnreadCount((prev) => Math.max(0, prev - 1))
+      notificationsRef.current = next
+      dataVersionRef.current += 1
+      setNotifications(next)
+      setUnreadCount(next.filter((notification) => notification.status === 'UNREAD').length)
       showToast('Notification marked as read', 'success')
     } catch (err) {
       showToast('Failed to mark notification as read', 'danger')
+    } finally {
+      markingIdsRef.current.delete(id)
+      setMarkingIds(new Set(markingIdsRef.current))
     }
-  }
+  }, [showToast])
 
   useEffect(() => {
     fetchNotifications()
   }, [fetchNotifications])
 
+  useEffect(() => {
+    if (isOpen) fetchNotifications()
+  }, [isOpen, fetchNotifications])
+
+  useEffect(() => {
+    const handleWindowFocus = () => fetchNotifications()
+    window.addEventListener('focus', handleWindowFocus)
+    return () => window.removeEventListener('focus', handleWindowFocus)
+  }, [fetchNotifications])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleMouseDown = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isOpen])
+
   return (
-    <div className="notification-bell" ref={null}>
+    <div className="notification-bell" ref={containerRef}>
       <button
         type="button"
         className={`notification-bell-btn ${unreadCount > 0 ? 'has-unread' : ''}`}
         aria-label={`Notifications${unreadCount > 0 ? ', ' + unreadCount + ' unread' : ''}`}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
         onClick={() => setIsOpen((prev) => !prev)}
       >
         <i className={`bi bi-${unreadCount > 0 ? 'bell-fill' : 'bell'}`} aria-hidden="true" />
@@ -114,6 +155,8 @@ export default function NotificationBell() {
                       <button
                         type="button"
                         className="btn btn-sm btn-outline"
+                        disabled={markingIds.has(n.id)}
+                        aria-busy={markingIds.has(n.id)}
                         onClick={(e) => {
                           e.stopPropagation()
                           handleMarkAsRead(n.id)
