@@ -4,11 +4,13 @@ import com.borrowbox.dto.AuthResponse;
 import com.borrowbox.dto.LoginRequest;
 import com.borrowbox.dto.UserCreateRequest;
 import com.borrowbox.entity.User;
+import com.borrowbox.entity.UserStatus;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.ResponseCookie;
@@ -27,14 +29,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final String JWT_COOKIE_NAME = "jwt";
+    private static final String JWT_COOKIE_SAME_SITE = "Lax";
+
     private final UserService userService;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final boolean cookieSecure;
 
-    public AuthController(UserService userService, JwtService jwtService, PasswordEncoder passwordEncoder) {
+    public AuthController(UserService userService, JwtService jwtService, PasswordEncoder passwordEncoder,
+                          @Value("${app.jwt.cookie-secure:false}") boolean cookieSecure) {
         this.userService = userService;
         this.jwtService = jwtService;
         this.passwordEncoder = passwordEncoder;
+        this.cookieSecure = cookieSecure;
     }
 
     @PostMapping("/register")
@@ -42,13 +50,7 @@ public class AuthController {
         User createdUser = userService.createUser(request);
         String token = jwtService.generateToken(createdUser);
         
-        ResponseCookie cookie = ResponseCookie.from("jwt", token)
-                .httpOnly(true)
-                .secure(false) // Set to true in prod/HTTPS
-                .path("/")
-                .maxAge(jwtService.getExpirationMs() / 1000)
-                .sameSite("Lax")
-                .build();
+        ResponseCookie cookie = buildJwtCookie(token, jwtService.getExpirationMs() / 1000);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -68,15 +70,13 @@ public class AuthController {
             throw new UnauthorizedException("Invalid email or password");
         }
 
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw new UnauthorizedException("Invalid email or password");
+        }
+
         String token = jwtService.generateToken(user);
         
-        ResponseCookie cookie = ResponseCookie.from("jwt", token)
-                .httpOnly(true)
-                .secure(false) // Set to true in prod/HTTPS
-                .path("/")
-                .maxAge(jwtService.getExpirationMs() / 1000)
-                .sameSite("Lax")
-                .build();
+        ResponseCookie cookie = buildJwtCookie(token, jwtService.getExpirationMs() / 1000);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
@@ -112,16 +112,20 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
-        ResponseCookie cookie = ResponseCookie.from("jwt", "")
-                .httpOnly(true)
-                .secure(false)
-                .path("/")
-                .maxAge(0)
-                .sameSite("Lax")
-                .build();
+        ResponseCookie cookie = buildJwtCookie("", 0);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
+                .build();
+    }
+
+    private ResponseCookie buildJwtCookie(String value, long maxAgeSeconds) {
+        return ResponseCookie.from(JWT_COOKIE_NAME, value)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .path("/")
+                .maxAge(maxAgeSeconds)
+                .sameSite(JWT_COOKIE_SAME_SITE)
                 .build();
     }
 }

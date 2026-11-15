@@ -1,22 +1,38 @@
 package com.borrowbox.integration;
 
 import com.borrowbox.dto.NotificationResponse;
+import com.borrowbox.entity.Asset;
+import com.borrowbox.entity.Community;
+import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.Notification;
 import com.borrowbox.entity.NotificationStatus;
 import com.borrowbox.entity.NotificationType;
+import com.borrowbox.entity.Transaction;
+import com.borrowbox.entity.TransactionEvent;
+import com.borrowbox.entity.TransactionEventType;
+import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.entity.UserStatus;
 import com.borrowbox.exception.ResourceNotFoundException;
+import com.borrowbox.repository.AssetRepository;
+import com.borrowbox.repository.CommunityListingRepository;
+import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.NotificationRepository;
+import com.borrowbox.repository.TransactionEventRepository;
+import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.service.CommunityService;
+import com.borrowbox.service.NotificationSchedulerService;
 import com.borrowbox.service.NotificationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,14 +43,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Verifies the V2.6 notification service: listing a user's notifications,
  * unread count, marking as read, and cross-user access rejection.
  */
-@SpringBootTest
+@SpringBootTest(properties = "borrowbox.notification.scheduler.enabled=true")
 @ActiveProfiles("test")
 @Transactional
+@Import(NoAutomaticSchedulingConfig.class)
 public class NotificationIntegrationTest {
 
     @Autowired private NotificationService notificationService;
+    @Autowired private NotificationSchedulerService notificationSchedulerService;
     @Autowired private NotificationRepository notificationRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private CommunityService communityService;
+    @Autowired private CommunityRepository communityRepository;
+    @Autowired private AssetRepository assetRepository;
+    @Autowired private CommunityListingRepository communityListingRepository;
+    @Autowired private TransactionRepository transactionRepository;
+    @Autowired private TransactionEventRepository transactionEventRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
     private User createUser(String email) {
@@ -55,6 +79,31 @@ public class NotificationIntegrationTest {
         notification.setMessage(message);
         notification.setStatus(NotificationStatus.UNREAD);
         return notificationRepository.saveAndFlush(notification);
+    }
+
+    private TransactionEvent persistEvent(Transaction txn, TransactionEventType type) {
+        TransactionEvent event = new TransactionEvent();
+        event.setTransaction(txn);
+        event.setEventType(type);
+        event.setActor(txn.getLender());
+        return transactionEventRepository.saveAndFlush(event);
+    }
+
+    private record NotificationWorld(Community community, CommunityListing listing, Asset asset,
+                                     User borrower, User lender) {
+    }
+
+    private NotificationWorld notificationWorld() {
+        User manager = V242IntegrationFixture.newUser(userRepository, "NotifyMgr");
+        User lender = V242IntegrationFixture.newUser(userRepository, "NotifyLender");
+        User borrower = V242IntegrationFixture.newUser(userRepository, "NotifyBorrower");
+        Community community = V242IntegrationFixture.newCommunity(
+                communityService, communityRepository, manager);
+        Asset asset = V242IntegrationFixture.newAsset(
+                assetRepository, lender, "Notification Tool");
+        CommunityListing listing = V242IntegrationFixture.newListing(
+                communityListingRepository, asset, community);
+        return new NotificationWorld(community, listing, asset, borrower, lender);
     }
 
     @Test
@@ -148,5 +197,81 @@ public class NotificationIntegrationTest {
         assertThatThrownBy(() -> notificationService.markAsRead(created.getId(), other))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Notification not found with id:");
+    }
+
+    @Test
+    void sameRecipientTypeAndTransactionCanRepeat() {
+        NotificationWorld w = notificationWorld();
+        Transaction txn = V242IntegrationFixture.newTransaction(
+                transactionRepository, w.community(), w.listing(), w.asset(),
+                w.borrower(), w.lender(), TransactionStatus.ACTIVE,
+                LocalDateTime.now().plusDays(2), null);
+
+        Notification first = notificationService.createForEvent(
+                persistEvent(txn, TransactionEventType.EXTENSION_REQUESTED),
+                w.lender(), NotificationType.EXTENSION_REQUESTED,
+                "Extension requested", "First request.").orElseThrow();
+        Long firstId = first.getId();
+        notificationService.markAsRead(firstId, w.lender());
+
+        Notification reactivated = notificationService.createForEvent(
+                persistEvent(txn, TransactionEventType.EXTENSION_REQUESTED),
+                w.lender(), NotificationType.EXTENSION_REQUESTED,
+                "Extension requested", "Second request.").orElseThrow();
+
+        List<Notification> matches = notificationRepository
+                .findByRecipientIdAndStatusNotOrderByCreatedAtDescIdDesc(
+                        w.lender().getId(), NotificationStatus.SUPPRESSED)
+                .stream()
+                .filter(n -> n.getType() == NotificationType.EXTENSION_REQUESTED
+                        && txn.getId().equals(n.getTransactionId()))
+                .toList();
+
+        assertThat(reactivated.getId()).isEqualTo(firstId);
+        assertThat(matches).hasSize(1);
+        Notification reactivatedRow = matches.get(0);
+        assertThat(reactivatedRow.getId()).isEqualTo(firstId);
+        assertThat(reactivatedRow.getMessage()).isEqualTo("Second request.");
+        assertThat(reactivatedRow.getStatus()).isEqualTo(NotificationStatus.UNREAD);
+        assertThat(reactivatedRow.getReadAt()).isNull();
+    }
+
+    @Test
+    void schedulerDeduplicatesDueSoonAndOverdueNotifications() {
+        NotificationWorld w = notificationWorld();
+        LocalDateTime now = LocalDateTime.now();
+        Transaction txn = V242IntegrationFixture.newTransaction(
+                transactionRepository, w.community(), w.listing(), w.asset(),
+                w.borrower(), w.lender(), TransactionStatus.ACTIVE,
+                now.plusHours(1), null);
+
+        notificationSchedulerService.checkDueSoonAndOverdue();
+        notificationSchedulerService.checkDueSoonAndOverdue();
+
+        assertThat(notificationRepository
+                .findByRecipientIdAndStatusNotOrderByCreatedAtDescIdDesc(
+                        w.borrower().getId(), NotificationStatus.SUPPRESSED))
+                .filteredOn(n -> n.getType() == NotificationType.LOAN_DUE_SOON
+                        && txn.getId().equals(n.getTransactionId()))
+                .hasSize(1);
+
+        txn.setDueAt(now.minusHours(1));
+        transactionRepository.saveAndFlush(txn);
+
+        notificationSchedulerService.checkDueSoonAndOverdue();
+        notificationSchedulerService.checkDueSoonAndOverdue();
+
+        assertThat(notificationRepository
+                .findByRecipientIdAndStatusNotOrderByCreatedAtDescIdDesc(
+                        w.borrower().getId(), NotificationStatus.SUPPRESSED))
+                .filteredOn(n -> n.getType() == NotificationType.LOAN_OVERDUE
+                        && txn.getId().equals(n.getTransactionId()))
+                .hasSize(1);
+        assertThat(notificationRepository
+                .findByRecipientIdAndStatusNotOrderByCreatedAtDescIdDesc(
+                        w.lender().getId(), NotificationStatus.SUPPRESSED))
+                .filteredOn(n -> n.getType() == NotificationType.LOAN_OVERDUE
+                        && txn.getId().equals(n.getTransactionId()))
+                .hasSize(1);
     }
 }

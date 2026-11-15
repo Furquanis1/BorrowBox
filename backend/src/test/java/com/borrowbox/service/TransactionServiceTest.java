@@ -32,6 +32,7 @@ import com.borrowbox.repository.CommunityRuleRepository;
 import com.borrowbox.repository.EvidenceRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.service.TransactionEventService;
+import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -158,7 +159,8 @@ public class TransactionServiceTest {
                 transactionRepository, listingRepository, assetUnitRepository,
                 assetUnitConditionHistoryRepository, communityRuleRepository,
                 membershipService, messageService,
-                evidenceRepository, evidenceStorageService, waitlistService,
+                evidenceRepository, evidenceStorageService, new EvidenceImageValidator(50_000_000L, 10_000),
+                waitlistService,
                 eventService, reputationEventService, notificationService,
                 5_242_880L,
                 true, pendingHours, counterHours, approvedHours, handoverHours);
@@ -242,12 +244,12 @@ public class TransactionServiceTest {
         });
         when(evidenceRepository.findByTransactionIdAndType(anyLong(), eq(EvidenceType.LENDER_HANDOVER)))
                 .thenAnswer(inv -> saved.get() != null ? List.of(saved.get()) : List.of());
-        MockMultipartFile file = new MockMultipartFile("file", "handover.png", "image/png", new byte[]{1, 2});
+        MockMultipartFile file = imagePhoto();
         transactionService.uploadEvidence(1L, EvidenceType.LENDER_HANDOVER, file, null, null, owner);
     }
 
     private MockMultipartFile imagePhoto() {
-        return new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1});
+        return new MockMultipartFile("file", "photo.png", "image/png", TestImages.png());
     }
 
     // ── create ────────────────────────────────────────────────────────
@@ -1659,8 +1661,9 @@ public class TransactionServiceTest {
             e.setId(7L);
             return e;
         });
+        byte[] image = TestImages.png();
         MockMultipartFile file = new MockMultipartFile(
-                "file", "photo.png", "image/png", new byte[]{1, 2, 3});
+                "file", "photo.png", "image/png", image);
 
         EvidenceResponse response = transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower);
 
@@ -1668,7 +1671,7 @@ public class TransactionServiceTest {
         assertThat(response.type()).isEqualTo(EvidenceType.BORROWER_PRE_RETURN);
         assertThat(response.capturerId()).isEqualTo(101L);
         assertThat(response.contentType()).isEqualTo("image/png");
-        assertThat(response.sizeBytes()).isEqualTo(3L);
+        assertThat(response.sizeBytes()).isEqualTo((long) image.length);
         assertThat(response.contentUrl()).endsWith("/evidence/7/content");
         assertThat(response.conditionNote()).isNull();
         assertThat(response.conditionRating()).isNull();
@@ -1701,16 +1704,37 @@ public class TransactionServiceTest {
     }
 
     @Test
-    void uploadEvidenceRejectsNonImageContentType() {
+    void uploadEvidenceRejectsSpoofedImageContentType() {
         Transaction txn = pending(unit);
         txn.setState(TransactionStatus.RETURN_INITIATED);
         when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
         MockMultipartFile file = new MockMultipartFile(
-                "file", "note.txt", "text/plain", new byte[]{1});
+                "file", "note.png", "image/png", new byte[]{1});
 
         assertThatThrownBy(() -> transactionService.uploadEvidence(1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower))
                 .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessage("Evidence must be an image file");
+                .hasMessageContaining("valid PNG or JPEG");
+        verify(evidenceStorageService, never()).store(any(byte[].class));
+    }
+
+    @Test
+    void uploadEvidenceIgnoresClientContentTypeAndStoresCanonicalType() {
+        Transaction txn = pending(unit);
+        txn.setState(TransactionStatus.RETURN_INITIATED);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(evidenceStorageService.store(any(byte[].class))).thenReturn("11111111-2222-3333-4444-555555555555");
+        when(evidenceRepository.save(any(Evidence.class))).thenAnswer(inv -> {
+            Evidence e = inv.getArgument(0);
+            e.setId(7L);
+            return e;
+        });
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "evidence.bin", "application/octet-stream", TestImages.jpeg());
+
+        EvidenceResponse response = transactionService.uploadEvidence(
+                1L, EvidenceType.BORROWER_PRE_RETURN, file, null, null, borrower);
+
+        assertThat(response.contentType()).isEqualTo("image/jpeg");
     }
 
     @Test
@@ -2017,6 +2041,7 @@ public class TransactionServiceTest {
     @Test
     void getEvidenceContentVisibleToParticipant() {
         Transaction txn = pending(unit);
+        byte[] image = TestImages.png();
         Evidence evidence = new Evidence();
         evidence.setId(9L);
         evidence.setTransaction(txn);
@@ -2024,12 +2049,47 @@ public class TransactionServiceTest {
         evidence.setContentType("image/png");
         when(evidenceRepository.findById(9L)).thenReturn(Optional.of(evidence));
         when(evidenceStorageService.load("11111111-2222-3333-4444-555555555555"))
-                .thenReturn(new byte[]{1, 2, 3});
+                .thenReturn(image);
 
         TransactionService.EvidenceContent content = transactionService.getEvidenceContent(9L, owner);
 
         assertThat(content.contentType()).isEqualTo("image/png");
-        assertThat(content.bytes()).containsExactly(1, 2, 3);
+        assertThat(content.bytes()).containsExactly(image);
+    }
+
+    @Test
+    void getEvidenceContentUsesCanonicalTypeForLegacyMismatchedMetadata() {
+        Transaction txn = pending(unit);
+        byte[] image = TestImages.jpeg();
+        Evidence evidence = new Evidence();
+        evidence.setId(9L);
+        evidence.setTransaction(txn);
+        evidence.setFileRef("11111111-2222-3333-4444-555555555555");
+        evidence.setContentType("image/png");
+        when(evidenceRepository.findById(9L)).thenReturn(Optional.of(evidence));
+        when(evidenceStorageService.load("11111111-2222-3333-4444-555555555555"))
+                .thenReturn(image);
+
+        TransactionService.EvidenceContent content = transactionService.getEvidenceContent(9L, owner);
+
+        assertThat(content.contentType()).isEqualTo("image/jpeg");
+    }
+
+    @Test
+    void getEvidenceContentRejectsLegacyUnsafeContent() {
+        Transaction txn = pending(unit);
+        Evidence evidence = new Evidence();
+        evidence.setId(9L);
+        evidence.setTransaction(txn);
+        evidence.setFileRef("11111111-2222-3333-4444-555555555555");
+        evidence.setContentType("image/svg+xml");
+        when(evidenceRepository.findById(9L)).thenReturn(Optional.of(evidence));
+        when(evidenceStorageService.load("11111111-2222-3333-4444-555555555555"))
+                .thenReturn("<svg xmlns=\"http://www.w3.org/2000/svg\"/>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> transactionService.getEvidenceContent(9L, owner))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("valid PNG or JPEG");
     }
 
     @Test
@@ -2255,7 +2315,8 @@ public class TransactionServiceTest {
                 transactionRepository, listingRepository, assetUnitRepository,
                 assetUnitConditionHistoryRepository, communityRuleRepository,
                 membershipService, messageService,
-                evidenceRepository, evidenceStorageService, waitlistService,
+                evidenceRepository, evidenceStorageService, new EvidenceImageValidator(50_000_000L, 10_000),
+                waitlistService,
                 eventService, reputationEventService, notificationService,
                 5_242_880L,
                 false, 72L, 48L, 72L, 168L);

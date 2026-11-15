@@ -1,3 +1,5 @@
+const { evidencePhotoBlob } = require('../support/evidencePhoto')
+
 // V2.5.1: the lender captures a pre-lending photo and a handover photo before
 // confirming the handover. Optional condition note + rating are stored per
 // evidence row, shown to both participants, and the handover cannot be
@@ -37,7 +39,7 @@ describe('Lender handover evidence (V2.5.1)', () => {
   const photoForm = (type, conditionNote, conditionRating) => {
     const form = new FormData()
     form.append('type', type)
-    form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+    form.append('file', evidencePhotoBlob(), 'photo.png')
     if (conditionNote != null) form.append('conditionNote', conditionNote)
     if (conditionRating != null) form.append('conditionRating', String(conditionRating))
     return form

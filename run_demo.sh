@@ -6,7 +6,7 @@
 #   ./run_demo.sh          Start all services (build if needed)
 #   ./run_demo.sh --build  Force a full rebuild of all images
 #   ./run_demo.sh --stop   Stop and remove all containers
-#   ./run_demo.sh --clean  Stop containers, remove volumes, and clear demo credentials (full reset)
+#   ./run_demo.sh --clean  Stop containers, remove ALL volumes (database + evidence), and clear demo credentials (full reset)
 #
 set -euo pipefail
 
@@ -333,12 +333,13 @@ do_stop() {
 }
 
 do_clean() {
+    warn "--clean permanently deletes the demo database and all stored evidence photos."
     info "Stopping BorrowBox containers and removing volumes..."
     cd "$PROJECT_DIR"
     ensure_compose_interpolation_defaults
     $COMPOSE_CMD -f "$COMPOSE_FILE" down -v
     rm -f "$CREDENTIALS_FILE"
-    ok "Containers stopped, volumes removed, and local demo credentials cleared."
+    ok "Containers stopped, database/evidence volumes removed, and local demo credentials cleared."
 }
 
 do_start() {

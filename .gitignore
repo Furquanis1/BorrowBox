@@ -10,6 +10,9 @@ frontend/node_modules/
 backend/media/
 /media/
 
+# Local database + media backup archives - never commit these
+/backups/
+
 # Environment secrets
 .env
 *.env

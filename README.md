@@ -8,7 +8,7 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-57_Tests_Passing-green?logo=cypress)
+![Cypress](https://img.shields.io/badge/Cypress-161_Tests_Passing-green?logo=cypress)
 
 ---
 
@@ -21,7 +21,7 @@
 ## 🌐 Live Demo & Deployment Status
 
 BorrowBox is fully containerized and ready for local or cloud deployment.
-- **Local Demonstration:** Ready out-of-the-box using one-click launch scripts (`run_demo.bat` / `run_demo.sh`) or `docker compose up -d --build`.
+- **Local Demonstration:** Ready out-of-the-box using one-click launch scripts (`run_demo.bat` / `run_demo.sh`), which manage the required demo credentials, or directly with Docker Compose when the required environment variables are supplied.
 - **Cloud Deployment:** GitHub Actions CI/CD pipeline ([deploy.yml](.github/workflows/deploy.yml)) is configured for Railway and Render deployment hooks when repository secrets are provided.
 
 ---
@@ -91,7 +91,7 @@ V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction eng
 | **Frontend SPA** | React 18.2, Vite 5, React Router 7, Custom CSS Design System |
 | **API Docs** | Springdoc OpenAPI 3.0 / Swagger UI |
 | **DevOps & Containerization** | Multi-stage Docker builds, Docker Compose, Nginx reverse proxy, launch scripts (`run_demo.bat` / `run_demo.sh`) |
-| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (57 automated tests) |
+| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (161 automated tests across 23 specs) |
 | **CI/CD** | GitHub Actions ([build.yml](.github/workflows/build.yml), [e2e.yml](.github/workflows/e2e.yml), [deploy.yml](.github/workflows/deploy.yml)) |
 
 ---
@@ -123,13 +123,37 @@ chmod +x run_demo.sh
 
 **Or using Docker Compose directly:**
 ```bash
+# Read the required database passwords from the protected launcher credentials file.
+export MYSQL_ROOT_PASSWORD="$(sed -n 's/^MYSQL_ROOT_PASSWORD=//p' .borrowbox-demo-credentials)"
+export BORROWBOX_APP_DB_PASSWORD="$(sed -n 's/^BORROWBOX_APP_DB_PASSWORD=//p' .borrowbox-demo-credentials)"
+export BORROWBOX_E2E_DB_PASSWORD="$(sed -n 's/^BORROWBOX_E2E_DB_PASSWORD=//p' .borrowbox-demo-credentials)"
+export APP_JWT_SECRET='<your-secret>'
 docker compose up -d --build
 ```
+Compose has no default database credentials and fails safely if they are missing.
+Windows PowerShell must set the equivalent process environment variables from the
+same protected file.
 
-This starts three orchestrated containers:
+This starts the orchestrated stack:
 - `borrowbox-mysql` — MySQL 8.0 database (mapped to host port `3307` to avoid local MySQL conflicts)
-- `borrowbox-backend` — Spring Boot REST API on port `8080`
+- `borrowbox-mysql-bootstrap` — one-shot service that creates the app and E2E accounts
+- `borrowbox-backend` — Spring Boot REST API on port `8080`, connected as `borrowbox_app`
 - `borrowbox-frontend` — React application served by Nginx on port `3000`
+
+The one-click launchers explicitly opt in to demo seeding and store the generated
+demo-user, MySQL root, app, and E2E passwords in `.borrowbox-demo-credentials` at
+the repository root. That file is ignored by Git, is restricted to the current
+user, and is reused across ordinary restarts. The launchers export the root value
+only to MySQL/bootstrap, the app value to the backend, and the E2E value to Cypress;
+the backend never receives root. Use `--clean` to remove both the demo database and
+the credentials file. If the credentials file is missing while a demo database
+still exists, or if it lacks `MYSQL_ROOT_PASSWORD`, the launcher refuses to start
+rather than silently replacing the existing database password.
+
+Launching with plain `docker compose up` does **not** enable demo seeding and still
+requires the three database passwords from the environment. To opt in to seeding
+there, also set `BORROWBOX_SEED_ENABLED=true` and a non-blank
+`BORROWBOX_SEED_PASSWORD` before starting Compose.
 
 ### 3. Service URLs
 
@@ -149,11 +173,12 @@ This starts three orchestrated containers:
   # Linux / macOS
   ./run_demo.sh --stop
 
-  # Or Compose
+  # Or Compose (MYSQL_ROOT_PASSWORD, BORROWBOX_APP_DB_PASSWORD,
+  # BORROWBOX_E2E_DB_PASSWORD, and APP_JWT_SECRET must be in the environment)
   docker compose down
   ```
 
-- **Full reset (stop containers and wipe database volumes):**
+- **Full reset (stop containers, wipe database volumes, and clear local demo credentials):**
   ```bash
   # Windows
   run_demo.bat --clean
@@ -161,9 +186,12 @@ This starts three orchestrated containers:
   # Linux / macOS
   ./run_demo.sh --clean
 
-  # Or Compose
+  # Or Compose (requires the same environment values; removes the volume, but not
+  # .borrowbox-demo-credentials)
   docker compose down -v
   ```
+  Only this explicit reset removes the database volume. Changing credentials does
+  not rotate an existing database password.
 
 ---
 
@@ -175,20 +203,38 @@ To run the application locally outside of Docker:
 Ensure MySQL 8.0 is running with database `borrowbox_v2`:
 ```bash
 # Or start just the MySQL container
+# MYSQL_ROOT_PASSWORD, BORROWBOX_APP_DB_PASSWORD, BORROWBOX_E2E_DB_PASSWORD,
+# and APP_JWT_SECRET must already be in the environment; see the direct Compose
+# instructions above.
 docker compose up -d mysql
 ```
 
-To reset the local database:
+To reset the local database and provision the app/E2E accounts:
 ```powershell
+$env:BORROWBOX_APP_DB_PASSWORD = '<app-password>'
+$env:BORROWBOX_E2E_DB_PASSWORD = '<e2e-password>'
 .\scripts\reset-v2-db.ps1
 ```
+The reset script requires the two account passwords in the environment, sets
+those passwords on the `borrowbox_app` and `borrowbox_e2e` accounts, and prompts
+for the local MySQL administrator credentials (or reads
+`BORROWBOX_RESET_DB_USER` / `BORROWBOX_RESET_DB_PASSWORD`). It never prints or
+stores them.
 
 ### 2. Backend (Spring Boot)
-```bash
+```powershell
 cd backend
+$env:SPRING_DATASOURCE_URL = 'jdbc:mysql://127.0.0.1:3306/borrowbox_v2'
+$env:SPRING_DATASOURCE_USERNAME = 'borrowbox_app'
+$env:SPRING_DATASOURCE_PASSWORD = '<app-password>'
 mvn clean spring-boot:run
 ```
-The backend starts on `http://localhost:8080` with `borrowbox.seed.enabled=true` (schema + seed run automatically).
+The backend starts on `http://localhost:8080` as `borrowbox_app`. Schema
+initialization runs by default for local development, but demo seeding is
+**disabled by default**. To opt in explicitly, set both
+`BORROWBOX_SEED_ENABLED=true` and a non-blank `BORROWBOX_SEED_PASSWORD` in the
+backend's environment. Starting without a password while seeding is enabled fails
+clearly instead of falling back to a committed default.
 
 ### 3. Frontend (Vite Dev Server)
 ```bash
@@ -209,7 +255,9 @@ BorrowBox maintains a comprehensive test suite across unit, integration, and end
 cd backend
 mvn test
 ```
-*Requires local MySQL running on port 3306 with database `borrowbox_v2`.*
+*Requires local MySQL running on port 3306 with database `borrowbox_v2` and a
+`borrowbox_app` account. Set `SPRING_DATASOURCE_USERNAME=borrowbox_app` and
+`SPRING_DATASOURCE_PASSWORD` from `BORROWBOX_APP_DB_PASSWORD`.*
 
 ### Build Frontend
 ```bash
@@ -218,12 +266,25 @@ npm run build
 ```
 *Validates modules, compiles JSX, bundles CSS, and confirms production asset generation with zero errors.*
 
-### Run Cypress End-to-End Tests (57 Tests)
-With the application running on `http://localhost:3000`:
+### Run Cypress End-to-End Tests (161 Tests across 23 Specs)
+With the application running on `http://localhost:3000`, and a seeded backend:
 ```bash
 cd frontend
+export CYPRESS_SEED_PASSWORD='<same value as the seeded backend>'
+export CYPRESS_DB_USER='borrowbox_e2e'
+export CYPRESS_DB_PASSWORD='<E2E database password>'
+export CYPRESS_TEST_USER_PASSWORD='<per-run test account password>'
 npx cypress run --headless
 ```
+On Windows PowerShell, set `$env:CYPRESS_SEED_PASSWORD`, `$env:CYPRESS_DB_USER`,
+`$env:CYPRESS_DB_PASSWORD`, and `$env:CYPRESS_TEST_USER_PASSWORD` instead. When
+using the local launcher, read the database values from
+`.borrowbox-demo-credentials`. The CI E2E workflow generates ephemeral test-only
+passwords and supplies the same values to the backend and Cypress. No shared demo
+password is committed to the specs or used for the test account. CI workflows
+require the `CI_MYSQL_ROOT_PASSWORD` repository secret; see
+[GITHUB_SECRETS.md](GITHUB_SECRETS.md).
+
 *Covers Landing Page, Authentication, Dashboard Routing, Community Listings, Shared Inventory Availability, V2.1 Completion Flow, and the V2.2.2 end-to-end loan lifecycle.*
 
 ---
@@ -259,18 +320,36 @@ Here are practical solutions for common local development and runtime issues:
 - **Symptom:** Database schema inconsistencies or stale session cookies.
 - **Fix:** Execute a clean reset:
   ```bash
-  # Docker reset
+  # Docker reset (all three database passwords and APP_JWT_SECRET must be in the environment)
   docker compose down -v
   docker compose up -d --build
   ```
+  Prefer `run_demo.bat --clean` / `./run_demo.sh --clean`, which also clears the
+  local demo credentials file.
   For local development:
   ```powershell
+  $env:BORROWBOX_APP_DB_PASSWORD = '<app-password>'
+  $env:BORROWBOX_E2E_DB_PASSWORD = '<e2e-password>'
   .\scripts\reset-v2-db.ps1
-  cd backend && mvn spring-boot:run
+  cd backend
+  $env:SPRING_DATASOURCE_URL = 'jdbc:mysql://127.0.0.1:3306/borrowbox_v2'
+  $env:SPRING_DATASOURCE_USERNAME = 'borrowbox_app'
+  $env:SPRING_DATASOURCE_PASSWORD = $env:BORROWBOX_APP_DB_PASSWORD
+  mvn spring-boot:run
   ```
   Then clear cookies/localStorage in your browser or use an incognito window.
 
-### 7. Inspecting Container Logs
+### 7. MySQL Credential Mismatch on an Existing Volume
+- **Symptom:** MySQL healthcheck stays unhealthy, MySQL logs `Access denied`, or the backend cannot connect after credentials changed.
+- **Cause:** MySQL uses `MYSQL_ROOT_PASSWORD` only when initializing an empty data directory. The existing `mysql_data` volume keeps the password stored in that database.
+- **Fix:** Set `MYSQL_ROOT_PASSWORD` in `.borrowbox-demo-credentials` to the password the existing database already uses. Do not generate a replacement for an existing database. If the password is unknown, recover it from a backup or, only if the demo data is disposable, run `--clean` (destructive). Changing the credential file alone does not rotate the stored MySQL password.
+
+### 8. Application Account Authentication Fails
+- **Symptom:** The backend reports `Access denied for user 'borrowbox_app'`.
+- **Cause:** The bootstrap service applies the configured passwords on every start with `CREATE USER IF NOT EXISTS` followed by `ALTER USER` for `borrowbox_app` and `borrowbox_e2e`. An authentication failure means the backend's datasource password does not match the latest bootstrap configuration.
+- **Fix:** Set the backend's `BORROWBOX_APP_DB_PASSWORD`/`SPRING_DATASOURCE_PASSWORD` to the value in `.borrowbox-demo-credentials` or the deployment secret store, restart the backend after bootstrap completes, and do not switch the backend to root.
+
+### 9. Inspecting Container Logs
 - **Backend logs:** `docker compose logs -f backend`
 - **Frontend logs:** `docker compose logs -f frontend`
 - **MySQL logs:** `docker compose logs -f mysql`
@@ -300,8 +379,8 @@ BorrowBox/
 │   ├── src/test/java/        # Unit, service, controller, and integration tests
 │   └── Dockerfile
 ├── frontend/                 # React 18 + Vite SPA
-│   ├── cypress/              # Cypress E2E tests (6 spec files, 57 tests)
-│   │   └── e2e/              # auth, landing, dashboard, listings, completion, loan-lifecycle
+│   ├── cypress/              # Cypress E2E tests (23 spec files, 161 tests)
+│   │   └── e2e/              # auth, community, listings, loans, evidence, extensions, flags, reputation, rules, waitlists
 │   ├── src/
 │   │   ├── components/       # UI components
 │   │   ├── contexts/         # React Contexts (AuthContext)
@@ -310,7 +389,9 @@ BorrowBox/
 │   ├── nginx.conf            # Production Nginx reverse proxy configuration
 │   └── Dockerfile
 ├── scripts/
-│   └── reset-v2-db.ps1       # Local V2.1 database reset script
+│   ├── bootstrap-mysql.sh    # Creates the local/CI app and E2E accounts
+│   ├── apply-schema.sh       # Applies schema SQL with the production migrator account
+│   └── reset-v2-db.ps1       # Local V2.1 database reset and account provisioning
 ├── docs/
 │   ├── BORROWBOX_ROADMAP.ipynb
 │   ├── BORROWBOX_DECISIONS.ipynb
@@ -329,7 +410,8 @@ BorrowBox/
 
 - **Authentication:** Stateless **JWT stored in HttpOnly cookies**, protecting against XSS token theft.
 - **Access Control:** All API endpoints are secured by default; public access is restricted to `/api/auth/**` and `/api/health`.
-- **Credential Hygiene:** Change default database passwords and JWT secrets via environment variables before any production deployment.
+- **Credential Hygiene:** Supply database app/migration passwords and JWT secrets via environment variables or a secret store. The backend and Cypress use dedicated database accounts and never receive the MySQL root password. Rotate any exposed credential and follow the response steps in [GITHUB_SECRETS.md](GITHUB_SECRETS.md#credential-exposure-response).
+- **Demo Seeding:** Disabled by default and never seeds an administrator. Existing accounts are never deleted, suspended, or password-rotated by startup or seed execution; use `scripts/manage-user.ps1` to suspend/reactivate accounts.
 
 ---
 

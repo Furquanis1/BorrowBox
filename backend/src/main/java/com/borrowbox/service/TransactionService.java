@@ -215,6 +215,7 @@ public class TransactionService {
     private final TransactionMessageService messageService;
     private final EvidenceRepository evidenceRepository;
     private final EvidenceStorageService evidenceStorageService;
+    private final EvidenceImageValidator evidenceImageValidator;
     private final WaitlistService waitlistService;
     private final TransactionEventService eventService;
     private final ReputationEventService reputationEventService;
@@ -235,6 +236,7 @@ public class TransactionService {
                               TransactionMessageService messageService,
                               EvidenceRepository evidenceRepository,
                               EvidenceStorageService evidenceStorageService,
+                              EvidenceImageValidator evidenceImageValidator,
                               WaitlistService waitlistService,
                               TransactionEventService eventService,
                               ReputationEventService reputationEventService,
@@ -254,6 +256,7 @@ public class TransactionService {
         this.messageService = messageService;
         this.evidenceRepository = evidenceRepository;
         this.evidenceStorageService = evidenceStorageService;
+        this.evidenceImageValidator = evidenceImageValidator;
         this.waitlistService = waitlistService;
         this.eventService = eventService;
         this.reputationEventService = reputationEventService;
@@ -980,10 +983,6 @@ public class TransactionService {
         if (file == null || file.isEmpty()) {
             throw new BusinessRuleViolationException("An evidence photo is required");
         }
-        String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
-            throw new BusinessRuleViolationException("Evidence must be an image file");
-        }
         byte[] bytes;
         try {
             bytes = file.getBytes();
@@ -994,6 +993,7 @@ public class TransactionService {
             throw new BusinessRuleViolationException(
                     "Evidence must be between 1 byte and " + maxEvidenceBytes + " bytes");
         }
+        String contentType = evidenceImageValidator.validate(bytes);
 
         String fileRef = evidenceStorageService.store(bytes);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -1049,7 +1049,9 @@ public class TransactionService {
                         "Evidence not found with id: " + evidenceId));
         Transaction txn = evidence.getTransaction();
         requireParticipant(txn, actor);
-        return new EvidenceContent(evidenceStorageService.load(evidence.getFileRef()), evidence.getContentType());
+        byte[] bytes = evidenceStorageService.load(evidence.getFileRef());
+        String contentType = evidenceImageValidator.validate(bytes);
+        return new EvidenceContent(bytes, contentType);
     }
 
     public record EvidenceContent(byte[] bytes, String contentType) {

@@ -62,6 +62,9 @@ public class EvidenceController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(content.contentType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Cross-Origin-Resource-Policy", "same-origin")
+                .header("Content-Security-Policy", "default-src 'none'; sandbox")
                 .cacheControl(CacheControl.noStore().mustRevalidate())
                 .body(content.bytes());
     }

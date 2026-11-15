@@ -23,6 +23,7 @@ import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.CommunityRuleService;
 import com.borrowbox.service.TransactionService;
+import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -123,7 +124,7 @@ public class CommunityRuleGracePeriodIntegrationTest {
         TransactionResponse staged = transactionService.stageHandover(approved.id(), salah);
         transactionService.uploadEvidence(
                 staged.id(), EvidenceType.LENDER_HANDOVER,
-                new MockMultipartFile("file", "handover.png", "image/png", new byte[]{2}),
+                new MockMultipartFile("file", "handover.png", "image/png", TestImages.png(new byte[]{2})),
                 null, null, ahmed);
         return transactionService.confirmHandover(staged.id(), ahmed);
     }

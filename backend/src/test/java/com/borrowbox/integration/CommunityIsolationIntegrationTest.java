@@ -54,6 +54,7 @@ import com.borrowbox.service.MembershipService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.WaitlistService;
+import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -158,7 +159,7 @@ public class CommunityIsolationIntegrationTest {
     }
 
     private MockMultipartFile photo(String name, byte[] content) {
-        return new MockMultipartFile("file", name, "image/png", content);
+        return new MockMultipartFile("file", name, "image/png", TestImages.png(content));
     }
 
     private long countUnitStatus(Long assetId, AssetUnitStatus status) {

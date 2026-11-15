@@ -45,6 +45,11 @@ public class User {
     private UserStatus status = UserStatus.ACTIVE;
 
     @JsonIgnore
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_role", nullable = false)
+    private UserRole role = UserRole.USER;
+
+    @JsonIgnore
     @OneToMany(mappedBy = "user")
     private Set<Membership> memberships = new HashSet<>();
 
@@ -117,6 +122,14 @@ public class User {
 
     public void setStatus(UserStatus status) {
         this.status = status;
+    }
+
+    public UserRole getRole() {
+        return role;
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role;
     }
 
     public Set<Membership> getMemberships() {

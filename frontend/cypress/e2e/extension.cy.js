@@ -1,3 +1,5 @@
+const { evidencePhotoBlob } = require('../support/evidencePhoto')
+
 /**
  * V2.2.5 Loan Extensions Coverage
  *
@@ -67,15 +69,15 @@ describe('V2.2.5 Loan Extensions', () => {
     expectCurrentUser(user)
   }
 
-  // V2.2.6: system-issued evidence uploads; binary content is arbitrary
-  // (only content-type + size are validated by the backend). `buildTxnId` may
+  // V2.2.6: system-issued evidence uploads use the shared valid PNG fixture
+  // because the backend validates the image bytes. `buildTxnId` may
   // be a value or a thunk; the id is read at execution time.
   const uploadPhoto = (buildTxnId, type) =>
     cy.wrap(null).then(() => {
       const id = typeof buildTxnId === 'function' ? buildTxnId() : buildTxnId
       const form = new FormData()
       form.append('type', type)
-      form.append('file', new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4])], { type: 'image/png' }), 'photo.png')
+      form.append('file', evidencePhotoBlob(), 'photo.png')
       return cy.request({ method: 'POST', url: `/api/transactions/${id}/evidence`, body: form, failOnStatusCode: true })
     })
 
