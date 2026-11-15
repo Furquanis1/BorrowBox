@@ -23,11 +23,12 @@ import java.time.LocalDateTime;
  * The notification is owned by its recipient ({@code recipient_id}) and may
  * reference the transaction ({@code transaction_id}) that triggered it.
  *
- * <p>Notifications are append-only event records. Repeatable transaction
- * events (for example extension request/reject cycles) create a new row each
- * time, so the same recipient/type/transaction combination may appear more than
- * once. Scheduled reminders such as LOAN_DUE_SOON and LOAN_OVERDUE are
- * deduplicated by NotificationSchedulerService before insert.
+ * <p>Idempotency note: notifications are created inside the same
+ * {@code @Transactional} method as the transaction state change that triggers
+ * them. The unique (recipient, type, transaction) constraint permits at most one
+ * notification row per combination. If a lifecycle event of the same type
+ * happens again for the same transaction (for example, a later extension
+ * cycle), the existing row is reactivated instead of inserting a duplicate.
  */
 @Entity
 @Table(name = "notifications")
@@ -65,7 +66,7 @@ public class Notification {
     @Column(name = "read_at")
     private LocalDateTime readAt;
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     @Column(nullable = false)

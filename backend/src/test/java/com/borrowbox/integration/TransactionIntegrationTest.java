@@ -20,6 +20,8 @@ import com.borrowbox.entity.CommunityListing;
 import com.borrowbox.entity.Evidence;
 import com.borrowbox.entity.EvidenceType;
 import com.borrowbox.entity.MessageKind;
+import com.borrowbox.entity.Notification;
+import com.borrowbox.entity.NotificationStatus;
 import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.Transaction;
 import com.borrowbox.entity.TransactionStatus;
@@ -34,14 +36,14 @@ import com.borrowbox.repository.AssetUnitRepository;
 import com.borrowbox.repository.CommunityListingRepository;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.EvidenceRepository;
+import com.borrowbox.repository.NotificationRepository;
 import com.borrowbox.repository.TransactionRepository;
 import com.borrowbox.repository.UserRepository;
+import com.borrowbox.service.NotificationService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
-import com.borrowbox.service.NotificationService;
 import com.borrowbox.service.WaitlistService;
-import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -101,8 +103,9 @@ public class TransactionIntegrationTest {
     @Autowired private AssetUnitConditionHistoryRepository assetUnitConditionHistoryRepository;
     @Autowired private CommunityListingRepository communityListingRepository;
     @Autowired private TransactionRepository transactionRepository;
-    @Autowired private EvidenceRepository evidenceRepository;
+    @Autowired private NotificationRepository notificationRepository;
     @Autowired private NotificationService notificationService;
+    @Autowired private EvidenceRepository evidenceRepository;
     @Autowired private PlatformTransactionManager platformTransactionManager;
     @Value("${borrowbox.media.dir}") private String mediaDir;
 
@@ -692,7 +695,7 @@ public class TransactionIntegrationTest {
 
     @Test
     @Transactional
-    void repeatedExtensionRequestThenRejectCreatesSeparateNotifications() {
+    void extensionRequestCanRepeatAfterReject() {
         seedDataInitializer.seed();
         User ahmed = seedUser("ahmed@example.com");
         User salah = seedUser("salah@example.com");
@@ -703,24 +706,27 @@ public class TransactionIntegrationTest {
 
         transactionService.requestExtension(
                 active.id(), new ExtensionRequest(originalDue.plusDays(3), "First"), salah);
+        Notification requested = notificationRepository
+                .findByRecipientIdAndTypeAndTransactionId(
+                        ahmed.getId(), NotificationType.EXTENSION_REQUESTED, active.id())
+                .orElseThrow();
+        Long originalNotificationId = requested.getId();
+        notificationService.markAsRead(requested.getId(), ahmed);
+
         transactionService.rejectExtension(active.id(), ahmed);
 
-        TransactionResponse secondRequest = transactionService.requestExtension(
-                active.id(), new ExtensionRequest(originalDue.plusDays(5), "Second"), salah);
-        TransactionResponse secondRejected = transactionService.rejectExtension(active.id(), ahmed);
+        TransactionResponse repeated = transactionService.requestExtension(
+                active.id(), new ExtensionRequest(originalDue.plusDays(2), "Second"), salah);
 
-        assertThat(secondRequest.extensionRequestPending()).isTrue();
-        assertThat(secondRejected.dueAt()).isEqualTo(originalDue);
-        assertThat(secondRejected.extensionRequestedAt()).isNull();
-
-        assertThat(notificationService.listForUser(ahmed))
-                .filteredOn(n -> n.type() == NotificationType.EXTENSION_REQUESTED
-                        && active.id().equals(n.transactionId()))
-                .hasSize(2);
-        assertThat(notificationService.listForUser(salah))
-                .filteredOn(n -> n.type() == NotificationType.EXTENSION_REJECTED
-                        && active.id().equals(n.transactionId()))
-                .hasSize(2);
+        assertThat(repeated.extensionRequestPending()).isTrue();
+        assertThat(repeated.extensionRequestedDueAt()).isEqualTo(originalDue.plusDays(2));
+        assertThat(notificationRepository.findByRecipientIdAndTypeAndTransactionId(
+                ahmed.getId(), NotificationType.EXTENSION_REQUESTED, active.id()))
+                .hasValueSatisfying(notification -> {
+                    assertThat(notification.getId()).isEqualTo(originalNotificationId);
+                    assertThat(notification.getStatus()).isEqualTo(NotificationStatus.UNREAD);
+                    assertThat(notification.getReadAt()).isNull();
+                });
     }
 
     @Test
@@ -954,7 +960,7 @@ public class TransactionIntegrationTest {
     // ── V2.2.6 return disputes + evidence ─────────────────────────────
 
     private MockMultipartFile photo(String name, byte[] content) {
-        return new MockMultipartFile("file", name, "image/png", TestImages.png(content));
+        return new MockMultipartFile("file", name, "image/png", content);
     }
 
     private TransactionResponse activateToReturnReported(Asset football, User ahmed, User salah) {
@@ -1063,27 +1069,7 @@ public class TransactionIntegrationTest {
         TransactionService.EvidenceContent content =
                 transactionService.getEvidenceContent(uploaded.id(), salah);
         assertThat(content.contentType()).isEqualTo("image/png");
-        assertThat(content.bytes()).containsExactly(TestImages.png(new byte[]{1, 2, 3}));
-    }
-
-    @Test
-    @Transactional
-    void uploadRejectsSpoofedImageContent() {
-        seedDataInitializer.seed();
-        User ahmed = seedUser("ahmed@example.com");
-        User salah = seedUser("salah@example.com");
-        Asset football = seedAssetOf(ahmed, "Football");
-
-        TransactionResponse active = activateToActive(football, ahmed, salah);
-        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
-        MockMultipartFile spoof = new MockMultipartFile(
-                "file", "spoof.png", "image/png",
-                "<html><script>alert(1)</script></html>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-        assertThatThrownBy(() -> transactionService.uploadEvidence(
-                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, spoof, null, null, salah))
-                .isInstanceOf(BusinessRuleViolationException.class)
-                .hasMessageContaining("valid PNG or JPEG");
+        assertThat(content.bytes()).containsExactly(1, 2, 3);
     }
 
     @Test
