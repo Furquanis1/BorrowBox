@@ -436,14 +436,11 @@ CREATE TABLE IF NOT EXISTS flags (
     INDEX idx_flags_occurred         (occurred_at)
 ) ENGINE=InnoDB;
 
--- V2.6.0 notifications: append-only per-recipient records of transaction events.
+-- V2.6.0 notifications: per-recipient notification about a transaction event.
 -- recipient_id is the user who should see it; transaction_id references the
 -- triggering transaction (nullable so the table can later support non-transaction
 -- notifications without a schema change). status is UNREAD / READ / DISMISSED;
--- read_at is stamped when the recipient marks it read. Repeatable events (for
--- example extension request/reject cycles) deliberately create multiple rows for
--- the same recipient/type/transaction; scheduled reminders are deduplicated by
--- NotificationSchedulerService before insert.
+-- read_at is stamped when the recipient marks it read.
 CREATE TABLE IF NOT EXISTS notifications (
     id              BIGINT       NOT NULL AUTO_INCREMENT,
     recipient_id    BIGINT       NOT NULL,
@@ -459,7 +456,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     PRIMARY KEY (id),
     CONSTRAINT fk_notifications_recipient FOREIGN KEY (recipient_id) REFERENCES users (id),
     CONSTRAINT fk_notifications_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id),
-    INDEX idx_notifications_user_type_transaction (recipient_id, type, transaction_id),
+    CONSTRAINT uq_notifications_user_type_transaction UNIQUE (recipient_id, type, transaction_id),
     INDEX idx_notifications_recipient_status (recipient_id, status),
     INDEX idx_notifications_recipient_created (recipient_id, created_at)
 ) ENGINE=InnoDB;

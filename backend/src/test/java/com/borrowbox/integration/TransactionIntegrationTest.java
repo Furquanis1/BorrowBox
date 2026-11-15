@@ -44,6 +44,7 @@ import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.CommunityListingService;
 import com.borrowbox.service.WaitlistService;
+import com.borrowbox.support.TestImages;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -960,7 +961,7 @@ public class TransactionIntegrationTest {
     // ── V2.2.6 return disputes + evidence ─────────────────────────────
 
     private MockMultipartFile photo(String name, byte[] content) {
-        return new MockMultipartFile("file", name, "image/png", content);
+        return new MockMultipartFile("file", name, "image/png", TestImages.png(content));
     }
 
     private TransactionResponse activateToReturnReported(Asset football, User ahmed, User salah) {
@@ -1069,7 +1070,27 @@ public class TransactionIntegrationTest {
         TransactionService.EvidenceContent content =
                 transactionService.getEvidenceContent(uploaded.id(), salah);
         assertThat(content.contentType()).isEqualTo("image/png");
-        assertThat(content.bytes()).containsExactly(1, 2, 3);
+        assertThat(content.bytes()).containsExactly(TestImages.png(new byte[]{1, 2, 3}));
+    }
+
+    @Test
+    @Transactional
+    void uploadRejectsSpoofedImageContent() {
+        seedDataInitializer.seed();
+        User ahmed = seedUser("ahmed@example.com");
+        User salah = seedUser("salah@example.com");
+        Asset football = seedAssetOf(ahmed, "Football");
+
+        TransactionResponse active = activateToActive(football, ahmed, salah);
+        TransactionResponse initiated = transactionService.initiateReturn(active.id(), salah);
+        MockMultipartFile spoof = new MockMultipartFile(
+                "file", "spoof.png", "image/png",
+                "<html><script>alert(1)</script></html>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertThatThrownBy(() -> transactionService.uploadEvidence(
+                initiated.id(), EvidenceType.BORROWER_PRE_RETURN, spoof, null, null, salah))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("valid PNG or JPEG");
     }
 
     @Test

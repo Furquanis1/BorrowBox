@@ -163,8 +163,12 @@ public class NotificationIntegrationTest {
                 w.borrower(), w.lender(), TransactionStatus.ACTIVE,
                 LocalDateTime.now().plusDays(2), null);
 
-        notificationService.create(w.lender(), NotificationType.EXTENSION_REQUESTED,
+        Notification first = notificationService.create(w.lender(),
+                NotificationType.EXTENSION_REQUESTED,
                 "Extension requested", "First request.", txn.getId());
+        Long firstId = first.getId();
+        notificationService.markAsRead(firstId, w.lender());
+
         notificationService.create(w.lender(), NotificationType.EXTENSION_REQUESTED,
                 "Extension requested", "Second request.", txn.getId());
 
@@ -175,9 +179,12 @@ public class NotificationIntegrationTest {
                         && txn.getId().equals(n.getTransactionId()))
                 .toList();
 
-        assertThat(matches).hasSize(2);
-        assertThat(matches).extracting(Notification::getMessage)
-                .containsExactlyInAnyOrder("First request.", "Second request.");
+        assertThat(matches).hasSize(1);
+        Notification reactivated = matches.get(0);
+        assertThat(reactivated.getId()).isEqualTo(firstId);
+        assertThat(reactivated.getMessage()).isEqualTo("Second request.");
+        assertThat(reactivated.getStatus()).isEqualTo(NotificationStatus.UNREAD);
+        assertThat(reactivated.getReadAt()).isNull();
     }
 
     @Test
