@@ -277,6 +277,30 @@ public class TransactionServiceTest {
     }
 
     @Test
+    void createPublishesRequestCreatedEventAndNotifiesLender() {
+        when(listingRepository.findById(701L)).thenReturn(Optional.of(listing));
+        stubActiveMember();
+        stubAvailableUnit();
+        stubSaveAndFlushReturnsArgument();
+        TransactionEvent event = new TransactionEvent();
+        when(eventService.createEventAndDeliveries(any(), any(), any(), any()))
+                .thenReturn(Optional.of(event));
+
+        transactionService.create(
+                new TransactionCreateRequest(701L, "Football match practice", 3, null), borrower);
+
+        ArgumentCaptor<Transaction> txnCaptor = ArgumentCaptor.forClass(Transaction.class);
+        verify(eventService).createEventAndDeliveries(txnCaptor.capture(),
+                eq(TransactionEventType.REQUEST_CREATED), eq(borrower), eq(null));
+        assertThat(txnCaptor.getValue().getLender()).isEqualTo(owner);
+
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).createForEvent(eq(event), eq(owner),
+                eq(NotificationType.REQUEST_CREATED), anyString(), messageCaptor.capture());
+        assertThat(messageCaptor.getValue()).contains("Salah").contains("Football");
+    }
+
+    @Test
     void unauthenticatedUserIsRejected() {
         assertThatThrownBy(() -> transactionService.create(
                 new TransactionCreateRequest(701L, "Purpose", 3, null), null))
@@ -472,6 +496,27 @@ public class TransactionServiceTest {
         assertThat(response.counterNote()).isEqualTo("Saturday is fine");
         assertThat(response.counterOfferedAt()).isNotNull();
         assertThat(response.reservationHeld()).isTrue();
+    }
+
+    @Test
+    void counterOfferPublishesRequestCounteredEventAndNotifiesBorrower() {
+        Transaction txn = pending(unit);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(membershipService.isActiveMember(100L, 900L)).thenReturn(true);
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        TransactionEvent event = new TransactionEvent();
+        when(eventService.createEventAndDeliveries(any(), any(), any(), any()))
+                .thenReturn(Optional.of(event));
+
+        transactionService.counterOffer(
+                1L, new CounterOfferRequest("Football match practice", 5, "Saturday is fine"), owner);
+
+        verify(eventService).createEventAndDeliveries(eq(txn),
+                eq(TransactionEventType.REQUEST_COUNTERED), eq(owner), eq(null));
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+        verify(notificationService).createForEvent(eq(event), eq(borrower),
+                eq(NotificationType.REQUEST_COUNTERED), anyString(), messageCaptor.capture());
+        assertThat(messageCaptor.getValue()).contains("Ahmed").contains("Football");
     }
 
     @Test

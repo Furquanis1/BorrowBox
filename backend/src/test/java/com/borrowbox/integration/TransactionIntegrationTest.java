@@ -108,6 +108,7 @@ public class TransactionIntegrationTest {
     @Autowired private NotificationService notificationService;
     @Autowired private EvidenceRepository evidenceRepository;
     @Autowired private PlatformTransactionManager platformTransactionManager;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     @Value("${borrowbox.media.dir}") private String mediaDir;
 
     // ── Helpers ───────────────────────────────────────────────────────
@@ -949,6 +950,16 @@ public class TransactionIntegrationTest {
                 if (racePurpose.equals(txn.getPurpose())) {
                     unit.setStatus(AssetUnitStatus.AVAILABLE);
                     assetUnitRepository.save(unit);
+                    // V2.6 request notifications (and their source events) hold
+                    // FKs to the transaction, so clear them before deleting it.
+                    jdbcTemplate.update(
+                            "DELETE FROM transaction_event_deliveries WHERE event_id IN "
+                                    + "(SELECT id FROM transaction_events WHERE transaction_id = ?)",
+                            txn.getId());
+                    jdbcTemplate.update(
+                            "DELETE FROM notifications WHERE transaction_id = ?", txn.getId());
+                    jdbcTemplate.update(
+                            "DELETE FROM transaction_events WHERE transaction_id = ?", txn.getId());
                     transactionRepository.deleteById(txn.getId());
                 }
             });

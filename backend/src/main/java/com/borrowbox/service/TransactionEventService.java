@@ -114,7 +114,9 @@ public class TransactionEventService {
         User lender = transaction.getLender();
 
         return switch (eventType) {
+            case REQUEST_CREATED -> List.of(lender);
             case REQUEST_APPROVED, REQUEST_REJECTED -> List.of(borrower);
+            case REQUEST_COUNTERED -> List.of(borrower);
             case REQUEST_CANCELLED -> List.of(lender);
             case HANDOVER_SCHEDULED, LOAN_STARTED, LOAN_COMPLETED -> List.of(borrower, lender);
             case HANDOVER_CONFIRMED, HANDOVER_DISPUTED -> List.of(lender);

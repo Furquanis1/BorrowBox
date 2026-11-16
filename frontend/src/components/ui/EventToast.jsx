@@ -11,7 +11,9 @@ export default function EventToast({
   const prefersReduced = useReducedMotion()
 
   const eventLabels = {
+    REQUEST_CREATED: 'New loan request',
     REQUEST_APPROVED: 'Request approved',
+    REQUEST_COUNTERED: 'Counter-offer received',
     REQUEST_REJECTED: 'Request rejected',
     REQUEST_CANCELLED: 'Request cancelled',
     HANDOVER_SCHEDULED: 'Handover scheduled',

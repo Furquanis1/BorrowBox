@@ -5,7 +5,9 @@ import { useAuth } from '../../contexts/AuthContext'
 import EventToast from '../ui/EventToast'
 
 const navigationMap = {
+  REQUEST_CREATED: '/me/requests',
   REQUEST_APPROVED: '/me/requests',
+  REQUEST_COUNTERED: '/me/requests',
   REQUEST_REJECTED: '/me/requests',
   REQUEST_CANCELLED: '/me/requests',
   HANDOVER_SCHEDULED: '/me/loans',

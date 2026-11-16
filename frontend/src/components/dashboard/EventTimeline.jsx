@@ -1,7 +1,9 @@
 import React from 'react'
 
 const EVENT_META = {
+  REQUEST_CREATED: { icon: 'bi-plus-circle', label: 'Request submitted' },
   REQUEST_APPROVED: { icon: 'bi-check-circle', label: 'Request approved' },
+  REQUEST_COUNTERED: { icon: 'bi-arrow-repeat', label: 'Counter-offer proposed' },
   REQUEST_REJECTED: { icon: 'bi-x-circle', label: 'Request rejected' },
   REQUEST_CANCELLED: { icon: 'bi-slash-circle', label: 'Request cancelled' },
   HANDOVER_SCHEDULED: { icon: 'bi-calendar-event', label: 'Handover scheduled' },

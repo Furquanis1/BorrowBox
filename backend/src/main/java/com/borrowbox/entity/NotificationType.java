@@ -5,6 +5,8 @@ package com.borrowbox.entity;
  * telling the affected participant something happened.
  */
 public enum NotificationType {
+    REQUEST_CREATED,
+    REQUEST_COUNTERED,
     LOAN_APPROVED,
     LOAN_REJECTED,
     LOAN_CANCELLED,
