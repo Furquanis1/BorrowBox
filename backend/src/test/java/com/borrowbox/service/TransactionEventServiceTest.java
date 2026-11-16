@@ -180,4 +180,36 @@ public class TransactionEventServiceTest {
         verify(webhookDeliveryService).createDeliveriesForEvent(
                 any(TransactionEvent.class), eq(List.of(borrower, lender)));
     }
+
+    @Test
+    void requestCreatedIsDeliveredOnlyToLender() {
+        when(eventRepository.saveAndFlush(any(TransactionEvent.class))).thenAnswer(invocation -> {
+            TransactionEvent event = invocation.getArgument(0);
+            event.setId(78L);
+            return event;
+        });
+
+        eventService.createEventAndDeliveries(
+                txn, TransactionEventType.REQUEST_CREATED, borrower, null);
+
+        verify(deliveryRepository, times(1)).save(any());
+        verify(webhookDeliveryService).createDeliveriesForEvent(
+                any(TransactionEvent.class), eq(List.of(lender)));
+    }
+
+    @Test
+    void requestCounteredIsDeliveredOnlyToBorrower() {
+        when(eventRepository.saveAndFlush(any(TransactionEvent.class))).thenAnswer(invocation -> {
+            TransactionEvent event = invocation.getArgument(0);
+            event.setId(79L);
+            return event;
+        });
+
+        eventService.createEventAndDeliveries(
+                txn, TransactionEventType.REQUEST_COUNTERED, lender, null);
+
+        verify(deliveryRepository, times(1)).save(any());
+        verify(webhookDeliveryService).createDeliveriesForEvent(
+                any(TransactionEvent.class), eq(List.of(borrower)));
+    }
 }

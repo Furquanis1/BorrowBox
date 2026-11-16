@@ -3,7 +3,9 @@ import { useEvents } from '../../contexts/EventContext'
 import { eventService } from '../../services'
 
 const eventLabels = {
+  REQUEST_CREATED: 'New loan request',
   REQUEST_APPROVED: 'Request approved',
+  REQUEST_COUNTERED: 'Counter-offer received',
   REQUEST_REJECTED: 'Request rejected',
   REQUEST_CANCELLED: 'Request cancelled',
   HANDOVER_SCHEDULED: 'Handover scheduled',
@@ -31,7 +33,9 @@ const statusLabels = {
 }
 
 const navigationMap = {
+  REQUEST_CREATED: '/me/requests',
   REQUEST_APPROVED: '/me/requests',
+  REQUEST_COUNTERED: '/me/requests',
   REQUEST_REJECTED: '/me/requests',
   REQUEST_CANCELLED: '/me/requests',
   HANDOVER_SCHEDULED: '/me/loans',

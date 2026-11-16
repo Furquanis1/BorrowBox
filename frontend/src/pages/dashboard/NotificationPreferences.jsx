@@ -3,6 +3,8 @@ import { useApp } from '../../contexts/AppContext'
 import { notificationService } from '../../services'
 
 const TYPE_LABELS = {
+  REQUEST_CREATED: 'New loan request',
+  REQUEST_COUNTERED: 'Counter-offer received',
   LOAN_APPROVED: 'Loan approved',
   LOAN_REJECTED: 'Loan rejected',
   LOAN_CANCELLED: 'Loan cancelled',

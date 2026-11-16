@@ -11,7 +11,9 @@ package com.borrowbox.entity;
  */
 public enum TransactionEventType {
     // Request lifecycle
+    REQUEST_CREATED,
     REQUEST_APPROVED,
+    REQUEST_COUNTERED,
     REQUEST_REJECTED,
     REQUEST_CANCELLED,
 

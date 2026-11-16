@@ -341,15 +341,21 @@ public class TransactionService {
         txn.setBorrowerNote(trimToNull(request.note()));
         txn.setRequestedDurationDays(request.requestedDurationDays());
 
+        Transaction saved;
         try {
             assetUnitRepository.save(unit);
             // saveAndFlush surfaces UNIQUE(reserved_unit_id) violations
             // synchronously so a raced duplicate becomes a clean 400 instead of
             // a deferred rollback-only failure.
-            return toResponse(transactionRepository.saveAndFlush(txn));
+            saved = transactionRepository.saveAndFlush(txn);
         } catch (DataIntegrityViolationException ex) {
             throw new BusinessRuleViolationException("No available unit");
         }
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_CREATED, borrower, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getLender(),
+                        NotificationType.REQUEST_CREATED, "New loan request",
+                        borrower.getFullName() + " requested \"" + asset.getTitle() + "\"."));
+        return toResponse(saved);
     }
 
     /**
@@ -443,7 +449,13 @@ public class TransactionService {
         stampReservationDeadline(txn, counterOfferReservationHours);
         txn.setDecidedAt(now);
         txn.setDecidedBy(lender);
-        return toResponse(transactionRepository.save(txn));
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+        eventService.createEventAndDeliveries(txn, TransactionEventType.REQUEST_COUNTERED, lender, null)
+                .ifPresent(event -> notificationService.createForEvent(event, txn.getBorrower(),
+                        NotificationType.REQUEST_COUNTERED, "Counter-offer received",
+                        lender.getFullName() + " proposed new terms for \""
+                                + txn.getAsset().getTitle() + "\"."));
+        return response;
     }
 
     /**
