@@ -263,7 +263,7 @@ if not defined BORROWBOX_E2E_DB_PASSWORD (
 exit /b 0
 
 :write_credentials_file
-> "%CREDENTIALS_FILE%"
+copy /y nul "%CREDENTIALS_FILE%" >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Could not create the local demo credential file: %CREDENTIALS_FILE%
     exit /b 1
