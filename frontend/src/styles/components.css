@@ -449,6 +449,8 @@ select,
   background: var(--surface);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   animation: slideInRight var(--dur-base) var(--ease-out);
 }
 
@@ -473,10 +475,10 @@ select,
 .drawer-body {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 0 auto;
   gap: var(--sp-3);
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: visible;
   padding-right: 2px;
 }
 
@@ -1885,7 +1887,7 @@ select,
 }
 
 .drawer-body {
-  overflow-y: auto;
+  overflow-y: visible;
   min-height: 0;
 }
 
@@ -2822,13 +2824,13 @@ select,
 /* ============ V2.3.1 LEDGER TIMELINE ============ */
 
 /*
- * The conversation drawer owns its scrolling: the message list fills the space
- * and scrolls internally, while the timeline toggle and the V2.5.1 evidence grid
- * below it stay reachable. A two-column evidence grid keeps the fixed content
- * (timeline + evidence + actions + composer) within the drawer's height.
+ * The fixed .drawer is the single scroll container, so the body expands to its
+ * natural height and Cypress can see every action without fighting a nested
+ * overflow context. The timeline toggle and the V2.5.1 evidence grid below stay
+ * reachable because the whole drawer scrolls.
  */
 .conversation-drawer .drawer-body {
-  overflow-y: auto;
+  overflow-y: visible;
 }
 
 .conversation-drawer .conversation-body {
@@ -2838,7 +2840,7 @@ select,
      before this fix) and the drawer scrolled the message list to its last
      message, pushing earlier messages outside its own viewport. flex: 1 0 auto
      still grows the list into free space, but flex-shrink: 0 stops it being
-     compressed below the height its messages need. The drawer body stays the
+     compressed below the height its messages need. The fixed .drawer is the
      single scroll container, so the evidence, timeline and composer are still
      reachable and the chat never has to hide a message to make room.
      Nothing here may overlap the sections below: pinning the message list with
@@ -2852,16 +2854,17 @@ select,
 .lifecycle-stepper {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--sp-2);
+  gap: var(--sp-1);
+  margin: 0;
   flex-shrink: 0;
 }
 
 .lifecycle-step {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
@@ -2922,9 +2925,10 @@ select,
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 3px;
   flex-shrink: 0;
-  padding: 12px 14px;
+  margin: 0;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--teal-600);
   border-radius: var(--r-md);
@@ -2953,7 +2957,7 @@ select,
 }
 
 .next-step-action {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 @media (max-width: 640px) {
