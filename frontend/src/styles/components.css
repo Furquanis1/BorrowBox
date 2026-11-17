@@ -444,13 +444,13 @@ select,
   display: flex;
   flex-direction: column;
   width: min(540px, 92vw);
-  height: 100%;
+  height: 100vh;
   max-height: 100vh;
   padding: var(--sp-6);
   background: var(--surface);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
-  overflow: hidden;
+  overflow: visible;
   animation: slideInRight var(--dur-base) var(--ease-out);
 }
 
@@ -478,8 +478,14 @@ select,
   flex: 1 1 auto;
   gap: var(--sp-3);
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: scroll;
+  height: 100%;
   padding-right: 2px;
+  padding-bottom: 120px;
+}
+
+.drawer * {
+  scroll-behavior: auto !important;
 }
 
 .dialog-backdrop {
@@ -1887,7 +1893,7 @@ select,
 }
 
 .drawer-body {
-  overflow-y: auto;
+  overflow-y: scroll;
   min-height: 0;
 }
 
@@ -2830,7 +2836,7 @@ select,
  * evidence grid below stay reachable through that body scroll.
  */
 .conversation-drawer .drawer-body {
-  overflow-y: auto;
+  overflow-y: scroll;
 }
 
 .conversation-drawer .conversation-body {
