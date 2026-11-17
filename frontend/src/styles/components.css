@@ -1090,19 +1090,24 @@ select,
 /* ============ MOBILE APP SHELL ============ */
 
 .mobile-app-shell {
+  height: auto;
   min-height: 100vh;
   display: flex;
   justify-content: center;
   background: var(--bg);
+  overflow: visible;
 }
 
 .mobile-app-container {
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 40px 48px 160px 48px;
+  padding: 40px 48px;
+  padding-bottom: 140px;
   background: transparent;
+  height: auto;
   min-height: 100vh;
+  overflow: visible;
 }
 
 .mobile-app-header {
@@ -1161,6 +1166,9 @@ select,
 }
 
 .mobile-app-content {
+  height: auto;
+  min-height: 100vh;
+  overflow: visible;
   flex: 1;
   padding: var(--sp-4);
 }
