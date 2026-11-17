@@ -1,9 +1,44 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApp } from '../../contexts/AppContext'
 import { notificationService } from '../../services'
 
+const REQUEST_STAGE_TYPES = new Set([
+  'REQUEST_CREATED',
+  'REQUEST_COUNTERED',
+  'LOAN_APPROVED',
+  'LOAN_REJECTED',
+  'LOAN_CANCELLED',
+  'HANDOVER_SCHEDULED',
+])
+
+const LOAN_STAGE_TYPES = new Set([
+  'LOAN_STARTED',
+  'RECEIPT_CONFIRMED',
+  'RETURN_INITIATED',
+  'RETURN_HANDOVER_REPORTED',
+  'RETURN_DISPUTED',
+  'LOAN_COMPLETED',
+  'LOAN_DUE_SOON',
+  'LOAN_OVERDUE',
+])
+
+function notificationTarget(notification) {
+  const type = notification?.type
+  if (!type) return null
+  const isExtension = type.startsWith('EXTENSION_')
+  const base = REQUEST_STAGE_TYPES.has(type)
+    ? '/me/requests'
+    : LOAN_STAGE_TYPES.has(type) || isExtension
+      ? '/me/loans'
+      : null
+  if (!base) return null
+  return `${base}${notification.transactionId != null ? `?tx=${notification.transactionId}` : ''}`
+}
+
 export default function NotificationBell() {
   const { showToast } = useApp()
+  const navigate = useNavigate()
   const [notifications, setNotifications] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
@@ -143,6 +178,9 @@ export default function NotificationBell() {
                   className={`notification-item ${n.status === 'UNREAD' ? 'unread' : 'read'}`}
                   onClick={() => {
                     if (n.status === 'UNREAD') handleMarkAsRead(n.id)
+                    setIsOpen(false)
+                    const target = notificationTarget(n)
+                    if (target) navigate(target)
                   }}
                 >
                   <div className="notification-item-main">

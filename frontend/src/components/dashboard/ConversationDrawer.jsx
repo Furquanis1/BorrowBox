@@ -19,6 +19,26 @@ const EVIDENCE_VISIBLE_STATES = new Set(['AWAITING_HANDOVER', 'RETURN_INITIATED'
 // timeline, the upload panel and any future view cannot drift apart.
 const evidenceLabel = (type) => EVIDENCE_SLOTS.find((slot) => slot.type === type)?.label || type
 
+const LIFECYCLE_STEPS = ['Requested', 'Pickup', 'On Loan', 'Returned']
+
+function lifecycleIndex(state) {
+  switch (state) {
+    case 'APPROVED':
+    case 'AWAITING_HANDOVER':
+    case 'HANDOVER_DISPUTED':
+      return 1
+    case 'ACTIVE':
+      return 2
+    case 'RETURN_INITIATED':
+    case 'RETURN_REPORTED':
+    case 'RETURN_DISPUTED':
+    case 'COMPLETED':
+      return 3
+    default:
+      return 0
+  }
+}
+
 function formatTime(iso) {
   if (!iso) return ''
   const d = new Date(iso)
@@ -233,6 +253,38 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     }
   }
 
+  const handleScheduleHandover = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.stageHandover(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not schedule the handover')
+    } finally {
+      setActionBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  const handleConfirmHandover = async () => {
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const updated = await requestService.confirmHandover(active.id)
+      setCurrentTxn(updated)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setActionError(err?.message || 'Could not confirm the handover')
+    } finally {
+      setActionBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
   const handleDisputeHandover = async () => {
     setActionBusy(true)
     setActionError('')
@@ -398,6 +450,133 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     }
   }
 
+  const activeStage = state === 'COMPLETED' ? LIFECYCLE_STEPS.length : lifecycleIndex(state)
+
+  let nextStep = null
+  if (state === 'PENDING') {
+    nextStep = isLender
+      ? {
+          title: 'Awaiting your review',
+          text: 'Review the request and approve, counter-offer, or reject it.',
+        }
+      : {
+          title: 'Awaiting owner review',
+          text: 'The owner can approve, counter-offer, or reject this request.',
+        }
+  } else if (state === 'COUNTER_OFFERED') {
+    nextStep = isBorrower
+      ? {
+          title: 'Counter-offer received',
+          text: "Accept the owner's terms or cancel the request.",
+        }
+      : {
+          title: 'Awaiting borrower response',
+          text: 'The borrower can accept or cancel the counter-offer.',
+        }
+  } else if (state === 'APPROVED') {
+    nextStep = {
+      title: 'Pickup not scheduled',
+      text: 'Agree a pickup time in the conversation, then schedule the handover.',
+      action: 'scheduleHandover',
+    }
+  } else if (state === 'AWAITING_HANDOVER') {
+    nextStep = isLender
+      ? {
+          title: 'Handover pending',
+          text: 'Add the handover photo, then confirm the handover.',
+          action: 'confirmHandover',
+        }
+      : {
+          title: 'Handover pending',
+          text: 'Coordinate pickup in the conversation. The owner confirms the handover.',
+        }
+  } else if (
+    state === 'ACTIVE' &&
+    isBorrower &&
+    !active.borrowerConfirmedAt &&
+    active.handoverWindowOpen
+  ) {
+    nextStep = {
+      title: 'Confirm receipt',
+      text: 'Verify the item was handed over. You have 30 minutes to confirm receipt or report a problem.',
+      action: 'confirmReceipt',
+    }
+  } else if (state === 'ACTIVE' && isBorrower && !active.borrowerConfirmedAt) {
+    nextStep = {
+      title: 'Handover window closed',
+      text: 'If you did not receive the item, report a problem in the conversation.',
+    }
+  } else if (state === 'ACTIVE' && isBorrower) {
+    nextStep =
+      active.extensionRequestPending || active.extensionCounterPending
+        ? {
+            title: 'Extension in progress',
+            text: 'Resolve the due-date extension before starting the return.',
+          }
+        : {
+            title: 'On loan',
+            text: 'Return the item before the due date. Start the return when you are ready.',
+            action: 'startReturn',
+          }
+  } else if (state === 'ACTIVE' && isLender) {
+    nextStep = {
+      title: 'On loan',
+      text: 'The borrower has the item. Due date and overdue status are tracked automatically.',
+    }
+  } else if (state === 'RETURN_INITIATED' && isBorrower) {
+    nextStep = {
+      title: 'Return in progress',
+      text: 'Upload the before-return and handover photos, then report the handback.',
+    }
+  } else if (state === 'RETURN_INITIATED' && isLender) {
+    nextStep = {
+      title: 'Return in progress',
+      text: 'The borrower is preparing the handback.',
+    }
+  } else if (state === 'RETURN_REPORTED' && isLender) {
+    nextStep = {
+      title: 'Confirm receipt',
+      text: 'The borrower reported the item is back. Confirm you received it to close the loan.',
+      action: 'confirmReceived',
+    }
+  } else if (state === 'RETURN_REPORTED' && isBorrower) {
+    nextStep = {
+      title: 'Awaiting confirmation',
+      text: 'The owner will confirm the item was received.',
+    }
+  } else if (state === 'COMPLETED') {
+    nextStep = {
+      title: 'Loan complete',
+      text: 'The item was returned and the loan is closed.',
+    }
+  } else if (state === 'REJECTED') {
+    nextStep = { title: 'Request rejected', text: 'No further action is needed.' }
+  } else if (state === 'CANCELLED') {
+    nextStep = { title: 'Request cancelled', text: 'No further action is needed.' }
+  } else if (state === 'EXPIRED') {
+    nextStep = { title: 'Reservation expired', text: 'No further action is needed.' }
+  } else if (state === 'HANDOVER_DISPUTED') {
+    nextStep = {
+      title: 'Handover under review',
+      text: 'The item was returned to available inventory. No further action is needed.',
+    }
+  } else if (state === 'RETURN_DISPUTED') {
+    nextStep = {
+      title: 'Return under review',
+      text: 'The loan is frozen for review. No further action is needed.',
+    }
+  }
+
+  const nextStepActions = {
+    scheduleHandover: { label: 'Schedule handover', icon: 'bi-calendar-check', onClick: handleScheduleHandover },
+    confirmHandover: { label: 'Confirm handover', icon: 'bi-box-arrow-down', onClick: handleConfirmHandover },
+    confirmReceipt: { label: 'Confirm receipt', icon: 'bi-check-circle', onClick: handleConfirmHandoverReceipt },
+    startReturn: { label: 'Start return', icon: 'bi-arrow-90deg-left', onClick: handleMarkReturned },
+    confirmReceived: { label: 'Confirm received', icon: 'bi-check-lg', onClick: handleConfirmReceipt },
+  }
+
+  const nextStepAction = nextStep?.action ? nextStepActions[nextStep.action] : null
+
   if (!transaction) return null
 
   return (
@@ -407,6 +586,45 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
       title={`Conversation \u2014 ${transaction.title || 'Transaction'}`}
       className="request-drawer conversation-drawer"
     >
+      <div className="lifecycle-stepper" aria-label="Loan progress">
+        {LIFECYCLE_STEPS.map((label, index) => {
+          const complete = index < activeStage
+          const current = index === activeStage
+          return (
+            <div
+              key={label}
+              className={`lifecycle-step${complete ? ' is-complete' : ''}${current ? ' is-active' : ''}`}
+              aria-current={current ? 'step' : undefined}
+            >
+              <span className="lifecycle-step-marker" aria-hidden="true">
+                {complete ? <i className="bi bi-check" /> : index + 1}
+              </span>
+              <span className="lifecycle-step-label">{label}</span>
+            </div>
+          )
+        })}
+      </div>
+
+      {nextStep && (
+        <div className="next-step">
+          <span className="next-step-label">Next Step</span>
+          <span className="next-step-title">{nextStep.title}</span>
+          <p className="next-step-text">{nextStep.text}</p>
+          {nextStepAction && (
+            <Button
+              className="next-step-action"
+              variant="primary"
+              size="sm"
+              loading={actionBusy}
+              onClick={nextStepAction.onClick}
+            >
+              <i className={`bi ${nextStepAction.icon}`} aria-hidden="true" />
+              {nextStepAction.label}
+            </Button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="conversation-status">
           <Spinner />
