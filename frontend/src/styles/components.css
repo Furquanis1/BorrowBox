@@ -1090,22 +1090,19 @@ select,
 /* ============ MOBILE APP SHELL ============ */
 
 .mobile-app-shell {
-  background: var(--bg);
   min-height: 100vh;
   display: flex;
   justify-content: center;
+  background: var(--bg);
 }
 
 .mobile-app-container {
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  padding: 40px 48px;
+  padding: 40px 48px 160px 48px;
   background: transparent;
   min-height: 100vh;
-  overflow-x: hidden;
-  padding-bottom: 120px;
-  box-shadow: none;
 }
 
 .mobile-app-header {
@@ -1184,6 +1181,10 @@ select,
 }
 
 @media (max-width: 767px) {
+  .mobile-app-container {
+    padding: 24px 16px 140px 16px;
+  }
+
   .floating-nav {
     width: calc(100% - 48px);
     justify-content: space-between;
