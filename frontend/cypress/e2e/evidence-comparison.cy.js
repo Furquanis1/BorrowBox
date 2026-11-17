@@ -216,7 +216,7 @@ describe('Before/After comparison (V2.5.5)', () => {
     cy.visit('/me/requests')
     cy.get('.requests-tab').contains('Incoming').click()
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Discuss pickup').click()
-    cy.get('.conversation-body', { timeout: 15000 }).should('be.visible')
+    cy.get('.conversation-body', { timeout: 15000 }).scrollIntoView().should('be.visible')
 
     // The four always-present timeline slots plus the comparison put this
     // section below the fold of the drawer's own scroll container, exactly as
@@ -225,8 +225,8 @@ describe('Before/After comparison (V2.5.5)', () => {
     cy.get('.conversation-comparison').scrollIntoView().should('be.visible')
 
     // ── 1. Both sides always render ───────────────────────────────────
-    cy.get('.conversation-comparison [data-comparison-side="before"]').should('be.visible')
-    cy.get('.conversation-comparison [data-comparison-side="after"]').should('be.visible')
+    cy.get('.conversation-comparison [data-comparison-side="before"]').scrollIntoView().should('be.visible')
+    cy.get('.conversation-comparison [data-comparison-side="after"]').scrollIntoView().should('be.visible')
 
     // ── The locked mapping: which moment each side stands for ──────────
     cy.get('[data-comparison-side="before"] .conversation-comparison-side-title')
@@ -321,7 +321,7 @@ describe('Before/After comparison (V2.5.5)', () => {
     cy.visit('/me/loans')
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return in progress').should('be.visible')
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-body', { timeout: 15000 }).should('be.visible')
+    cy.get('.conversation-body', { timeout: 15000 }).scrollIntoView().should('be.visible')
     cy.get('.conversation-comparison').scrollIntoView().should('be.visible')
 
     get(() => `/api/transactions/${txnId}/evidence`).then((res) => {

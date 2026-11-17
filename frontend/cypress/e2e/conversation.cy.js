@@ -215,10 +215,10 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.visit('/me/requests')
     cy.get('.requests-tab').contains('My requests').click()
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Discuss pickup').click()
-    cy.get('.conversation-body').should('be.visible')
-    cy.get('.conversation-body').contains('Can you drop it at the gym reception?').should('be.visible')
-    cy.get('.conversation-body').contains('Sure, see you at 5pm').should('be.visible')
-    cy.get('.conversation-system-body').contains('Handover scheduled').should('be.visible')
+    cy.get('.conversation-body').scrollIntoView().should('be.visible')
+    cy.get('.conversation-body').contains('Can you drop it at the gym reception?').scrollIntoView().should('be.visible')
+    cy.get('.conversation-body').contains('Sure, see you at 5pm').scrollIntoView().should('be.visible')
+    cy.get('.conversation-system-body').contains('Handover scheduled').scrollIntoView().should('be.visible')
 
     cy.get('.conversation-input').type('See you soon')
     cy.get('.conversation-composer button[type="submit"]').click()
@@ -249,7 +249,7 @@ describe('V2.2.3 Transaction Conversation', () => {
     cy.visit('/me/loans')
     cy.get('.transaction-card').contains('On loan').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-system-body').contains('Loan started').should('be.visible')
+    cy.get('.conversation-system-body').contains('Loan started').scrollIntoView().should('be.visible')
     cy.get('.conversation-body').contains('See you soon').scrollIntoView().should('be.visible')
 
     cy.get('.conversation-input').type('Enjoy the match')
@@ -361,8 +361,8 @@ describe('V2.2.3 Transaction Conversation', () => {
     loginViaUi(salah)
     cy.visit('/me/loans')
     cy.get('.transaction-card').contains('button', 'View conversation').click()
-    cy.get('.conversation-system-body').contains('Loan completed').should('be.visible')
-    cy.get('.conversation-body').contains('Sure, see you at 5pm').should('be.visible')
+    cy.get('.conversation-system-body').contains('Loan completed').scrollIntoView().should('be.visible')
+    cy.get('.conversation-body').contains('Sure, see you at 5pm').scrollIntoView().should('be.visible')
     cy.get('.conversation-composer').should('not.exist')
 
     // Writes are rejected at the API too.

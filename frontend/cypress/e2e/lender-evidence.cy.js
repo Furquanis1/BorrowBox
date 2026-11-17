@@ -215,15 +215,16 @@ describe('Lender handover evidence (V2.5.1)', () => {
     cy.get('.requests-tab').contains('Incoming').click()
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('Awaiting handover').should('be.visible')
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Discuss pickup').click()
-    cy.get('.conversation-body').should('be.visible')
+    cy.get('.conversation-body').scrollIntoView().should('be.visible')
     // V2.5.4 evidence timeline: the four always-present slots make the evidence
     // section taller, so the lender upload panel can start below the fold of the
     // drawer's inner scroll container. Scroll it into view rather than dropping
     // the visibility assertions.
     cy.get('.conversation-lender-evidence').scrollIntoView().should('be.visible')
-    cy.get('.conversation-lender-evidence button').contains('Add pre-lend photo').should('be.visible')
-    cy.get('.conversation-lender-evidence button').contains('Add handover photo').should('be.visible')
+    cy.get('.conversation-lender-evidence button').contains('Add pre-lend photo').scrollIntoView().should('be.visible')
+    cy.get('.conversation-lender-evidence button').contains('Add handover photo').scrollIntoView().should('be.visible')
     cy.get('.conversation-lender-evidence').contains('The handover photo is required before you can confirm the handover.')
+      .scrollIntoView()
       .should('be.visible')
 
     // Pre-lending photo with condition metadata.

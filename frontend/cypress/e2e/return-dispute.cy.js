@@ -188,7 +188,7 @@ describe('V2.2.6 Return Dispute', () => {
     cy.visit('/me/loans')
     cy.get('.transaction-card', { timeout: 15000 }).contains('Return in progress').should('be.visible')
     cy.get('.transaction-card').contains('button', 'Conversation').click()
-    cy.get('.conversation-body').should('be.visible')
+    cy.get('.conversation-body').scrollIntoView().should('be.visible')
     cy.get('.conversation-return-action button').contains("I've handed the item back").should('be.disabled')
     cy.get('.conversation-return-action input[type="file"]').eq(0).selectFile('cypress/fixtures/photo.png', { force: true })
     cy.get('.conversation-return-action button').contains('Before-return photo added', { timeout: 15000 }).scrollIntoView().should('be.visible')
@@ -214,7 +214,7 @@ describe('V2.2.6 Return Dispute', () => {
     cy.get('.conversation-return-action button').contains('Not received').should('be.visible')
     cy.get('.conversation-return-title').contains('Photos').scrollIntoView().should('be.visible')
     cy.get('.conversation-evidence-slots .conversation-evidence-item', { timeout: 15000 }).should('have.length', 3)
-    cy.get('.conversation-evidence-item').first().find('img').should('be.visible')
+    cy.get('.conversation-evidence-item').first().find('img').scrollIntoView().should('be.visible')
 
     // ── RETURN_REPORTED guard rails: borrower can neither confirm nor dispute ──
     loginViaApi(salah)
