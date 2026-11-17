@@ -1102,9 +1102,9 @@ select,
   margin: 0 auto;
   padding: 40px 48px;
   background: transparent;
-  height: 100vh;
-  overflow-y: auto;
+  min-height: 100vh;
   overflow-x: hidden;
+  padding-bottom: 120px;
   box-shadow: none;
 }
 
@@ -1170,37 +1170,23 @@ select,
 
 .floating-nav {
   position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 1000;
   background: var(--ink-strong);
   border-radius: 9999px;
   display: flex;
+  gap: 16px;
   padding: 12px 24px;
   box-shadow: 0 8px 24px rgba(33, 37, 41, 0.3);
-}
-
-@media (min-width: 768px) {
-  .floating-nav {
-    top: 32px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: fit-content;
-    gap: 32px;
-    bottom: auto;
-  }
-
-  .mobile-app-container {
-    padding-top: 120px;
-  }
+  width: max-content;
 }
 
 @media (max-width: 767px) {
   .floating-nav {
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
     width: calc(100% - 48px);
     justify-content: space-between;
-    top: auto;
   }
 }
 
