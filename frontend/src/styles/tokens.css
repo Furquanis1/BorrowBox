@@ -5,11 +5,11 @@
 
 :root {
   /* Typography */
-  --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Instrument Sans', sans-serif;
   --font-display: 'DM Serif Display', Georgia, serif;
 
   /* Surfaces */
-  --bg: #f8f9f8;
+  --bg: #f5f6f7;
   --surface: #ffffff;
   --surface-1: #ffffff;
   --surface-2: #eef2f0;
@@ -17,7 +17,7 @@
   --row-hover: #fbfdfc;
 
   /* Ink / text */
-  --ink-strong: #101a15;
+  --ink-strong: #212529;
   --ink: #19241e;
   --ink-muted: #5c6b64;
   --ink-faint: #8b9891;
@@ -28,13 +28,21 @@
   --line-soft: #ecefed;
   --line-strong: #c7d0ca;
 
-  /* Teal (primary) */
-  --teal-700: #0e4f43;
-  --teal-600: #145c4f;
-  --teal-500: #1a6f5f;
-  --teal-300: #7bb5a9;
-  --teal-100: #e0f0ec;
-  --teal-50: #f0f7f5;
+  /* Brand / primary — stark dark charcoal */
+  --brand: #212529;
+  --brand-hover: #343a40;
+  --brand-soft: #e9ecef;
+  --brand-tint: #f5f6f7;
+  --primary: var(--brand);
+  --primary-hover: var(--brand-hover);
+
+  /* Primary accent ramp (now charcoal, no teal cast) */
+  --teal-700: #212529;
+  --teal-600: #212529;
+  --teal-500: #343a40;
+  --teal-300: #8c9297;
+  --teal-100: #e9ecef;
+  --teal-50: #f5f6f7;
 
   /* Amber (attention / pending) */
   --amber-800: #7a4a10;
