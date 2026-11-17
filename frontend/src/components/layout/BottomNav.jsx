@@ -10,7 +10,7 @@ const navItems = [
 
 export function BottomNav() {
   return (
-    <nav className="floating-bottom-nav" aria-label="Primary navigation">
+    <nav className="floating-nav" aria-label="Primary navigation">
       {navItems.map(({ to, label, icon }) => (
         <NavLink
           key={to}

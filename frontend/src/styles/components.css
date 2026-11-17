@@ -3,6 +3,10 @@
    Primitives + public/auth surfaces + dashboard shell
    ========================================================= */
 
+h1, h2, h3, h4, h5, h6, .serif {
+  font-family: 'Instrument Sans', sans-serif !important;
+}
+
 /* ============ BUTTONS ============ */
 
 .btn {
@@ -1094,14 +1098,14 @@ select,
 
 .mobile-app-container {
   width: 100%;
-  max-width: 480px;
-  background: var(--bg);
-  position: relative;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 40px 48px;
+  background: transparent;
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: 100px;
-  box-shadow: 0 0 40px rgba(0,0,0,0.05);
+  box-shadow: none;
 }
 
 .mobile-app-header {
@@ -1164,20 +1168,40 @@ select,
   padding: var(--sp-4);
 }
 
-.floating-bottom-nav {
+.floating-nav {
   position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 48px);
-  max-width: 432px;
+  z-index: 1000;
   background: var(--ink-strong);
   border-radius: 9999px;
   display: flex;
-  justify-content: space-between;
   padding: 12px 24px;
-  z-index: 1000;
   box-shadow: 0 8px 24px rgba(33, 37, 41, 0.3);
+}
+
+@media (min-width: 768px) {
+  .floating-nav {
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: fit-content;
+    gap: 32px;
+    bottom: auto;
+  }
+
+  .mobile-app-container {
+    padding-top: 120px;
+  }
+}
+
+@media (max-width: 767px) {
+  .floating-nav {
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 48px);
+    justify-content: space-between;
+    top: auto;
+  }
 }
 
 .nav-pill-item {
@@ -1197,6 +1221,36 @@ select,
 .nav-pill-item.active {
   color: var(--surface);
   background: rgba(255, 255, 255, 0.1);
+}
+
+.community-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 24px 0;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.community-tabs a {
+  padding: 8px 16px;
+  border-radius: 9999px;
+  background: #ffffff;
+  color: var(--ink-strong);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-tabs a[aria-current="page"] {
+  background: var(--ink-strong);
+  color: #ffffff;
+  border-color: var(--ink-strong);
 }
 
 .avatar-menu {
