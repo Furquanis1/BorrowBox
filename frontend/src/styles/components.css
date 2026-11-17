@@ -445,12 +445,12 @@ select,
   flex-direction: column;
   width: min(540px, 92vw);
   height: 100%;
+  max-height: 100vh;
   padding: var(--sp-6);
   background: var(--surface);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow-lg);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   animation: slideInRight var(--dur-base) var(--ease-out);
 }
 
@@ -475,10 +475,10 @@ select,
 .drawer-body {
   display: flex;
   flex-direction: column;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   gap: var(--sp-3);
   min-height: 0;
-  overflow-y: visible;
+  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -1887,7 +1887,7 @@ select,
 }
 
 .drawer-body {
-  overflow-y: visible;
+  overflow-y: auto;
   min-height: 0;
 }
 
@@ -2824,13 +2824,13 @@ select,
 /* ============ V2.3.1 LEDGER TIMELINE ============ */
 
 /*
- * The fixed .drawer is the single scroll container, so the body expands to its
- * natural height and Cypress can see every action without fighting a nested
- * overflow context. The timeline toggle and the V2.5.1 evidence grid below stay
- * reachable because the whole drawer scrolls.
+ * The drawer is a bounded flex column: the header stays fixed and the body owns
+ * a single scroll context with flex: 1 1 auto, so Cypress sees every action
+ * without an unbounded overflow context. The timeline toggle and the V2.5.1
+ * evidence grid below stay reachable through that body scroll.
  */
 .conversation-drawer .drawer-body {
-  overflow-y: visible;
+  overflow-y: auto;
 }
 
 .conversation-drawer .conversation-body {
@@ -2840,9 +2840,9 @@ select,
      before this fix) and the drawer scrolled the message list to its last
      message, pushing earlier messages outside its own viewport. flex: 1 0 auto
      still grows the list into free space, but flex-shrink: 0 stops it being
-     compressed below the height its messages need. The fixed .drawer is the
-     single scroll container, so the evidence, timeline and composer are still
-     reachable and the chat never has to hide a message to make room.
+     compressed below the height its messages need. The bounded .drawer-body is
+     the single scroll container, so the evidence, timeline and composer are
+     still reachable and the chat never has to hide a message to make room.
      Nothing here may overlap the sections below: pinning the message list with
      position: sticky was tried and rejected, because it covers the evidence
      items that scrollIntoView() brings into view. */
