@@ -22,7 +22,7 @@ body {
   font-family: var(--font-sans);
   font-size: 16px;
   font-weight: 400;
-  line-height: 1.55;
+  line-height: 1.5;
   color: var(--ink);
   background-color: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -43,8 +43,43 @@ h6 {
   line-height: 1.25;
 }
 
+h1,
+h2,
+h3 {
+  letter-spacing: -0.02em;
+}
+
+h4,
+h5,
+h6 {
+  letter-spacing: -0.01em;
+}
+
 p {
   margin: 0;
+}
+
+/* Numeric data reads as data: aligned counts, dates, stats and tables. */
+table,
+th,
+td,
+time,
+.badge,
+.requests-tab-count,
+.notification-badge,
+.avatar-menu-badge,
+.stat-label,
+.stat-value,
+.stat-hint,
+.notification-item-time,
+.conversation-time,
+.conversation-evidence-time,
+.event-envelope-time,
+.event-panel-row-time,
+.community-header-meta,
+.explore-listing-row-meta,
+.transaction-card-note {
+  font-variant-numeric: tabular-nums;
 }
 
 a {

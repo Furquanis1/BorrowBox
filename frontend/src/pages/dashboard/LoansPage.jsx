@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAsync } from '../../hooks/useAsync'
 import { useApp } from '../../contexts/AppContext'
 import { useAuth } from '../../contexts/AuthContext'
@@ -37,12 +38,33 @@ const CONVERSATION_LABEL = {
   RETURN_DISPUTED: 'View conversation',
 }
 
-function LoanCard({ loan, currentUserId, onConversation }) {
+function LoanCard({
+  loan,
+  currentUserId,
+  busy,
+  onConversation,
+  onConfirmReceipt,
+  onStartReturn,
+  onCompleteReturn,
+  onConfirmReceived,
+}) {
   const state = loan.state
   const isBorrower = currentUserId && loan.borrowerId === currentUserId
+  const isLender = currentUserId && loan.lenderId === currentUserId
   // V2.2.4: due date and derived conditions come from the backend; no client-side
   // calculation is ever performed for dueSoon or overdue.
   const dueDate = loan.dueAt ? new Date(loan.dueAt) : null
+
+  const canConfirmReceipt =
+    isBorrower && state === 'ACTIVE' && loan.handoverWindowOpen && !loan.borrowerConfirmedAt
+  const canStartReturn =
+    isBorrower &&
+    state === 'ACTIVE' &&
+    loan.borrowerConfirmedAt &&
+    !loan.extensionRequestPending &&
+    !loan.extensionCounterPending
+  const canCompleteReturn = isBorrower && state === 'RETURN_INITIATED'
+  const canConfirmReceived = isLender && state === 'RETURN_REPORTED'
 
   const badgeClass =
     loan.overdue ? 'badge-danger' : loan.dueSoon ? 'badge-warning' : STATE_BADGE[state] || 'badge-neutral'
@@ -106,15 +128,61 @@ function LoanCard({ loan, currentUserId, onConversation }) {
           <i className="bi bi-chat-dots" aria-hidden="true" />
           {CONVERSATION_LABEL[state] || 'Conversation'}
         </Button>
+
+        {canConfirmReceipt && (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === `receipt:${loan.id}`}
+            onClick={() => onConfirmReceipt()}
+          >
+            <i className="bi bi-check-circle" aria-hidden="true" />
+            Confirm receipt
+          </Button>
+        )}
+
+        {canStartReturn && (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === `return:${loan.id}`}
+            onClick={() => onStartReturn()}
+          >
+            <i className="bi bi-arrow-90deg-left" aria-hidden="true" />
+            Start return
+          </Button>
+        )}
+
+        {canCompleteReturn && (
+          <Button variant="primary" size="sm" onClick={() => onCompleteReturn()}>
+            <i className="bi bi-camera" aria-hidden="true" />
+            Complete return
+          </Button>
+        )}
+
+        {canConfirmReceived && (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={busy === `received:${loan.id}`}
+            onClick={() => onConfirmReceived()}
+          >
+            <i className="bi bi-check-lg" aria-hidden="true" />
+            Confirm received
+          </Button>
+        )}
       </div>
     </li>
   )
 }
 
 export default function LoansPage() {
-  const { triggerRefresh } = useApp()
+  const { triggerRefresh, showToast } = useApp()
   const { user } = useAuth()
   const [conversationTarget, setConversationTarget] = useState(null)
+  const [busy, setBusy] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const txParam = searchParams.get('tx')
   const fetchMine = useCallback(() => requestService.getMine(), [])
   const fetchLended = useCallback(() => requestService.getLendRequests(), [])
   const mineState = useAsync(fetchMine, [])
@@ -124,9 +192,54 @@ export default function LoansPage() {
     LOAN_STATES.has(t.state)
   )
 
+  const clearTxParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('tx')
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  useEffect(() => {
+    if (!txParam) return
+
+    const allLoans = [...(mineState.data || []), ...(lendedState.data || [])]
+    const match = allLoans.find((transaction) => String(transaction.id) === String(txParam))
+    if (match) {
+      setConversationTarget(match)
+      clearTxParam()
+      return
+    }
+
+    if (!mineState.loading && !lendedState.loading) clearTxParam()
+  }, [
+    txParam,
+    mineState.data,
+    mineState.loading,
+    lendedState.data,
+    lendedState.loading,
+    clearTxParam,
+  ])
+
   const handleDataChanged = async () => {
     triggerRefresh()
     await Promise.allSettled([mineState.reload(), lendedState.reload()])
+  }
+
+  const runAction = async (key, action, successMessage) => {
+    setBusy(key)
+    try {
+      await action()
+      showToast(successMessage)
+      await handleDataChanged()
+    } catch (err) {
+      showToast(err?.message || 'Action failed', 'error')
+    } finally {
+      setBusy(null)
+    }
   }
 
   const loading = mineState.loading || lendedState.loading
@@ -172,7 +285,30 @@ export default function LoansPage() {
               key={loan.id}
               loan={loan}
               currentUserId={user?.id}
+              busy={busy}
               onConversation={() => setConversationTarget(loan)}
+              onConfirmReceipt={() =>
+                runAction(
+                  `receipt:${loan.id}`,
+                  () => requestService.confirmReceipt(loan.id),
+                  'Receipt confirmed.'
+                )
+              }
+              onStartReturn={() =>
+                runAction(
+                  `return:${loan.id}`,
+                  () => requestService.initiateReturn(loan.id),
+                  'Return started.'
+                )
+              }
+              onCompleteReturn={() => setConversationTarget(loan)}
+              onConfirmReceived={() =>
+                runAction(
+                  `received:${loan.id}`,
+                  () => requestService.confirmReturn(loan.id),
+                  'Return confirmed.'
+                )
+              }
             />
           ))}
         </ul>

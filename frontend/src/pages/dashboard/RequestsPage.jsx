@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useApp } from '../../contexts/AppContext'
 import { useAsync } from '../../hooks/useAsync'
 import { requestService, waitlistService } from '../../services'
@@ -59,6 +60,7 @@ function TransactionCard({
   role,
   busy,
   onApprove,
+  onApproveAndStage,
   onReject,
   onCounterOffer,
   onAcceptCounter,
@@ -168,6 +170,15 @@ function TransactionCard({
               <i className="bi bi-check-lg" aria-hidden="true" />
               Approve
             </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              loading={busy === 'approveStage'}
+              onClick={() => onApproveAndStage()}
+            >
+              <i className="bi bi-calendar-check" aria-hidden="true" />
+              Approve &amp; set pickup
+            </Button>
             <Button variant="outline" size="sm" loading={busy === 'counter'} onClick={() => onCounterOffer()}>
               <i className="bi bi-arrow-repeat" aria-hidden="true" />
               Counter-offer
@@ -274,6 +285,8 @@ export default function RequestsPage() {
   const [busy, setBusy] = useState(null)
   const [counterTarget, setCounterTarget] = useState(null)
   const [conversationTarget, setConversationTarget] = useState(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const txParam = searchParams.get('tx')
 
   const fetchIncoming = useCallback(() => requestService.getLendRequests(), [])
   const fetchMine = useCallback(() => requestService.getMine(), [])
@@ -282,6 +295,50 @@ export default function RequestsPage() {
   const incomingState = useAsync(fetchIncoming, [])
   const mineState = useAsync(fetchMine, [])
   const waitlistState = useAsync(fetchWaitlist, [])
+
+  const clearTxParam = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('tx')
+        return next
+      },
+      { replace: true }
+    )
+  }, [setSearchParams])
+
+  useEffect(() => {
+    if (!txParam) return
+
+    const incomingMatch = (incomingState.data || []).find(
+      (transaction) => String(transaction.id) === String(txParam)
+    )
+    if (incomingMatch) {
+      setTab('incoming')
+      setConversationTarget(incomingMatch)
+      clearTxParam()
+      return
+    }
+
+    const mineMatch = (mineState.data || []).find(
+      (transaction) => String(transaction.id) === String(txParam)
+    )
+    if (mineMatch) {
+      setTab('mine')
+      setConversationTarget(mineMatch)
+      clearTxParam()
+      return
+    }
+
+    if (!incomingState.loading && !mineState.loading) clearTxParam()
+  }, [
+    txParam,
+    incomingState.data,
+    incomingState.loading,
+    mineState.data,
+    mineState.loading,
+    clearTxParam,
+  ])
 
   const refreshAll = async () => {
     triggerRefresh()
@@ -429,6 +486,18 @@ export default function RequestsPage() {
               busy={busy}
               onApprove={() =>
                 run({ key: 'approve', run: () => requestService.approve(transaction.id) }, 'Request approved')
+              }
+              onApproveAndStage={() =>
+                run(
+                  {
+                    key: 'approveStage',
+                    run: async () => {
+                      await requestService.approve(transaction.id)
+                      await requestService.stageHandover(transaction.id)
+                    },
+                  },
+                  'Approved. Pickup scheduled.'
+                )
               }
               onReject={() =>
                 run({ key: 'reject', run: () => requestService.reject(transaction.id) }, 'Request rejected')
