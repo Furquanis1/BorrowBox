@@ -17,6 +17,7 @@ export default function ExplorePage() {
   const community = communities.find((c) => String(c.id) === String(communityId)) || null
   const [requestListing, setRequestListing] = useState(null)
   const [waitlistListing, setWaitlistListing] = useState(null)
+  const [activeFilter, setActiveFilter] = useState('All')
 
   const fetchListings = useCallback(() => {
     if (!community) return Promise.resolve([])
@@ -30,6 +31,13 @@ export default function ExplorePage() {
 
   const { data: listings, loading, error, reload, retry } = useAsync(fetchListings, [community?.id])
   const { data: myAssetIds } = useAsync(fetchMyAssetIds, [])
+
+  const filters = ['All', 'Available', 'Waitlist']
+  const visibleListings = (listings || []).filter((listing) => {
+    if (activeFilter === 'Available') return listing.availableUnits > 0
+    if (activeFilter === 'Waitlist') return listing.availableUnits === 0
+    return true
+  })
 
   if (!community) return null
 
@@ -83,8 +91,22 @@ export default function ExplorePage() {
         </section>
       ) : (
         <section aria-label="Explore listing">
+          <div className="pill-filter-scroll" aria-label="Community filters">
+            {filters.map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                className={`filter-pill${activeFilter === filter ? ' active' : ''}`}
+                aria-pressed={activeFilter === filter}
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+
           <ListingRowList
-            listings={listings}
+            listings={visibleListings}
             myAssetIds={myAssetIds}
             onRequest={(listing) => setRequestListing(listing)}
             onJoinWaitlist={(listing) => setWaitlistListing(listing)}
