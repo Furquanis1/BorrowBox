@@ -1,5 +1,4 @@
-describe('Community Home · Recently offered (Slice 1)', () => {
-  const ahmed = { email: 'ahmed@example.com', password: Cypress.env('seedPassword') }
+describe('Community Home · community hub (Slice 1)', () => {
   const salah = { email: 'salah@example.com', password: Cypress.env('seedPassword') }
 
   let cseId
@@ -25,93 +24,94 @@ describe('Community Home · Recently offered (Slice 1)', () => {
     cy.url().should('include', '/communities/', { timeout: 15000 })
   }
 
+  const expectNoItemActions = () => {
+    cy.get('.community-home .explore-listing-row').should('not.exist')
+    cy.get('.community-home .tb-card').should('not.exist')
+    cy.get('.community-home .community-browse-controls').should('not.exist')
+    cy.get('.community-home input[type="search"]').should('not.exist')
+    cy.get('.community-home').should('not.contain', 'Recently offered')
+    cy.get('.community-home').should('not.contain', 'Join waitlist')
+    cy.get('.community-home button').should('not.contain', 'Request')
+    cy.get('.community-home button').should('not.contain', 'Join waitlist')
+  }
+
   before(() => {
-    cy.request('POST', '/api/auth/login', ahmed)
+    cy.request('POST', '/api/auth/login', {
+      email: 'ahmed@example.com',
+      password: Cypress.env('seedPassword'),
+    })
     cy.request('GET', '/api/communities').then((res) => {
       cseId = res.body.find((c) => c.name === 'CSE Department').id
     })
   })
 
   beforeEach(() => {
-    // The error/recovery test deliberately injects a failing first request; the
-    // app still renders its error state, but the initial fetch rejection
-    // surfaces as an uncaught promise rejection (useAsync sets state and
-    // rethrows). Tolerate exactly the injected message; any other uncaught
-    // error still fails the test.
-    cy.on('uncaught:exception', (error) => {
-      return !String(error?.message || '').includes('Temporary outage')
-    })
     cy.clearCookies()
     cy.clearLocalStorage()
     signInAs(salah.email, salah.password)
   })
 
-  it('shows the Recently offered section with real community listings', () => {
+  it('renders the community hub with pulse metrics, guidelines, and quick actions', () => {
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('#recently-offered-title').should('contain', 'Recently offered')
-    cy.get('.community-home .explore-listing-row').should('have.length.at.least', 1)
-    cy.get('.community-home .explore-listing-row')
-      .first()
-      .should('contain', 'available')
+    cy.get('.community-home .community-hub').should('be.visible')
+    cy.get('.community-home-section-title').should('contain', 'Community Pulse')
+    cy.get('.community-pulse-item').should('have.length', 4)
+    cy.get('.community-pulse').should('contain', 'Active Members')
+    cy.get('.community-pulse').should('contain', 'Available Items')
+    cy.get('.community-pulse').should('contain', 'Active Rules')
+    cy.get('.community-pulse').should('contain', 'Admission Mode')
+    cy.get('#community-guidelines-title').should('contain', 'Community Guidelines')
+    cy.get('#community-actions-title').should('contain', 'Quick Community Actions')
+    expectNoItemActions()
   })
 
-  it('caps the Recently offered rows at six items', () => {
+  it('shows the Explore CTA instead of item cards when listings are available', () => {
     cy.intercept('GET', `/api/communities/${cseId}/listings`, {
       body: listingFixtures(8),
     })
 
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('.community-home .explore-listing-row').should('have.length', 6)
-    cy.get('.community-home').should('not.contain', 'Recently offered item 7')
-    cy.get('.community-home').should('not.contain', 'Recently offered item 8')
+    cy.get('.community-explore-card').should('be.visible')
+    cy.get('.community-explore-cta')
+      .should('be.visible')
+      .and('have.text', 'Explore Borrowable Items →')
+    cy.get('.community-home').should('not.contain', 'Recently offered item 1')
+    expectNoItemActions()
   })
 
-  it('shows the empty state when nothing has been shared', () => {
+  it('keeps the hub useful when nothing has been shared', () => {
     cy.intercept('GET', `/api/communities/${cseId}/listings`, { body: [] })
 
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('#recently-offered-title').should('contain', 'Recently offered')
-    cy.get('.empty-state-title').should('have.text', 'Nothing shared yet')
-    cy.get('.empty-state-description').should(
-      'have.text',
-      'Items offered in this community will show up here.',
-    )
+    cy.get('.community-hub').should('be.visible')
+    cy.get('.community-pulse').should('contain', 'Available Items')
+    cy.get('.community-explore-cta').should('be.visible')
+    cy.get('.community-home .empty-state').should('not.exist')
+    expectNoItemActions()
   })
 
-  it('shows the error state and recovers via Try again', () => {
-    let failing = true
-    cy.intercept('GET', `/api/communities/${cseId}/listings`, (req) => {
-      if (failing) {
-        failing = false
-        req.reply(500, { message: 'Temporary outage' })
-      } else {
-        req.reply(200, listingFixtures(4))
-      }
-    })
-
-    cy.visit(`/communities/${cseId}`)
-
-    cy.get('.empty-state-title').should('have.text', 'Could not load listings')
-    cy.get('.empty-state').contains('button', 'Try again').click()
-
-    cy.get('.community-home .explore-listing-row').should('have.length', 4)
-    cy.get('#recently-offered-title').should('contain', 'Recently offered')
-    cy.get('.empty-state').should('not.exist')
-  })
-
-  it('renders listings as read-only with no request or waitlist actions', () => {
+  it('does not surface listing errors on the hub', () => {
     cy.intercept('GET', `/api/communities/${cseId}/listings`, {
-      body: listingFixtures(2),
+      forceNetworkError: true,
     })
 
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('.community-home .explore-listing-row').should('have.length', 2)
-    cy.get('.community-home .explore-listing-row button').should('not.exist')
-    cy.get('.community-home').should('not.contain', 'Request')
-    cy.get('.community-home').should('not.contain', 'Join waitlist')
+    cy.get('.community-hub').should('be.visible')
+    cy.get('.community-explore-cta').should('be.visible')
+    cy.get('.community-home').should('not.contain', 'Could not load listings')
+    cy.get('.community-home .empty-state').should('not.exist')
+    expectNoItemActions()
+  })
+
+  it('navigates from the hub CTA to Explore', () => {
+    cy.visit(`/communities/${cseId}`)
+
+    cy.get('.community-explore-cta').click()
+    cy.url({ timeout: 15000 }).should('include', `/communities/${cseId}/explore`)
+    cy.get('.community-home').should('not.exist')
   })
 })

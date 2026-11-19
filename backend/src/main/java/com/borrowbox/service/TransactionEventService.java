@@ -7,6 +7,7 @@ import com.borrowbox.entity.TransactionEvent;
 import com.borrowbox.entity.TransactionEventDelivery;
 import com.borrowbox.entity.TransactionEventDeliveryStatus;
 import com.borrowbox.entity.TransactionEventType;
+import com.borrowbox.entity.TransactionStatus;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.ResourceNotFoundException;
@@ -39,22 +40,37 @@ public class TransactionEventService {
     private final TransactionEventDeliveryRepository deliveryRepository;
     private final TransactionRepository transactionRepository;
     private final WebhookDeliveryService webhookDeliveryService;
+    private final MembershipService membershipService;
 
     @Autowired
     public TransactionEventService(TransactionEventRepository eventRepository,
                                    TransactionEventDeliveryRepository deliveryRepository,
                                    TransactionRepository transactionRepository,
-                                   WebhookDeliveryService webhookDeliveryService) {
+                                   WebhookDeliveryService webhookDeliveryService,
+                                   MembershipService membershipService) {
         this.eventRepository = eventRepository;
         this.deliveryRepository = deliveryRepository;
         this.transactionRepository = transactionRepository;
         this.webhookDeliveryService = webhookDeliveryService;
+        this.membershipService = membershipService;
+    }
+
+    /**
+     * Compatibility constructor retained for tests and callers that do not need
+     * manager timeline access. With no membership service available, only the
+     * two participants can read the timeline.
+     */
+    public TransactionEventService(TransactionEventRepository eventRepository,
+                                   TransactionEventDeliveryRepository deliveryRepository,
+                                   TransactionRepository transactionRepository,
+                                   WebhookDeliveryService webhookDeliveryService) {
+        this(eventRepository, deliveryRepository, transactionRepository, webhookDeliveryService, null);
     }
 
     public TransactionEventService(TransactionEventRepository eventRepository,
                                    TransactionEventDeliveryRepository deliveryRepository,
                                    TransactionRepository transactionRepository) {
-        this(eventRepository, deliveryRepository, transactionRepository, null);
+        this(eventRepository, deliveryRepository, transactionRepository, null, null);
     }
 
     /**
@@ -124,6 +140,9 @@ public class TransactionEventService {
             case EXTENSION_APPROVED, EXTENSION_REJECTED, EXTENSION_COUNTER_ACCEPTED, EXTENSION_COUNTER_REJECTED -> List.of(borrower);
             case RETURN_INITIATED, RETURN_REPORTED -> List.of(lender);
             case RETURN_DISPUTED -> List.of(borrower);
+            // A manager decision concerns both participants: each must be able to
+            // see how the dispute was resolved, regardless of who it favoured.
+            case DISPUTE_RESOLVED -> List.of(borrower, lender);
             // V2.5.2: no actor caused this. Both participants need to know: the
             // borrower lost the held unit, and the lender's item is back in
             // circulation and may already have been handed to the next waiter.
@@ -258,13 +277,31 @@ public class TransactionEventService {
         }
         Transaction transaction = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction not found: " + transactionId));
-        if (!transaction.getBorrower().getId().equals(user.getId())
-                && !transaction.getLender().getId().equals(user.getId())) {
-            throw new UnauthorizedException("Only participants can view the transaction timeline");
-        }
+        requireTimelineAccess(transaction, user);
         return eventRepository.findByTransactionIdOrderByCreatedAtAscIdAsc(transactionId).stream()
                 .map(this::toEventResponse)
                 .collect(toList());
+    }
+
+    /**
+     * Participants always see their own timeline. An active manager of the
+     * transaction's community may additionally read the timeline while the
+     * transaction is disputed, so they can review the dispute before deciding.
+     * This is read-only: no mutation endpoint other than the dedicated
+     * resolution endpoint accepts a manager actor.
+     */
+    private void requireTimelineAccess(Transaction transaction, User user) {
+        if (transaction.getBorrower().getId().equals(user.getId())
+                || transaction.getLender().getId().equals(user.getId())) {
+            return;
+        }
+        boolean disputed = transaction.getState() == TransactionStatus.HANDOVER_DISPUTED
+                || transaction.getState() == TransactionStatus.RETURN_DISPUTED;
+        if (disputed && membershipService != null
+                && membershipService.isActiveManager(user.getId(), transaction.getCommunity().getId())) {
+            return;
+        }
+        throw new UnauthorizedException("Only participants can view the transaction timeline");
     }
 
     private TransactionEventResponse toEventResponse(TransactionEvent event) {

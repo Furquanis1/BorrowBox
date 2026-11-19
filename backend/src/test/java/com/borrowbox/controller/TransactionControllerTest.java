@@ -1,6 +1,9 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.DisputeResolutionOutcome;
+import com.borrowbox.dto.DisputeResolutionRequest;
+import com.borrowbox.dto.DisputeUnitCondition;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
@@ -24,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -278,6 +282,56 @@ public class TransactionControllerTest {
         mockMvc.perform(post("/api/transactions/1/dispute-handover"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("PENDING"));
+    }
+
+    @Test
+    void resolveDisputeDelegates() throws Exception {
+        DisputeResolutionRequest request = new DisputeResolutionRequest(
+                DisputeResolutionOutcome.FAVOR_BORROWER,
+                "Lender could not produce the return handover photo.",
+                DisputeUnitCondition.INTACT,
+                true);
+        when(transactionService.resolveDispute(eq(1L), any(DisputeResolutionRequest.class), eq(currentUser)))
+                .thenReturn(pendingResponse);
+
+        mockMvc.perform(post("/api/transactions/1/resolve-dispute")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1));
+    }
+
+    @Test
+    void resolveDisputeRequiresOutcomeAndNote() throws Exception {
+        mockMvc.perform(post("/api/transactions/1/resolve-dispute")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"resolutionNote\":\"\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void resolveDisputeDenialIsForbidden() throws Exception {
+        DisputeResolutionRequest request = new DisputeResolutionRequest(
+                DisputeResolutionOutcome.REOPEN, "Reopen the handover.", null, null);
+        when(transactionService.resolveDispute(eq(1L), any(DisputeResolutionRequest.class), eq(currentUser)))
+                .thenThrow(new AccessDeniedException("Only an active manager of this community can resolve its disputes"));
+
+        mockMvc.perform(post("/api/transactions/1/resolve-dispute")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value(
+                        "Only an active manager of this community can resolve its disputes"));
+    }
+
+    @Test
+    void listDisputedTransactionsDelegates() throws Exception {
+        when(transactionService.listDisputedForManager(900L, currentUser))
+                .thenReturn(List.of(pendingResponse));
+
+        mockMvc.perform(get("/api/communities/900/transactions/disputed"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].state").value("PENDING"));
     }
 
     @Test

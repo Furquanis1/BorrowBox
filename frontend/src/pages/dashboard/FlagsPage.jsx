@@ -4,10 +4,11 @@ import { useAuth } from '../../contexts/AuthContext'
 import { useCommunity } from '../../contexts/CommunityContext'
 import { useApp } from '../../contexts/AppContext'
 import { useAsync } from '../../hooks/useAsync'
-import { flagService } from '../../services'
+import { flagService, requestService } from '../../services'
 import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
+import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
 
 const FLAG_TYPES = ['MANUAL', 'OVERDUE', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED', 'EVIDENCE_ISSUE']
 const FLAG_STATUSES = ['OPEN', 'REVIEWED', 'RESOLVED', 'DISMISSED']
@@ -41,6 +42,20 @@ export default function FlagsPage() {
 
   const [filters, setFilters] = useState({ status: '', flagType: '', transactionId: '' })
   const [appliedFilters, setAppliedFilters] = useState({})
+  const [reviewingDispute, setReviewingDispute] = useState(null)
+
+  const fetchDisputes = useCallback(() => {
+    if (!communityId || !isManager(communityId)) return Promise.resolve([])
+    return requestService.getDisputed(communityId)
+  }, [communityId, isManager])
+
+  const {
+    data: disputes,
+    loading: disputesLoading,
+    error: disputesError,
+    reload: reloadDisputes,
+    retry: retryDisputes,
+  } = useAsync(fetchDisputes, [communityId])
 
   const fetchFlags = useCallback(() => {
     if (!communityId || !isManager(communityId)) return Promise.resolve([])
@@ -52,6 +67,10 @@ export default function FlagsPage() {
   }, [communityId, appliedFilters, isManager])
 
   const { data: flags, loading, error, reload, retry } = useAsync(fetchFlags, [communityId, appliedFilters])
+
+  const reloadManagerData = useCallback(async () => {
+    await Promise.allSettled([reload(), reloadDisputes()])
+  }, [reload, reloadDisputes])
 
   if (!isManager(communityId)) {
     return <Navigate to={`/communities/${communityId}`} replace />
@@ -178,6 +197,52 @@ export default function FlagsPage() {
           </Button>
         </form>
       )}
+
+      <section aria-labelledby="disputes-title" className="dispute-queue">
+        <div className="dispute-queue-heading">
+          <h3 id="disputes-title" className="filter-title">
+            Disputes awaiting review
+          </h3>
+          <span className="badge badge-warning">{disputes?.length || 0}</span>
+        </div>
+
+        {disputesLoading ? (
+          <Spinner />
+        ) : disputesError ? (
+          <div className="dispute-queue-message">
+            <p className="field-error">{disputesError.message}</p>
+            <Button variant="outline" size="sm" onClick={retryDisputes}>
+              <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+              Try again
+            </Button>
+          </div>
+        ) : !disputes?.length ? (
+          <p className="manager-section-empty">No disputes are waiting for a manager decision.</p>
+        ) : (
+          <ul className="dispute-list">
+            {disputes.map((dispute) => (
+              <li key={dispute.id} className="dispute-item">
+                <div className="dispute-item-main">
+                  <div className="dispute-item-head">
+                    <span className="badge badge-warning">{dispute.state}</span>
+                    <span className="dispute-item-title">{dispute.title}</span>
+                    <span className="dispute-item-meta">
+                      Transaction #{dispute.id} · {dispute.borrowerName} ↔ {dispute.lenderName}
+                    </span>
+                  </div>
+                  <p className="dispute-item-purpose">{dispute.purpose}</p>
+                </div>
+                <div className="dispute-item-actions">
+                  <Button variant="outline" size="sm" onClick={() => setReviewingDispute(dispute)}>
+                    <i className="bi bi-chat-left-text" aria-hidden="true" />
+                    Review dispute
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section aria-labelledby="filter-title">
         <h3 id="filter-title" className="filter-title">
@@ -316,6 +381,16 @@ export default function FlagsPage() {
             </li>
           ))}
         </ul>
+      )}
+
+      {reviewingDispute && (
+        <ConversationDrawer
+          open
+          managerMode
+          transaction={reviewingDispute}
+          onClose={() => setReviewingDispute(null)}
+          onDataChanged={reloadManagerData}
+        />
       )}
     </div>
   )

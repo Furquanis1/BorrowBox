@@ -29,6 +29,7 @@ export default function SignInPage() {
           <i className="bi bi-box-seam auth-logo-icon" aria-hidden="true" />
           BorrowBox
         </div>
+        <div className="auth-kicker">A circle built on sharing and trust</div>
         <h2 className="auth-title">Welcome Back</h2>
         <p className="auth-subtitle">Sign in to your account to continue</p>
 

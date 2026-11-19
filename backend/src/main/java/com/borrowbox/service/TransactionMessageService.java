@@ -83,7 +83,7 @@ public class TransactionMessageService {
     public List<TransactionMessageResponse> listMessages(Long transactionId, User actor) {
         requireUser(actor);
         Transaction txn = findOrThrow(transactionId);
-        requireParticipant(txn, actor);
+        requireConversationAccess(txn, actor);
         return messageRepository.findByTransactionIdOrderByCreatedAtAsc(transactionId).stream()
                 .map(this::toResponse)
                 .toList();
@@ -133,6 +133,24 @@ public class TransactionMessageService {
                 && !txn.getLender().getId().equals(actor.getId())) {
             throw new UnauthorizedException("Only participants can view this conversation");
         }
+    }
+
+    /**
+     * An active community manager may read the conversation only while the
+     * transaction is disputed. Managers never gain write access here: sending a
+     * message still goes through {@link #sendMessage} and its participant check.
+     */
+    private void requireConversationAccess(Transaction txn, User actor) {
+        if (txn.getBorrower().getId().equals(actor.getId())
+                || txn.getLender().getId().equals(actor.getId())) {
+            return;
+        }
+        boolean disputed = txn.getState() == TransactionStatus.HANDOVER_DISPUTED
+                || txn.getState() == TransactionStatus.RETURN_DISPUTED;
+        if (disputed && membershipService.isActiveManager(actor.getId(), txn.getCommunity().getId())) {
+            return;
+        }
+        throw new UnauthorizedException("Only participants can view this conversation");
     }
 
     private void requireActiveMember(Long userId, Long communityId) {

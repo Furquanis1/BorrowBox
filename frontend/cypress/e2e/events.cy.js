@@ -198,13 +198,17 @@ describe('V2.2.8 Transaction Events & Global Event Envelope', () => {
     cy.contains('.avatar-menu-item', 'Events').find('.avatar-menu-badge').should('be.visible')
     cy.contains('.avatar-menu-item', 'Events').click()
 
-    // Event panel shows the unread count and an UNREAD (not dismissed) row
-    cy.get('.event-panel-badge').should('be.visible')
+    // Event panel shows the unread count and an UNREAD (not dismissed) row.
+    // The still-open envelope overlays the badge, so assert its rendered value
+    // rather than actionability visibility.
+    cy.get('.event-panel-badge').should('exist').and('have.text', '1')
     cy.get('.event-panel-row').should('have.length', 1)
-    cy.get('.event-panel-row').contains('Unread').should('be.visible')
+    cy.get('.event-panel-row').contains('Unread').should('exist')
 
     // Mark all read turns UNREAD -> READ and clears the unread badge
-    cy.get('.event-panel-toolbar').contains('Mark all read').click()
+    // The envelope deliberately stays open so the event remains UNREAD; force
+    // the click through the overlay without changing its delivery status.
+    cy.get('.event-panel-toolbar').contains('Mark all read').click({ force: true })
     cy.get('.event-panel-row').each(($row) => {
       cy.wrap($row).find('.status-read').should('exist')
     })

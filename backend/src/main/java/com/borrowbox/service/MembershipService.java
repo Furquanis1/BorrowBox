@@ -9,12 +9,14 @@ import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.MembershipVerificationMethod;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.User;
 import com.borrowbox.exception.BusinessRuleViolationException;
 import com.borrowbox.exception.ResourceNotFoundException;
 import com.borrowbox.exception.UnauthorizedException;
 import com.borrowbox.repository.CommunityRepository;
 import com.borrowbox.repository.MembershipRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,11 +33,24 @@ public class MembershipService {
 
     private final MembershipRepository membershipRepository;
     private final CommunityRepository communityRepository;
+    private final NotificationService notificationService;
 
+    /**
+     * Kept for unit tests that exercise membership rules without notifications.
+     * Spring uses the full constructor below.
+     */
     public MembershipService(MembershipRepository membershipRepository,
                              CommunityRepository communityRepository) {
+        this(membershipRepository, communityRepository, null);
+    }
+
+    @Autowired
+    public MembershipService(MembershipRepository membershipRepository,
+                             CommunityRepository communityRepository,
+                             NotificationService notificationService) {
         this.membershipRepository = membershipRepository;
         this.communityRepository = communityRepository;
+        this.notificationService = notificationService;
     }
 
     public List<MembershipResponse> listForUser(Long userId) {
@@ -126,6 +141,10 @@ public class MembershipService {
             // concurrent duplicate joins racing past the check above.
             throw new BusinessRuleViolationException("Join request already pending");
         }
+
+        if (membership.getStatus() == MembershipStatus.PENDING) {
+            notifyManagersOfPendingRequest(community, user);
+        }
         return toResponse(membership);
     }
 
@@ -167,6 +186,7 @@ public class MembershipService {
             membership.setStatus(MembershipStatus.REJECTED);
         }
         membershipRepository.save(membership);
+        notifyApplicantOfDecision(membership, decision);
         return toResponse(membership);
     }
 
@@ -261,6 +281,46 @@ public class MembershipService {
                         "You cannot suspend or remove the last active manager of this community");
             }
         }
+    }
+
+    private void notifyManagersOfPendingRequest(Community community, User applicant) {
+        if (notificationService == null || applicant == null) {
+            return;
+        }
+        String communityName = community.getName() != null ? community.getName() : "your community";
+        String applicantName = applicant.getFullName() != null ? applicant.getFullName() : "Someone";
+        String title = "New join request · " + communityName;
+        String message = applicantName + " asked to join " + communityName
+                + ". Review pending members when you are ready.";
+
+        membershipRepository.findActiveManagersForUpdate(community.getId()).stream()
+                .map(Membership::getUser)
+                .filter(manager -> manager != null && !manager.getId().equals(applicant.getId()))
+                .forEach(manager -> notificationService.createMembershipNotification(
+                        manager, NotificationType.MEMBERSHIP_REQUEST_PENDING, title, message));
+    }
+
+    private void notifyApplicantOfDecision(Membership membership, AdmissionDecision decision) {
+        if (notificationService == null || membership.getUser() == null || decision == null) {
+            return;
+        }
+        Community community = membership.getCommunity();
+        String communityName = community != null && community.getName() != null
+                ? community.getName()
+                : "your community";
+        boolean approved = decision == AdmissionDecision.APPROVE;
+        NotificationType type = approved
+                ? NotificationType.MEMBERSHIP_APPROVED
+                : NotificationType.MEMBERSHIP_REJECTED;
+        String title = approved
+                ? "You're in · " + communityName
+                : "Join request update · " + communityName;
+        String message = approved
+                ? "Your request to join " + communityName + " was approved."
+                : "Your request to join " + communityName + " was not approved.";
+
+        notificationService.createMembershipNotification(
+                membership.getUser(), type, title, message);
     }
 
     private void applyAdmissionPath(Membership membership, Community community, CommunityJoinRequest request) {

@@ -1,6 +1,9 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.DisputeResolutionOutcome;
+import com.borrowbox.dto.DisputeResolutionRequest;
+import com.borrowbox.dto.DisputeUnitCondition;
 import com.borrowbox.dto.EvidenceResponse;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
@@ -43,6 +46,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -173,6 +177,37 @@ public class TransactionServiceTest {
     private void stubAvailableUnit() {
         when(assetUnitRepository.findFirstByAssetIdAndStatusForUpdate(500L))
                 .thenReturn(Optional.of(unit));
+    }
+
+    private User manager() {
+        User manager = new User("Manager", "manager@example.com");
+        manager.setId(200L);
+        return manager;
+    }
+
+    private void stubManager(User manager) {
+        when(membershipService.isActiveManager(manager.getId(), 900L)).thenReturn(true);
+    }
+
+    private Transaction handoverDisputed(AssetUnit releasedUnit) {
+        Transaction txn = active(releasedUnit);
+        releasedUnit.setStatus(AssetUnitStatus.AVAILABLE);
+        txn.setReservedUnit(null);
+        txn.setReservedAt(null);
+        txn.setState(TransactionStatus.HANDOVER_DISPUTED);
+        return txn;
+    }
+
+    private Transaction returnDisputed(AssetUnit heldUnit) {
+        Transaction txn = active(heldUnit);
+        txn.setState(TransactionStatus.RETURN_DISPUTED);
+        txn.setReturnDisputedAt(LocalDateTime.now());
+        txn.setReturnDisputedBy(owner);
+        return txn;
+    }
+
+    private DisputeResolutionRequest resolution(DisputeResolutionOutcome outcome, String note) {
+        return new DisputeResolutionRequest(outcome, note, DisputeUnitCondition.INTACT, true);
     }
 
     private void stubSaveAndFlushReturnsArgument() {
@@ -1693,6 +1728,223 @@ public class TransactionServiceTest {
 
         assertThatThrownBy(() -> transactionService.disputeReturn(1L, owner))
                 .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void resolveDisputeRejectsNonManager() {
+        Transaction txn = handoverDisputed(unit);
+        User outsider = new User("Outsider", "outsider@example.com");
+        outsider.setId(999L);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_LENDER, "Manager note."), outsider))
+                .isInstanceOf(AccessDeniedException.class)
+                .hasMessageContaining("Only an active manager");
+        verify(transactionRepository, never()).save(any(Transaction.class));
+    }
+
+    @Test
+    void resolveDisputeRejectsNonDisputedState() {
+        Transaction txn = active(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_LENDER, "Manager note."), manager))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Transaction is not in a disputed state");
+    }
+
+    @Test
+    void resolveDisputeRequiresResolutionNote() {
+        assertThatThrownBy(() -> transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_LENDER, "   "), manager()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("A resolution note is required");
+    }
+
+    @Test
+    void resolveHandoverDisputeFavorLenderReacquiresBorrowedUnit() {
+        Transaction txn = handoverDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubAvailableUnit();
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_LENDER, "Borrower had the item."), manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(txn.getReservedUnit()).isSameAs(unit);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        verify(messageService).addSystemEvent(eq(txn),
+                argThat(body -> body.contains("FAVOR_LENDER") && body.contains("Borrower had the item.")));
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(eventService).createEventAndDeliveries(eq(txn),
+                eq(TransactionEventType.DISPUTE_RESOLVED), eq(manager), payload.capture());
+        assertThat(payload.getValue())
+                .contains("\"outcome\":\"FAVOR_LENDER\"")
+                .contains("Borrower had the item.");
+        verify(notificationService, times(2)).createForEvent(
+                any(TransactionEvent.class), any(User.class),
+                eq(NotificationType.DISPUTE_RESOLVED), anyString(), anyString());
+        verify(reputationEventService).recordDisputeResolution(
+                eq(txn), eq(DisputeResolutionOutcome.FAVOR_LENDER), any(LocalDateTime.class));
+    }
+
+    @Test
+    void resolveHandoverDisputeFavorBorrowerCancelsAndKeepsUnitAvailable() {
+        Transaction txn = handoverDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_BORROWER, "Lender never handed it over."), manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.CANCELLED);
+        assertThat(txn.getReservedUnit()).isNull();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+    }
+
+    @Test
+    void resolveHandoverDisputeReopenReservesUnitForNewHandover() {
+        Transaction txn = handoverDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        stubAvailableUnit();
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.REOPEN, "Handover was a misunderstanding."), manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.AWAITING_HANDOVER);
+        assertThat(txn.getReservedUnit()).isSameAs(unit);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.RESERVED);
+        assertThat(txn.getReservationExpiresAt()).isNotNull();
+    }
+
+    @Test
+    void resolveReturnDisputeFavorBorrowerCompletesLoan() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.FAVOR_BORROWER, "Item was returned."), manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(txn.getCompletedAt()).isNotNull();
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.AVAILABLE);
+        assertThat(txn.getReservedUnit()).isNull();
+        verify(waitlistService).promoteForAsset(500L);
+        verify(reputationEventService).recordLoanCompleted(txn);
+        verify(reputationEventService).recordDisputeResolution(
+                eq(txn), eq(DisputeResolutionOutcome.FAVOR_BORROWER), any(LocalDateTime.class));
+    }
+
+    @Test
+    void resolveReturnDisputeFavorLenderMarksLostUnitWithoutPromotion() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        DisputeResolutionRequest request = new DisputeResolutionRequest(
+                DisputeResolutionOutcome.FAVOR_LENDER, "Item was never returned.",
+                DisputeUnitCondition.LOST, true);
+
+        TransactionResponse response = transactionService.resolveDispute(1L, request, manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.CANCELLED);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.LOST);
+        assertThat(txn.getReservedUnit()).isNull();
+        verify(waitlistService, never()).promoteForAsset(500L);
+    }
+
+    @Test
+    void resolveReturnDisputeFavorLenderKeepsIntactUnitOutOfCirculationWhenNotFreed() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+        DisputeResolutionRequest request = new DisputeResolutionRequest(
+                DisputeResolutionOutcome.FAVOR_LENDER, "Item condition must be inspected.",
+                DisputeUnitCondition.INTACT, false);
+
+        TransactionResponse response = transactionService.resolveDispute(1L, request, manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.CANCELLED);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.NOT_AVAILABLE);
+        verify(waitlistService, never()).promoteForAsset(500L);
+    }
+
+    @Test
+    void resolveReturnDisputeReopenKeepsUnitBorrowed() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(txn));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TransactionResponse response = transactionService.resolveDispute(
+                1L, resolution(DisputeResolutionOutcome.REOPEN, "Return was reported too early."), manager);
+
+        assertThat(response.state()).isEqualTo(TransactionStatus.ACTIVE);
+        assertThat(unit.getStatus()).isEqualTo(AssetUnitStatus.BORROWED);
+        assertThat(txn.getReservedUnit()).isSameAs(unit);
+        assertThat(txn.getReturnDisputedAt()).isNull();
+        assertThat(txn.getReturnDisputedBy()).isNull();
+    }
+
+    @Test
+    void activeManagerCanViewDisputedTransaction() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+        stubManager(manager);
+
+        TransactionResponse response = transactionService.view(1L, manager);
+
+        assertThat(response.id()).isEqualTo(1L);
+    }
+
+    @Test
+    void managerCannotViewNonDisputedTransaction() {
+        Transaction txn = active(unit);
+        User manager = manager();
+        when(transactionRepository.findById(1L)).thenReturn(Optional.of(txn));
+
+        assertThatThrownBy(() -> transactionService.view(1L, manager))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void listDisputedForManagerRejectsNonManager() {
+        assertThatThrownBy(() -> transactionService.listDisputedForManager(900L, manager()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void listDisputedForManagerReturnsDisputedTransactions() {
+        Transaction txn = returnDisputed(unit);
+        User manager = manager();
+        stubManager(manager);
+        when(transactionRepository.findByCommunityIdAndStateInOrderByIdDesc(
+                900L, TransactionService.DISPUTED_STATES)).thenReturn(List.of(txn));
+
+        List<TransactionResponse> responses = transactionService.listDisputedForManager(900L, manager);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).state()).isEqualTo(TransactionStatus.RETURN_DISPUTED);
     }
 
     @Test

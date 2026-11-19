@@ -1,6 +1,6 @@
 # BorrowBox
 
-> A full-stack community-based platform for sharing and tracking physical assets across bounded communities.
+> A calm, community-based space for peer-to-peer sharing and lending among people who know each other.
 
 [![Build and Test](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml/badge.svg)](https://github.com/Furquanis1/BorrowBox/actions/workflows/build.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
@@ -8,413 +8,224 @@
 ![React](https://img.shields.io/badge/React-18.2-blue?logo=react)
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue?logo=mysql)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)
-![Cypress](https://img.shields.io/badge/Cypress-161_Tests_Passing-green?logo=cypress)
-
----
-
-## 📸 Preview
-
-![BorrowBox Dashboard Dark Mode](docs/assets/borrowbox-dashboard-dark.jpg)
-
----
-
-## 🌐 Live Demo & Deployment Status
-
-BorrowBox is fully containerized and ready for local or cloud deployment.
-- **Local Demonstration:** Ready out-of-the-box using one-click launch scripts (`run_demo.bat` / `run_demo.sh`), which manage the required demo credentials, or directly with Docker Compose when the required environment variables are supplied.
-- **Cloud Deployment:** GitHub Actions CI/CD pipeline ([deploy.yml](.github/workflows/deploy.yml)) is configured for Railway and Render deployment hooks when repository secrets are provided.
+![Tests](https://img.shields.io/badge/Tests-973_backend_%2B_166_E2E-green?logo=cypress)
 
 ---
 
 ## What is BorrowBox?
 
-BorrowBox is a community-based asset-sharing platform. Users own physical assets independently of communities, then selectively expose them to specific communities via CommunityListings. Community members discover available assets through community-scoped Explore. A single owned asset pool shared across multiple communities always shows one consistent shared physical inventory state.
+BorrowBox is a peer-to-peer sharing workspace for close circles of 5 to 500 people — friends, classmates, colleagues, and neighbors. People own their items independently, choose which communities to share them with, and borrow within a circle built on sharing, caring, and mutual trust.
 
-V2.1 (Community + Ownership Foundation) delivers:
+It is deliberately **not** a marketplace: there are no listings to buy, no purchase flows, and no savings claims. The product is about making lending feel personal, clear, and safe inside a community you already trust.
 
-- Community creation with MANAGER_APPROVAL and LOCATION_VERIFIED admission
-- Membership with community-specific roles and context metadata (JSON)
-- Global asset ownership with immediate AssetUnit materialization
-- CommunityListing: selective visibility of owned assets to communities
-- Community-scoped Explore with aggregate availability (shared across listings)
-- Deterministic seed data and idempotent development reset
-- Docker health-gated startup with backend healthcheck
+## Current capabilities
 
-V2.1 does not include transactions, borrowing workflows, messaging, notifications, reputation, or AI. See `docs/BORROWBOX_ROADMAP.ipynb` for the full roadmap.
+The completed V2 product includes:
 
-V2.2.1 (Transaction Negotiation) delivers the first slice of the transaction engine:
+- **Privacy-preserving communities** — create communities, join by exact numeric Community ID only (no discovery or location suggestions), leave, and manage membership with community-specific roles.
+- **Distinct Home and Explore surfaces** — Community Home is a calm hub with Pulse metrics, guidelines, quick actions, and an Explore CTA; Explore is the searchable borrowable-item catalog.
+- **Shared community listings** — expose owned items to selected communities while keeping one authoritative shared inventory.
+- **Borrow negotiation** — purpose and duration requests, lender approval or rejection, counter-offers, borrower acceptance, and cancellation.
+- **Extensions** — borrowers can request more time and lenders can accept or counter with a revised return date.
+- **Waitlists** — a single per-asset queue across communities, with automatic promotion when a unit is released.
+- **Four-moment condition care** — condition evidence around listing/handover, use, and return, with a shared evidence timeline.
+- **Manager dispute resolution** — managers review handover and return disputes, record a resolution note, and apply fair state/unit transitions.
+- **In-app notifications** — participants are notified about join requests, requests, decisions, handover, returns, and dispute outcomes; managers receive pending-join notices and applicants receive approval/rejection results.
+- **Append-only reputation** — community-scoped reputation events derived from completed loans and dispute outcomes, with idempotent ledger rows.
+- **Manager workspace** — upgraded dashboards, membership review, flags, rules, dispute queues, and health/utilization breakdowns.
+- **Derived trust profile** — on-time, late, completed, and dispute metrics computed from the immutable event ledger.
+- **TripGlide-inspired UI** — calm editorial styling, focused cards and rails, and clear status/notification states across the product.
 
-- Structured borrow requests: borrower states purpose + duration (1–30 days)
-- Lender approve / reject / counter-offer; borrower accept-counter / cancel
-- Race-safe basis reservation: pessimistic DB lock + `UNIQUE(reserved_unit_id)` backstop, exactly-one-wins
-- Explore "Request" drawer and a Requests inbox (`/me/requests`, `/me/lend-requests`)
-- Backend/database is authoritative for reservation ordering; AssetUnit IDs are never exposed
+### Validation status
 
-📄 **Project Pitch & Overview:** See the one-page project pitch in [Markdown](docs/PITCH.md) or download the [Pitch PDF](docs/assets/borrowbox-project-pitch.pdf).
-
----
-
-## Core Features (V2.1 → V2.2.2)
-
-| Module | Implemented Capabilities |
+| Layer | Status |
 |---|---|
-| **Authentication & Security** | BCrypt password hashing, stateless HttpOnly JWT cookies, global exception handling, protected React route guards. |
-| **Community + Membership** | Community creation with type/location/admission mode, MANAGER_APPROVAL and LOCATION_VERIFIED join flows, community-specific roles and context metadata (JSON), manager controls. |
-| **Asset Ownership** | Global asset ownership independent of communities, atomic Asset + N AssetUnit creation, owner inventory at `/me/inventory`. |
-| **CommunityListing** | Selective visibility: one Asset listed in multiple communities, shared physical inventory pool, authorization enforced server-side (owner must have ACTIVE membership). |
-| **Community Explore** | Community-scoped listing discovery with aggregate availability (totalUnits, availableUnits, borrowedUnits), AssetUnit IDs hidden from public API. |
-| **Shared Availability** | Changing one AssetUnit status affects availability across all communities where the Asset is listed. Backend/database is authoritative. |
-| **Transaction Negotiation (V2.2.1)** | Lifecycle: PENDING → APPROVED/REJECTED/COUNTER_OFFERED/CANCELLED. Borrower reservation holds unit; lender accepts or counters. Approval is forward-only. |
-| **Loan Lifecycle (V2.2.2)** | Borrower completes handover (APPROVED → AWAITING_HANDOVER → ACTIVE). Borrower initiates return → lender confirms receipt → COMPLETED. Authoritative startedAt/completedAt timestamps. Dedicated `/me/loans` view. |
+| Backend | **973 tests** passing |
+| Frontend | Production build passing |
+| Cypress | **166 E2E tests across 25 spec files** passing |
+| Docker | Health-gated local stack verified |
 
 ---
 
-## Future Roadmap (BorrowBox V2.2+)
-
-*Planned features beyond the V2.2.2 loan lifecycle slice:*
-- **Transaction Engine:** Extensions, overdue/expiry handling, messaging, representative handovers, disputes, evidence photos, flagging.
-- **Trust + Ledger:** Borrow/lending history, reputation events, reliability metrics, badges.
-- **Community Health:** Manager dashboard, membership review, flags, moderation.
-- **Condition + Evidence Intelligence:** Evidence timeline, condition metadata, before/after comparison.
-- **Notifications + Automation:** In-app, email, push notifications.
-- **AI + Tribunal:** AI-assisted condition comparison, blind tribunal, anonymous peer review.
-
----
-
-## 🛠️ Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| **Backend API** | Java 21, Spring Boot 3.5, Spring Security, Spring Data JPA, Hibernate ORM, Maven |
-| **Database** | MySQL 8.0 (InnoDB), HikariCP connection pooling, dynamic JPA Specifications |
-| **Authentication** | Stateless JWT stored in HttpOnly cookies, BCrypt password encoder |
-| **Frontend SPA** | React 18.2, Vite 5, React Router 7, Custom CSS Design System |
-| **API Docs** | Springdoc OpenAPI 3.0 / Swagger UI |
-| **DevOps & Containerization** | Multi-stage Docker builds, Docker Compose, Nginx reverse proxy, launch scripts (`run_demo.bat` / `run_demo.sh`) |
-| **Testing** | JUnit 5, Mockito, MockMvc, Cypress 15 E2E testing (161 automated tests across 23 specs) |
-| **CI/CD** | GitHub Actions ([build.yml](.github/workflows/build.yml), [e2e.yml](.github/workflows/e2e.yml), [deploy.yml](.github/workflows/deploy.yml)) |
+| Backend API | Java 21, Spring Boot 3.5, Spring Security, Spring Data JPA, Hibernate, Maven |
+| Database | MySQL 8.0, HikariCP, JPA Specifications |
+| Authentication | HttpOnly JWT cookies, BCrypt password hashing |
+| Frontend | React 18, Vite 5, React Router, TripGlide-inspired editorial UI with a custom CSS design system |
+| API docs | Springdoc OpenAPI 3 / Swagger UI |
+| DevOps | Multi-stage Docker builds, Docker Compose, Nginx |
+| Testing | JUnit 5, Mockito, MockMvc, Cypress 15 |
 
 ---
 
-## 🚀 Quick Start (Docker — Recommended)
+## Quick start (Docker)
 
 ### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-- [Git](https://git-scm.com/) installed.
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/Furquanis1/BorrowBox.git
-cd BorrowBox
-```
+- Docker Desktop installed and running
+- Git installed
 
-### 2. One-Click Launch
+### One-click demo launch
 
-**Windows:**
+**Windows — clean demo launch with a forced image rebuild:**
+
 ```cmd
-run_demo.bat
+run_demo.bat --build
 ```
 
 **Linux / macOS:**
+
 ```bash
 chmod +x run_demo.sh
-./run_demo.sh
+./run_demo.sh --build
 ```
 
-**Or using Docker Compose directly:**
+The launchers create and reuse `.borrowbox-demo-credentials` at the repository root. That Git-ignored, user-restricted file holds locally generated demo and database credentials. Read values from it into environment variables when needed; never commit the file or print/paste its values into documentation, issues, or chat.
+
+Use `run_demo.bat --clean` or `./run_demo.sh --clean` to stop the stack, remove the database volume, and clear the local credential file.
+
+### Docker Compose directly
+
+Compose intentionally has no committed credentials. Supply the required values from `.borrowbox-demo-credentials` in your shell environment without printing them:
+
+**Linux / macOS:**
+
 ```bash
-# Read the required database passwords from the protected launcher credentials file.
 export MYSQL_ROOT_PASSWORD="$(sed -n 's/^MYSQL_ROOT_PASSWORD=//p' .borrowbox-demo-credentials)"
 export BORROWBOX_APP_DB_PASSWORD="$(sed -n 's/^BORROWBOX_APP_DB_PASSWORD=//p' .borrowbox-demo-credentials)"
 export BORROWBOX_E2E_DB_PASSWORD="$(sed -n 's/^BORROWBOX_E2E_DB_PASSWORD=//p' .borrowbox-demo-credentials)"
-export APP_JWT_SECRET='<your-secret>'
+export BORROWBOX_SEED_PASSWORD="$(sed -n 's/^BORROWBOX_SEED_PASSWORD=//p' .borrowbox-demo-credentials)"
+export APP_JWT_SECRET="<generate-your-own-secret>"
+export BORROWBOX_SEED_ENABLED=true
+
 docker compose up -d --build
 ```
-Compose has no default database credentials and fails safely if they are missing.
-Windows PowerShell must set the equivalent process environment variables from the
-same protected file.
 
-This starts the orchestrated stack:
-- `borrowbox-mysql` — MySQL 8.0 database (mapped to host port `3307` to avoid local MySQL conflicts)
-- `borrowbox-mysql-bootstrap` — one-shot service that creates the app and E2E accounts
-- `borrowbox-backend` — Spring Boot REST API on port `8080`, connected as `borrowbox_app`
-- `borrowbox-frontend` — React application served by Nginx on port `3000`
+**Windows PowerShell:** read the same keys from `.borrowbox-demo-credentials` into the equivalent `$env:` variables, generate an `APP_JWT_SECRET`, then run `docker compose up -d --build`.
 
-The one-click launchers explicitly opt in to demo seeding and store the generated
-demo-user, MySQL root, app, and E2E passwords in `.borrowbox-demo-credentials` at
-the repository root. That file is ignored by Git, is restricted to the current
-user, and is reused across ordinary restarts. The launchers export the root value
-only to MySQL/bootstrap, the app value to the backend, and the E2E value to Cypress;
-the backend never receives root. Use `--clean` to remove both the demo database and
-the credentials file. If the credentials file is missing while a demo database
-still exists, or if it lacks `MYSQL_ROOT_PASSWORD`, the launcher refuses to start
-rather than silently replacing the existing database password.
+Compose fails safely if required values are missing. Plain `docker compose up` does not enable demo seeding; set `BORROWBOX_SEED_ENABLED=true` and `BORROWBOX_SEED_PASSWORD` explicitly to opt in.
 
-Launching with plain `docker compose up` does **not** enable demo seeding and still
-requires the three database passwords from the environment. To opt in to seeding
-there, also set `BORROWBOX_SEED_ENABLED=true` and a non-blank
-`BORROWBOX_SEED_PASSWORD` before starting Compose.
+### Services
 
-### 3. Service URLs
-
-| Service | URL | Notes |
+| Service | URL / port | Notes |
 |---|---|---|
-| **Frontend (React UI)** | [http://localhost:3000](http://localhost:3000) | Main web interface |
-| **Backend Health Check** | [http://localhost:8080/api/health](http://localhost:8080/api/health) | Verifies database connectivity |
-| **Swagger API Docs** | [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html) | Interactive OpenAPI documentation |
+| Frontend | <http://localhost:3000> | React SPA served by Nginx |
+| Backend health | <http://localhost:8080/api/health> | Database connectivity check |
+| Swagger UI | <http://localhost:8080/swagger-ui.html> | Interactive API documentation |
+| MySQL | `127.0.0.1:3307` | Mapped to avoid local port 3306 conflicts |
 
-### 4. Stop Services & Cleanup
-
-- **Stop containers:**
-  ```bash
-  # Windows
-  run_demo.bat --stop
-
-  # Linux / macOS
-  ./run_demo.sh --stop
-
-  # Or Compose (MYSQL_ROOT_PASSWORD, BORROWBOX_APP_DB_PASSWORD,
-  # BORROWBOX_E2E_DB_PASSWORD, and APP_JWT_SECRET must be in the environment)
-  docker compose down
-  ```
-
-- **Full reset (stop containers, wipe database volumes, and clear local demo credentials):**
-  ```bash
-  # Windows
-  run_demo.bat --clean
-
-  # Linux / macOS
-  ./run_demo.sh --clean
-
-  # Or Compose (requires the same environment values; removes the volume, but not
-  # .borrowbox-demo-credentials)
-  docker compose down -v
-  ```
-  Only this explicit reset removes the database volume. Changing credentials does
-  not rotate an existing database password.
+Stop with `run_demo.bat --stop` / `./run_demo.sh --stop`, or `docker compose down` with the same environment variables loaded.
 
 ---
 
-## Local Development
+## Local development
 
-To run the application locally outside of Docker:
+Read database values from `.borrowbox-demo-credentials`; do not hard-code them.
 
-### 1. Database
-Ensure MySQL 8.0 is running with database `borrowbox_v2`:
-```bash
-# Or start just the MySQL container
-# MYSQL_ROOT_PASSWORD, BORROWBOX_APP_DB_PASSWORD, BORROWBOX_E2E_DB_PASSWORD,
-# and APP_JWT_SECRET must already be in the environment; see the direct Compose
-# instructions above.
-docker compose up -d mysql
-```
+### Database
 
-To reset the local database and provision the app/E2E accounts:
 ```powershell
-$env:BORROWBOX_APP_DB_PASSWORD = '<app-password>'
-$env:BORROWBOX_E2E_DB_PASSWORD = '<e2e-password>'
+$env:BORROWBOX_APP_DB_PASSWORD = '<value from .borrowbox-demo-credentials>'
+$env:BORROWBOX_E2E_DB_PASSWORD = '<value from .borrowbox-demo-credentials>'
 .\scripts\reset-v2-db.ps1
 ```
-The reset script requires the two account passwords in the environment, sets
-those passwords on the `borrowbox_app` and `borrowbox_e2e` accounts, and prompts
-for the local MySQL administrator credentials (or reads
-`BORROWBOX_RESET_DB_USER` / `BORROWBOX_RESET_DB_PASSWORD`). It never prints or
-stores them.
 
-### 2. Backend (Spring Boot)
+The reset script prompts for MySQL administrator credentials unless `BORROWBOX_RESET_DB_USER` and `BORROWBOX_RESET_DB_PASSWORD` are set. It never prints or stores them.
+
+### Backend
+
 ```powershell
 cd backend
 $env:SPRING_DATASOURCE_URL = 'jdbc:mysql://127.0.0.1:3306/borrowbox_v2'
 $env:SPRING_DATASOURCE_USERNAME = 'borrowbox_app'
-$env:SPRING_DATASOURCE_PASSWORD = '<app-password>'
-mvn clean spring-boot:run
+$env:SPRING_DATASOURCE_PASSWORD = '<value from .borrowbox-demo-credentials>'
+mvn spring-boot:run
 ```
-The backend starts on `http://localhost:8080` as `borrowbox_app`. Schema
-initialization runs by default for local development, but demo seeding is
-**disabled by default**. To opt in explicitly, set both
-`BORROWBOX_SEED_ENABLED=true` and a non-blank `BORROWBOX_SEED_PASSWORD` in the
-backend's environment. Starting without a password while seeding is enabled fails
-clearly instead of falling back to a committed default.
 
-### 3. Frontend (Vite Dev Server)
+Demo seeding is disabled by default. To opt in, set both `BORROWBOX_SEED_ENABLED=true` and `BORROWBOX_SEED_PASSWORD` from `.borrowbox-demo-credentials`.
+
+### Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` for hot-reloading development (requests to `/api` are automatically proxied to `http://localhost:8080`).
+
+Open <http://localhost:5173>. `/api` requests are proxied to the backend on port 8080.
 
 ---
 
-## Testing & Verification
+## Testing & verification
 
-BorrowBox maintains a comprehensive test suite across unit, integration, and end-to-end layers:
+### Backend
 
-### Run Backend Tests
 ```bash
 cd backend
 mvn test
 ```
-*Requires local MySQL running on port 3306 with database `borrowbox_v2` and a
-`borrowbox_app` account. Set `SPRING_DATASOURCE_USERNAME=borrowbox_app` and
-`SPRING_DATASOURCE_PASSWORD` from `BORROWBOX_APP_DB_PASSWORD`.*
 
-### Build Frontend
+Runs **973 tests**. Requires a local MySQL database and the `borrowbox_app` account with its password supplied from `.borrowbox-demo-credentials`.
+
+### Frontend build
+
 ```bash
 cd frontend
 npm run build
 ```
-*Validates modules, compiles JSX, bundles CSS, and confirms production asset generation with zero errors.*
 
-### Run Cypress End-to-End Tests (161 Tests across 23 Specs)
-With the application running on `http://localhost:3000`, and a seeded backend:
+Compiles JSX and produces the optimized production bundle.
+
+### Cypress
+
 ```bash
 cd frontend
-export CYPRESS_SEED_PASSWORD='<same value as the seeded backend>'
+export CYPRESS_BASE_URL='http://127.0.0.1:3000'
+export CYPRESS_DB_HOST='127.0.0.1'
+export CYPRESS_DB_PORT='3307'
+export CYPRESS_DB_NAME='borrowbox_v2'
 export CYPRESS_DB_USER='borrowbox_e2e'
-export CYPRESS_DB_PASSWORD='<E2E database password>'
-export CYPRESS_TEST_USER_PASSWORD='<per-run test account password>'
+export CYPRESS_DB_PASSWORD="$(sed -n 's/^BORROWBOX_E2E_DB_PASSWORD=//p' ../.borrowbox-demo-credentials)"
+export CYPRESS_SEED_PASSWORD="$(sed -n 's/^BORROWBOX_SEED_PASSWORD=//p' ../.borrowbox-demo-credentials)"
 npx cypress run --headless
 ```
-On Windows PowerShell, set `$env:CYPRESS_SEED_PASSWORD`, `$env:CYPRESS_DB_USER`,
-`$env:CYPRESS_DB_PASSWORD`, and `$env:CYPRESS_TEST_USER_PASSWORD` instead. When
-using the local launcher, read the database values from
-`.borrowbox-demo-credentials`. The CI E2E workflow generates ephemeral test-only
-passwords and supplies the same values to the backend and Cypress. No shared demo
-password is committed to the specs or used for the test account. CI workflows
-require the `CI_MYSQL_ROOT_PASSWORD` repository secret; see
-[GITHUB_SECRETS.md](GITHUB_SECRETS.md).
 
-*Covers Landing Page, Authentication, Dashboard Routing, Community Listings, Shared Inventory Availability, V2.1 Completion Flow, and the V2.2.2 end-to-end loan lifecycle.*
+Runs **166 E2E tests across 25 spec files**, covering authentication, communities, listings, borrow negotiation, extensions, waitlists, loan lifecycle, evidence and timelines, disputes and manager resolution, flags, rules, reputation, notifications, and UI states.
+
+On Windows PowerShell, set the equivalent `$env:CYPRESS_*` values from `.borrowbox-demo-credentials`. Never commit generated test passwords or shared demo values.
 
 ---
 
-## 🔧 Practical Troubleshooting Guide
+## Project structure
 
-Here are practical solutions for common local development and runtime issues:
-
-### 1. Docker Desktop Not Running
-- **Symptom:** `error during connect: This error may indicate that the docker daemon is not running.`
-- **Fix:** Launch Docker Desktop from the Start Menu / Applications and wait for the status indicator to turn green before running `run_demo.bat` or `docker compose up`.
-
-### 2. Port 8080 Already in Use
-- **Symptom:** Backend container fails to bind to port 8080 or throws `Address already in use`.
-- **Fix:** Identify and terminate the process occupying port 8080:
-  - *Windows (PowerShell):* `Get-Process -Id (Get-NetTCPConnection -LocalPort 8080).OwningProcess | Stop-Process -Force`
-  - *Linux/macOS:* `lsof -ti:8080 | xargs kill -9`
-
-### 3. Port 3000 Already in Use
-- **Symptom:** Frontend container fails to start because port 3000 is occupied.
-- **Fix:** Stop existing web applications running on port 3000:
-  - *Windows (PowerShell):* `Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess | Stop-Process -Force`
-  - *Linux/macOS:* `lsof -ti:3000 | xargs kill -9`
-
-### 4. MySQL Port Conflict (Port 3306)
-- **Note:** BorrowBox maps the MySQL container to host port **3307** (`3307:3306`) in `docker-compose.yml` to prevent conflicts with any local MySQL instances running on port 3306. Local development uses port 3306 directly.
-
-### 5. Backend Startup Timing / Database Waiting
-- **Symptom:** Backend container restarts or logs HikariCP connection retry warnings.
-- **Fix:** The MySQL container takes a few seconds to complete internal initialization on first start. Docker Compose waits for MySQL healthcheck before starting the backend. The backend healthcheck (`/api/health`) ensures the frontend does not start until the API is ready.
-
-### 6. Resetting Corrupted or Stale State
-- **Symptom:** Database schema inconsistencies or stale session cookies.
-- **Fix:** Execute a clean reset:
-  ```bash
-  # Docker reset (all three database passwords and APP_JWT_SECRET must be in the environment)
-  docker compose down -v
-  docker compose up -d --build
-  ```
-  Prefer `run_demo.bat --clean` / `./run_demo.sh --clean`, which also clears the
-  local demo credentials file.
-  For local development:
-  ```powershell
-  $env:BORROWBOX_APP_DB_PASSWORD = '<app-password>'
-  $env:BORROWBOX_E2E_DB_PASSWORD = '<e2e-password>'
-  .\scripts\reset-v2-db.ps1
-  cd backend
-  $env:SPRING_DATASOURCE_URL = 'jdbc:mysql://127.0.0.1:3306/borrowbox_v2'
-  $env:SPRING_DATASOURCE_USERNAME = 'borrowbox_app'
-  $env:SPRING_DATASOURCE_PASSWORD = $env:BORROWBOX_APP_DB_PASSWORD
-  mvn spring-boot:run
-  ```
-  Then clear cookies/localStorage in your browser or use an incognito window.
-
-### 7. MySQL Credential Mismatch on an Existing Volume
-- **Symptom:** MySQL healthcheck stays unhealthy, MySQL logs `Access denied`, or the backend cannot connect after credentials changed.
-- **Cause:** MySQL uses `MYSQL_ROOT_PASSWORD` only when initializing an empty data directory. The existing `mysql_data` volume keeps the password stored in that database.
-- **Fix:** Set `MYSQL_ROOT_PASSWORD` in `.borrowbox-demo-credentials` to the password the existing database already uses. Do not generate a replacement for an existing database. If the password is unknown, recover it from a backup or, only if the demo data is disposable, run `--clean` (destructive). Changing the credential file alone does not rotate the stored MySQL password.
-
-### 8. Application Account Authentication Fails
-- **Symptom:** The backend reports `Access denied for user 'borrowbox_app'`.
-- **Cause:** The bootstrap service applies the configured passwords on every start with `CREATE USER IF NOT EXISTS` followed by `ALTER USER` for `borrowbox_app` and `borrowbox_e2e`. An authentication failure means the backend's datasource password does not match the latest bootstrap configuration.
-- **Fix:** Set the backend's `BORROWBOX_APP_DB_PASSWORD`/`SPRING_DATASOURCE_PASSWORD` to the value in `.borrowbox-demo-credentials` or the deployment secret store, restart the backend after bootstrap completes, and do not switch the backend to root.
-
-### 9. Inspecting Container Logs
-- **Backend logs:** `docker compose logs -f backend`
-- **Frontend logs:** `docker compose logs -f frontend`
-- **MySQL logs:** `docker compose logs -f mysql`
-
----
-
-## Project Structure
-
-```
+```text
 BorrowBox/
-├── .github/
-│   └── workflows/
-│       ├── build.yml         # CI build, Maven tests, Docker Buildx verification
-│       ├── e2e.yml           # Headless Cypress E2E pipeline with live MySQL
-│       └── deploy.yml        # Deployment automation (Railway & Render hooks)
-├── backend/                  # Spring Boot REST API (Java 21)
-│   ├── src/main/java/com/borrowbox/
-│   │   ├── config/           # Security, CORS, OpenAPI, SeedDataInitializer
-│   │   ├── controller/       # REST endpoints (Auth, Community, Asset, Listing, Health)
-│   │   ├── dto/              # Request & Response DTOs
-│   │   ├── entity/           # JPA Entities (User, Community, Membership, Asset, AssetUnit, CommunityListing, etc.)
-│   │   ├── exception/        # Global exception handler
-│   │   ├── repository/       # Spring Data JPA repositories
-│   │   ├── security/         # JWT filter & authentication logic
-│   │   ├── service/          # Business logic services
-│   │   └── spec/             # Dynamic JPA Specifications
-│   ├── src/test/java/        # Unit, service, controller, and integration tests
-│   └── Dockerfile
-├── frontend/                 # React 18 + Vite SPA
-│   ├── cypress/              # Cypress E2E tests (23 spec files, 161 tests)
-│   │   └── e2e/              # auth, community, listings, loans, evidence, extensions, flags, reputation, rules, waitlists
-│   ├── src/
-│   │   ├── components/       # UI components
-│   │   ├── contexts/         # React Contexts (AuthContext)
-│   │   ├── pages/            # Page components & DashboardLayout
-│   │   └── utils/            # API client and helper utilities
-│   ├── nginx.conf            # Production Nginx reverse proxy configuration
-│   └── Dockerfile
-├── scripts/
-│   ├── bootstrap-mysql.sh    # Creates the local/CI app and E2E accounts
-│   ├── apply-schema.sh       # Applies schema SQL with the production migrator account
-│   └── reset-v2-db.ps1       # Local V2.1 database reset and account provisioning
-├── docs/
-│   ├── BORROWBOX_ROADMAP.ipynb
-│   ├── BORROWBOX_DECISIONS.ipynb
-│   ├── BORROWBOX_V2_1_DATABASE_SCHEMA.ipynb
-│   ├── BORROWBOX_V2_1_SEED_DATA_AND_INITIALIZATION.ipynb
-│   └── ...                   # Additional planning and specification notebooks
-├── docker-compose.yml        # V2.1 multi-container orchestration
-├── PROJECT_STATUS.md         # Current project state
-├── DEV_NOTES.md              # Developer notes (reset, seed, Docker)
+├── backend/                  Spring Boot REST API and 973 tests
+├── frontend/                 React SPA
+│   ├── cypress/e2e/          25 spec files, 166 E2E tests
+│   └── src/                  pages, components, contexts, services, styles
+├── scripts/                  local bootstrap, schema, and database reset helpers
+├── docs/                     roadmap, decisions, schema, seed, and reports
+├── docker-compose.yml        local multi-container stack
+├── PROJECT_STATUS.md         current capability and validation snapshot
 └── README.md
 ```
 
 ---
 
-## 🔐 Security & Default Configuration
+## Security notes
 
-- **Authentication:** Stateless **JWT stored in HttpOnly cookies**, protecting against XSS token theft.
-- **Access Control:** All API endpoints are secured by default; public access is restricted to `/api/auth/**` and `/api/health`.
-- **Credential Hygiene:** Supply database app/migration passwords and JWT secrets via environment variables or a secret store. The backend and Cypress use dedicated database accounts and never receive the MySQL root password. Rotate any exposed credential and follow the response steps in [GITHUB_SECRETS.md](GITHUB_SECRETS.md#credential-exposure-response).
-- **Demo Seeding:** Disabled by default and never seeds an administrator. Existing accounts are never deleted, suspended, or password-rotated by startup or seed execution; use `scripts/manage-user.ps1` to suspend/reactivate accounts.
+- API access is denied by default; only health and auth endpoints are public.
+- JWTs are stored in HttpOnly cookies; browser JavaScript never reads the token.
+- The backend, Cypress, and bootstrap use dedicated database accounts and never receive the MySQL root password.
+- Demo credentials are generated locally into `.borrowbox-demo-credentials` and are never committed.
+- Manager-only endpoints verify an active MANAGER membership for the transaction's community.
 
 ---
 
-## 📄 License
+## License
 
 MIT © BorrowBox Contributors

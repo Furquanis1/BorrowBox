@@ -87,8 +87,8 @@ describe('V2.1 Completion Flow', () => {
     readFootballCard('Engineering Office', officeId)
 
     cy.then(() => {
+      expect(captures['CSE Department']).to.contain('Available')
       expect(captures['CSE Department']).to.contain('1 available')
-      expect(captures['CSE Department']).to.contain('0 borrowed')
       expect(captures['Hostel Block B']).to.equal(captures['CSE Department'])
       expect(captures['Engineering Office']).to.equal(captures['CSE Department'])
     })

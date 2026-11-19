@@ -6,10 +6,15 @@ import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import ListAssetDrawer from '../../components/dashboard/ListAssetDrawer'
+import CategoryArtwork from '../../components/common/CategoryArtwork'
+import Pagination from '../../components/Pagination'
+
+const PAGE_SIZE = 8
 
 export default function InventoryPage() {
   const { showToast } = useApp()
   const [drawerAsset, setDrawerAsset] = useState(null)
+  const [page, setPage] = useState(0)
 
   const fetchAll = useCallback(async () => {
     const assets = await assetService.listAssets()
@@ -27,6 +32,9 @@ export default function InventoryPage() {
 
   const assets = data?.assets || []
   const listingsByAsset = data?.listingsByAsset || {}
+  const totalPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedAssets = assets.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   const handleMutated = async () => {
     try {
@@ -86,11 +94,14 @@ export default function InventoryPage() {
       </header>
 
       <ul className="asset-list">
-        {assets.map((asset) => {
+        {pagedAssets.map((asset) => {
           const assetListings = listingsByAsset[asset.id] || []
           const listedCount = assetListings.filter((l) => l.listingStatus === 'LISTED').length
           return (
             <li key={asset.id} className="asset-row">
+              <div className="asset-row-art">
+                <CategoryArtwork title={asset.title} category={asset.categoryName || asset.category} />
+              </div>
               <div className="asset-row-main">
                 <h3>{asset.title}</h3>
                 {asset.description && <p>{asset.description}</p>}
@@ -121,6 +132,16 @@ export default function InventoryPage() {
           )
         })}
       </ul>
+
+      {assets.length > PAGE_SIZE && (
+        <Pagination
+          currentPage={safePage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          totalElements={assets.length}
+          pageSize={PAGE_SIZE}
+        />
+      )}
 
       <ListAssetDrawer
         open={!!drawerAsset}

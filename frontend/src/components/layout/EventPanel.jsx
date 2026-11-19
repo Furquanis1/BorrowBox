@@ -60,6 +60,17 @@ export default function EventPanel({ onClose }) {
   const [filter, setFilter] = useState('all')
   const [expandedId, setExpandedId] = useState(null)
 
+  useEffect(() => {
+    if (!onClose) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   const filteredDeliveries = deliveries.filter(d => {
     if (filter === 'all') return true
     return d.status === filter
@@ -83,7 +94,17 @@ export default function EventPanel({ onClose }) {
   return (
     <div className="event-panel">
       <div className="event-panel-header">
-        <h3>Events</h3>
+        <div className="event-panel-heading">
+          <button
+            type="button"
+            className="event-panel-back"
+            onClick={onClose}
+            aria-label="Back from events"
+          >
+            ← Back
+          </button>
+          <h3>Events</h3>
+        </div>
         <span className="event-panel-badge" style={{ display: unreadCount > 0 ? 'inline-flex' : 'none' }}>
           {unreadCount}
         </span>
@@ -130,7 +151,16 @@ export default function EventPanel({ onClose }) {
       <div className="event-panel-list">
         {filteredDeliveries.length === 0 ? (
           <div className="event-panel-empty">
-            {filter === 'all' ? 'No events yet' : `No ${filter.toLowerCase()} events`}
+            <div className="event-panel-empty-card">
+              <span className="event-panel-empty-icon" aria-hidden="true">
+                <i className="bi bi-bell" />
+              </span>
+              <strong>{filter === 'all' ? 'No recent events yet' : `No ${filter.toLowerCase()} events yet`}</strong>
+              <p>
+                Loan requests, handovers, returns, and dispute updates will appear here when
+                something happens in your circles.
+              </p>
+            </div>
           </div>
         ) : (
           filteredDeliveries.map(delivery => (

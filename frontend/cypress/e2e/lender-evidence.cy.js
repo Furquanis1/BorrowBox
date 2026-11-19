@@ -256,6 +256,12 @@ describe('Lender handover evidence (V2.5.1)', () => {
 
     // ── Confirm handover now that the evidence exists ──
     cy.get('.transaction-card').contains(marker).closest('.transaction-card').contains('button', 'Confirm handover').click()
+    // The UI only surfaces the success toast after the confirm request resolves,
+    // so waiting for it avoids racing the backend state check without masking
+    // a failed request.
+    cy.get('[role="alert"]', { timeout: 15000 })
+      .should('have.class', 'toast-success')
+      .and('contain', 'Loan started')
     get(() => `/api/transactions/${txnId}`).then((res) => {
       expect(res.body.state).to.equal('ACTIVE')
     })

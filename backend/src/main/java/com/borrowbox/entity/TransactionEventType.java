@@ -37,6 +37,9 @@ public enum TransactionEventType {
     LOAN_COMPLETED,
     RETURN_DISPUTED,
 
+    // Manager dispute resolution
+    DISPUTE_RESOLVED,
+
     // Reservation expiry
     EXPIRED,
 

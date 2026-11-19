@@ -6,12 +6,14 @@ import EventTimeline from './EventTimeline'
 import EvidenceTimeline, { EVIDENCE_SLOTS } from './EvidenceTimeline'
 import BeforeAfterComparison from './BeforeAfterComparison'
 import { useAuth } from '../../contexts/AuthContext'
+import { useCommunity } from '../../contexts/CommunityContext'
 import { eventService, requestService } from '../../services'
 
 // V2.5.2: EXPIRED is terminal, so the drawer is read-only for it. It is also
 // absent from WRITABLE_STATES and EVIDENCE_VISIBLE_STATES, so
 // no composer, no evidence upload, and no evidence list is rendered.
 const TERMINAL_STATES = new Set(['COMPLETED', 'REJECTED', 'CANCELLED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED', 'EXPIRED'])
+const DISPUTED_STATES = new Set(['HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 const WRITABLE_STATES = new Set(['APPROVED', 'AWAITING_HANDOVER', 'ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED'])
 // V2.5.1: the lender can also capture/see evidence while awaiting handover.
 const EVIDENCE_VISIBLE_STATES = new Set(['AWAITING_HANDOVER', 'RETURN_INITIATED', 'RETURN_REPORTED', 'RETURN_DISPUTED'])
@@ -53,7 +55,7 @@ function formatDate(iso) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export default function ConversationDrawer({ open, onClose, transaction, onDataChanged }) {
+export default function ConversationDrawer({ open, onClose, transaction, onDataChanged, managerMode = false }) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
   const [body, setBody] = useState('')
@@ -78,7 +80,14 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const [timeline, setTimeline] = useState([])
   const [timelineLoading, setTimelineLoading] = useState(false)
   const [timelineError, setTimelineError] = useState('')
+  const [resolutionOutcome, setResolutionOutcome] = useState('FAVOR_BORROWER')
+  const [resolutionUnitCondition, setResolutionUnitCondition] = useState('INTACT')
+  const [resolutionFreeUnit, setResolutionFreeUnit] = useState(true)
+  const [resolutionNote, setResolutionNote] = useState('')
+  const [resolutionError, setResolutionError] = useState('')
+  const [resolving, setResolving] = useState(false)
   const { user } = useAuth()
+  const { isManager } = useCommunity()
   const bottomRef = useRef(null)
   const messageListRef = useRef(null)
   const inputRef = useRef(null)
@@ -99,6 +108,11 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     setTimeline([])
     setTimelineError('')
     setPendingUpload(null)
+    setResolutionOutcome('FAVOR_BORROWER')
+    setResolutionUnitCondition('INTACT')
+    setResolutionFreeUnit(true)
+    setResolutionNote('')
+    setResolutionError('')
   }, [transaction])
 
   const active = currentTxn || transaction
@@ -107,6 +121,13 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const writable = WRITABLE_STATES.has(state)
   const isBorrower = active && user?.id === active.borrowerId
   const isLender = active && user?.id === active.lenderId
+  // managerMode is opt-in from the manager-only flags queue. Participant views
+  // keep their existing behaviour even when the signed-in user is also a manager.
+  const managerCanResolve = managerMode && isManager(active?.communityId)
+  const managerReview = managerCanResolve && DISPUTED_STATES.has(state)
+  const managerObserver = managerMode && !isBorrower && !isLender
+  const evidenceVisible =
+    EVIDENCE_VISIBLE_STATES.has(state) || (managerReview && DISPUTED_STATES.has(state))
 
   const loadMessages = useCallback(() => {
     if (!transaction) return Promise.resolve()
@@ -134,8 +155,8 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   }, [transaction])
 
   useEffect(() => {
-    if (open && transaction && EVIDENCE_VISIBLE_STATES.has(transaction.state)) loadEvidence()
-  }, [open, transaction?.id, transaction?.state, loadEvidence])
+    if (open && transaction && evidenceVisible) loadEvidence()
+  }, [open, transaction?.id, evidenceVisible, loadEvidence])
 
   const loadTimeline = useCallback(() => {
     if (!transaction) return Promise.resolve()
@@ -346,6 +367,35 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
     }
   }
 
+  const handleResolveDispute = async () => {
+    if (!active || !managerReview) return
+    const note = resolutionNote.trim()
+    if (!note) {
+      setResolutionError('A resolution note is required.')
+      return
+    }
+
+    setResolving(true)
+    setResolutionError('')
+    try {
+      const payload = { outcome: resolutionOutcome, resolutionNote: note }
+      if (state === 'RETURN_DISPUTED') {
+        payload.unitCondition = resolutionUnitCondition
+        payload.freeUnit = resolutionFreeUnit
+      }
+      const updated = await requestService.resolveDispute(active.id, payload)
+      setCurrentTxn(updated)
+      setResolutionNote('')
+      setShowTimeline(true)
+      await loadMessages()
+      onDataChanged?.()
+    } catch (err) {
+      setResolutionError(err?.message || 'Could not resolve the dispute')
+    } finally {
+      setResolving(false)
+    }
+  }
+
   const handleRequestExtension = async () => {
     setActionBusy(true)
     setActionError('')
@@ -453,7 +503,12 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
   const activeStage = state === 'COMPLETED' ? LIFECYCLE_STEPS.length : lifecycleIndex(state)
 
   let nextStep = null
-  if (state === 'PENDING') {
+  if (managerReview) {
+    nextStep = {
+      title: 'Dispute awaiting review',
+      text: 'Review the conversation, photos, and timeline, then record a manager decision below.',
+    }
+  } else if (state === 'PENDING') {
     nextStep = isLender
       ? {
           title: 'Awaiting your review',
@@ -710,7 +765,101 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         </div>
       )}
 
-      {EVIDENCE_VISIBLE_STATES.has(state) && (
+      {managerReview && (
+        <section className="conversation-manager-review" aria-label="Manager dispute resolution">
+          <div className="conversation-manager-banner">
+            <i className="bi bi-shield-check" aria-hidden="true" />
+            <div>
+              <strong>Manager review</strong>
+              <p>
+                Your decision is recorded in the conversation, the activity timeline, and both
+                participants&apos; notifications.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="dispute-resolution"
+            aria-label="Resolve dispute"
+            onSubmit={(event) => {
+              event.preventDefault()
+              handleResolveDispute()
+            }}
+          >
+            <p className="conversation-return-title">Resolve this dispute</p>
+            <div className="dispute-resolution-grid">
+              <label className="conversation-extension-field" htmlFor="resolution-outcome">
+                <span>Decision</span>
+                <select
+                  id="resolution-outcome"
+                  className="conversation-extension-input"
+                  value={resolutionOutcome}
+                  onChange={(event) => setResolutionOutcome(event.target.value)}
+                >
+                  <option value="FAVOR_BORROWER">Favor borrower</option>
+                  <option value="FAVOR_LENDER">Favor lender</option>
+                  <option value="REOPEN">Reopen loan</option>
+                </select>
+              </label>
+
+              {state === 'RETURN_DISPUTED' && (
+                <>
+                  <label className="conversation-extension-field" htmlFor="resolution-unit-condition">
+                    <span>Unit condition</span>
+                    <select
+                      id="resolution-unit-condition"
+                      className="conversation-extension-input"
+                      value={resolutionUnitCondition}
+                      onChange={(event) => setResolutionUnitCondition(event.target.value)}
+                    >
+                      <option value="INTACT">Intact</option>
+                      <option value="LOST">Lost</option>
+                      <option value="DAMAGED">Damaged</option>
+                    </select>
+                  </label>
+                  <label className="dispute-resolution-check" htmlFor="resolution-free-unit">
+                    <input
+                      id="resolution-free-unit"
+                      type="checkbox"
+                      checked={resolutionFreeUnit}
+                      onChange={(event) => setResolutionFreeUnit(event.target.checked)}
+                    />
+                    Release an intact unit back to availability
+                  </label>
+                </>
+              )}
+            </div>
+
+            <label className="conversation-extension-field" htmlFor="resolution-note">
+              <span>Resolution note (required)</span>
+              <textarea
+                id="resolution-note"
+                className="conversation-extension-input dispute-resolution-note"
+                rows={3}
+                maxLength={1000}
+                placeholder="Explain the evidence and the decision..."
+                value={resolutionNote}
+                onChange={(event) => setResolutionNote(event.target.value)}
+              />
+            </label>
+
+            {resolutionError && (
+              <p className="field-error" role="alert">
+                {resolutionError}
+              </p>
+            )}
+
+            <div className="dispute-resolution-actions">
+              <Button type="submit" variant="primary" size="sm" loading={resolving} disabled={!resolutionNote.trim()}>
+                <i className="bi bi-check2-circle" aria-hidden="true" />
+                Resolve dispute
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {evidenceVisible && (
         <div className="conversation-evidence">
           <p className="conversation-return-title">Photos</p>
 {evidenceLoading ? (
@@ -1113,7 +1262,7 @@ export default function ConversationDrawer({ open, onClose, transaction, onDataC
         </div>
       )}
 
-      {writable && (
+      {writable && !managerObserver && (
         <form className="conversation-composer" onSubmit={handleSend} noValidate>
           <input
             ref={inputRef}

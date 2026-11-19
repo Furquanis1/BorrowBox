@@ -8,6 +8,9 @@ import EmptyState from '../../components/ui/EmptyState'
 import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
+import Pagination from '../../components/Pagination'
+
+const PAGE_SIZE = 8
 
 const LOAN_STATES = new Set(['ACTIVE', 'RETURN_INITIATED', 'RETURN_REPORTED', 'COMPLETED', 'HANDOVER_DISPUTED', 'RETURN_DISPUTED'])
 
@@ -36,6 +39,11 @@ const CONVERSATION_LABEL = {
   COMPLETED: 'View conversation',
   HANDOVER_DISPUTED: 'View conversation',
   RETURN_DISPUTED: 'View conversation',
+}
+
+function formatCardDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 function LoanCard({
@@ -73,17 +81,29 @@ function LoanCard({
   return (
     <li className="transaction-card">
       <div className="transaction-card-head">
-        <div className="transaction-card-main">
-          <h3>{loan.title}</h3>
-          <p className="transaction-card-subline">
-            {isBorrower
-              ? `${loan.lenderName} · ${loan.communityName}`
-              : `${loan.borrowerName} · ${loan.communityName}`}
-          </p>
-          <p className="transaction-card-terms">
-            &ldquo;{loan.agreedPurpose || loan.purpose}&rdquo; · {loan.agreedDurationDays || loan.requestedDurationDays}{' '}
-            days
-          </p>
+        <div className="workspace-card-identity">
+          <div className="transaction-card-main">
+            <h3>{loan.title}</h3>
+            <p className="transaction-card-subline">
+              {isBorrower
+                ? `${loan.lenderName} · ${loan.communityName}`
+                : `${loan.borrowerName} · ${loan.communityName}`}
+            </p>
+            <p className="transaction-card-terms">
+              &ldquo;{loan.agreedPurpose || loan.purpose}&rdquo; · {loan.agreedDurationDays || loan.requestedDurationDays}{' '}
+              days
+            </p>
+          </div>
+          <div className="workspace-card-meta">
+            <span className="workspace-role-chip">{isBorrower ? 'Borrower' : 'Lender'}</span>
+            {dueDate ? (
+              <span className="workspace-date-chip">Due {formatCardDate(loan.dueAt)}</span>
+            ) : loan.startedAt ? (
+              <span className="workspace-date-chip">Started {formatCardDate(loan.startedAt)}</span>
+            ) : formatCardDate(loan.createdAt) ? (
+              <span className="workspace-date-chip">{formatCardDate(loan.createdAt)}</span>
+            ) : null}
+          </div>
         </div>
         <span className={`badge ${badgeClass}`}>
           {badgeLabel}
@@ -181,6 +201,7 @@ export default function LoansPage() {
   const { user } = useAuth()
   const [conversationTarget, setConversationTarget] = useState(null)
   const [busy, setBusy] = useState(null)
+  const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useSearchParams()
   const txParam = searchParams.get('tx')
   const fetchMine = useCallback(() => requestService.getMine(), [])
@@ -191,6 +212,10 @@ export default function LoansPage() {
   const loans = [...(mineState.data || []), ...(lendedState.data || [])].filter((t) =>
     LOAN_STATES.has(t.state)
   )
+
+  const totalPages = Math.max(1, Math.ceil(loans.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedLoans = loans.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   const clearTxParam = useCallback(() => {
     setSearchParams(
@@ -280,7 +305,7 @@ export default function LoansPage() {
         />
       ) : (
         <ul className="transaction-list">
-          {loans.map((loan) => (
+          {pagedLoans.map((loan) => (
             <LoanCard
               key={loan.id}
               loan={loan}
@@ -312,6 +337,16 @@ export default function LoansPage() {
             />
           ))}
         </ul>
+      )}
+
+      {loans.length > PAGE_SIZE && (
+        <Pagination
+          currentPage={safePage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          totalElements={loans.length}
+          pageSize={PAGE_SIZE}
+        />
       )}
 
       <ConversationDrawer

@@ -43,6 +43,10 @@ public class NotificationService {
             NotificationType.EXTENSION_COUNTERED,
             NotificationType.EXTENSION_COUNTER_ACCEPTED,
             NotificationType.EXTENSION_COUNTER_REJECTED);
+    private static final Set<NotificationType> MEMBERSHIP_TYPES = Set.of(
+            NotificationType.MEMBERSHIP_REQUEST_PENDING,
+            NotificationType.MEMBERSHIP_APPROVED,
+            NotificationType.MEMBERSHIP_REJECTED);
 
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository preferenceRepository;
@@ -181,6 +185,57 @@ public class NotificationService {
                 .orElseThrow(() -> new IllegalStateException(
                         "Notification was not found after scheduled insert"));
         return Optional.of(canonical);
+    }
+
+    /**
+     * Creates (or reactivates) a community-membership notification. Membership
+     * events have no transaction event and must not use the scheduled dedupe
+     * key namespace, so the row intentionally leaves both identity columns null
+     * and is deduplicated by its visible title/message content.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<Notification> createMembershipNotification(User recipient,
+                                                               NotificationType type,
+                                                               String title,
+                                                               String message) {
+        requireUser(recipient);
+        if (type == null || !MEMBERSHIP_TYPES.contains(type)) {
+            throw new IllegalArgumentException(
+                    "Membership notifications require a membership notification type");
+        }
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("A membership notification title is required");
+        }
+        if (isOptedOut(recipient.getId(), type)) {
+            return Optional.empty();
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        Optional<Notification> existing = notificationRepository
+                .findFirstByRecipientIdAndTypeAndTitleAndMessageAndSourceEventIdIsNullAndDedupeKeyIsNullOrderByIdAsc(
+                        recipient.getId(), type, title, message);
+        if (existing.isPresent()) {
+            Notification notification = existing.get();
+            notification.setRecipient(recipient);
+            notification.setRecipientEmail(recipient.getEmail());
+            notification.setType(type);
+            notification.setTitle(title);
+            notification.setMessage(message);
+            notification.setStatus(NotificationStatus.UNREAD);
+            notification.setReadAt(null);
+            notification.setCreatedAt(now);
+            return Optional.of(notificationRepository.save(notification));
+        }
+
+        Notification notification = new Notification();
+        notification.setRecipient(recipient);
+        notification.setRecipientEmail(recipient.getEmail());
+        notification.setType(type);
+        notification.setTitle(title);
+        notification.setMessage(message);
+        notification.setStatus(NotificationStatus.UNREAD);
+        notification.setCreatedAt(now);
+        return Optional.of(notificationRepository.save(notification));
     }
 
     /**

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useCommunity } from '../../contexts/CommunityContext'
 import { useApp } from '../../contexts/AppContext'
@@ -9,6 +9,15 @@ import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import ListingRowList from '../../components/dashboard/ListingRowList'
 import RequestDrawer from '../../components/dashboard/RequestDrawer'
+import CommunityBrowseControls from '../../components/common/CommunityBrowseControls'
+import Pagination from '../../components/Pagination'
+import {
+  CATEGORY_FILTERS,
+  matchesCategory,
+  matchesSearchQuery,
+} from '../../components/common/CategoryArtwork'
+
+const PAGE_SIZE = 9
 
 export default function ExplorePage() {
   const { communityId } = useParams()
@@ -17,7 +26,9 @@ export default function ExplorePage() {
   const community = communities.find((c) => String(c.id) === String(communityId)) || null
   const [requestListing, setRequestListing] = useState(null)
   const [waitlistListing, setWaitlistListing] = useState(null)
-  const [activeFilter, setActiveFilter] = useState('All')
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('All')
+  const [page, setPage] = useState(0)
 
   const fetchListings = useCallback(() => {
     if (!community) return Promise.resolve([])
@@ -32,12 +43,17 @@ export default function ExplorePage() {
   const { data: listings, loading, error, reload, retry } = useAsync(fetchListings, [community?.id])
   const { data: myAssetIds } = useAsync(fetchMyAssetIds, [])
 
-  const filters = ['All', 'Available', 'Waitlist']
-  const visibleListings = (listings || []).filter((listing) => {
-    if (activeFilter === 'Available') return listing.availableUnits > 0
-    if (activeFilter === 'Waitlist') return listing.availableUnits === 0
-    return true
-  })
+  const visibleListings = useMemo(
+    () =>
+      (listings || []).filter(
+        (listing) => matchesSearchQuery(listing, query) && matchesCategory(listing, category)
+      ),
+    [listings, query, category]
+  )
+
+  const totalPages = Math.max(1, Math.ceil(visibleListings.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedListings = visibleListings.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   if (!community) return null
 
@@ -81,36 +97,52 @@ export default function ExplorePage() {
             </Button>
           }
         />
-      ) : listings.length === 0 ? (
-        <section aria-label="Explore listing">
-          <EmptyState
-            icon="bi-boxes"
-            title="No items listed yet"
-            description="Items offered in this community will show up here."
-          />
-        </section>
       ) : (
         <section aria-label="Explore listing">
-          <div className="pill-filter-scroll" aria-label="Community filters">
-            {filters.map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                className={`filter-pill${activeFilter === filter ? ' active' : ''}`}
-                aria-pressed={activeFilter === filter}
-                onClick={() => setActiveFilter(filter)}
-              >
-                {filter}
-              </button>
-            ))}
-          </div>
-
-          <ListingRowList
-            listings={visibleListings}
-            myAssetIds={myAssetIds}
-            onRequest={(listing) => setRequestListing(listing)}
-            onJoinWaitlist={(listing) => setWaitlistListing(listing)}
+          <CommunityBrowseControls
+            query={query}
+            onQueryChange={(value) => {
+              setQuery(value)
+              setPage(0)
+            }}
+            category={category}
+            onCategoryChange={(value) => {
+              setCategory(value)
+              setPage(0)
+            }}
+            categories={CATEGORY_FILTERS}
           />
+
+          {listings.length === 0 ? (
+            <EmptyState
+              icon="bi-boxes"
+              title="No items listed yet"
+              description="Items offered in this community will show up here."
+            />
+          ) : visibleListings.length === 0 ? (
+            <EmptyState
+              icon="bi-search"
+              title="No matching items"
+              description="Try a different search or category."
+            />
+          ) : (
+            <ListingRowList
+              listings={pagedListings}
+              myAssetIds={myAssetIds}
+              onRequest={(listing) => setRequestListing(listing)}
+              onJoinWaitlist={(listing) => setWaitlistListing(listing)}
+            />
+          )}
+
+          {visibleListings.length > PAGE_SIZE && (
+            <Pagination
+              currentPage={safePage}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              totalElements={visibleListings.length}
+              pageSize={PAGE_SIZE}
+            />
+          )}
         </section>
       )}
 

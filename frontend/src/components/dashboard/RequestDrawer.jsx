@@ -113,9 +113,9 @@ export default function RequestDrawer({ open, onClose, listing, onSubmitted, mod
         )}
 
         <div className="request-drawer-actions">
-          <Button type="submit" loading={busy} block>
+          <Button type="submit" loading={busy} block className="request-borrow-button">
             <i className={isWaitlist ? 'bi bi-clock-history' : 'bi bi-send'} aria-hidden="true" />
-            {isWaitlist ? 'Join waitlist' : 'Send request'}
+            {isWaitlist ? 'Join waitlist' : 'Request Borrow'}
           </Button>
         </div>
       </form>

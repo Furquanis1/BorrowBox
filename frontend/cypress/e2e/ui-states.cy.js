@@ -132,30 +132,27 @@ describe('UI states · error / empty / recovery (Slice 1)', () => {
     )
   })
 
-  it('community home: fails to load listings, then recovers via Try again', () => {
-    onceFailThen(`/api/communities/${cseId}/listings`, listingFixtures(2, 'Home'))
+  it('community home: keeps the hub when listings fail to load', () => {
+    cy.intercept('GET', `/api/communities/${cseId}/listings`, { forceNetworkError: true })
 
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('#recently-offered-title').should('contain', 'Recently offered')
-    cy.get('.empty-state-title').should('have.text', 'Could not load listings')
-    cy.get('.empty-state').contains('button', 'Try again').click()
-
-    cy.get('.community-home .explore-listing-row').should('have.length', 2)
-    cy.get('.empty-state').should('not.exist')
+    cy.get('.community-hub').should('be.visible')
+    cy.get('.community-explore-cta').should('be.visible')
+    cy.get('.community-home').should('not.contain', 'Could not load listings')
+    cy.get('.community-home .explore-listing-row').should('not.exist')
   })
 
-  it('community home: shows the empty state when nothing is shared', () => {
+  it('community home: shows the Explore CTA when nothing is shared', () => {
     cy.intercept('GET', `/api/communities/${cseId}/listings`, { body: empty })
 
     cy.visit(`/communities/${cseId}`)
 
-    cy.get('#recently-offered-title').should('contain', 'Recently offered')
-    cy.get('.empty-state-title').should('have.text', 'Nothing shared yet')
-    cy.get('.empty-state-description').should(
-      'have.text',
-      'Items offered in this community will show up here.',
-    )
+    cy.get('.community-hub').should('be.visible')
+    cy.get('.community-explore-cta')
+      .should('be.visible')
+      .and('contain', 'Explore Borrowable Items')
+    cy.get('.community-home .explore-listing-row').should('not.exist')
   })
 
   it('inventory: fails to load assets, then recovers via Try again', () => {

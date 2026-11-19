@@ -138,6 +138,19 @@ function restoreConditionHistorySql(historyScopeSql) {
 }
 
 /**
+ * Notifications keep a source_event_id after fixture cleanup removes the event
+ * row. The backend schema-patch hard guard rejects those orphans on the next
+ * startup, so every cleanup that deletes transaction_events must drop them too.
+ */
+function deleteOrphanNotificationsSql() {
+  return [
+    'DELETE n FROM notifications n',
+    'LEFT JOIN transaction_events e ON e.id = n.source_event_id',
+    'WHERE n.source_event_id IS NOT NULL AND e.id IS NULL;',
+  ].join(' ')
+}
+
+/**
  * Deletes a RETURN_DISPUTED marker transaction and releases its AssetUnit back
  * to AVAILABLE so the canonical seeded fixture survives for later specs.
  * RETURN_DISPUTED is terminal by design (unit stays BORROWED), so there is no
@@ -158,6 +171,7 @@ function restoreReturnDispute(txnId) {
     `DELETE FROM transaction_messages WHERE transaction_id = ${id};`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id = ${id});`,
     `DELETE FROM transaction_events WHERE transaction_id = ${id};`,
+    deleteOrphanNotificationsSql(),
     `DELETE FROM reputation_events WHERE transaction_id = ${id};`,
     `UPDATE asset_units SET status='AVAILABLE' WHERE id = (SELECT reserved_unit_id FROM transactions WHERE id = ${id});`,
     `DELETE FROM transactions WHERE id = ${id};`,
@@ -191,6 +205,7 @@ function restoreEvents(marker) {
     `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
     `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    deleteOrphanNotificationsSql(),
     `DELETE FROM transaction_messages WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transactions WHERE purpose LIKE '${marker}%';`,
     'SET FOREIGN_KEY_CHECKS=1;',
@@ -219,6 +234,7 @@ function purgeEvents() {
     'SET FOREIGN_KEY_CHECKS=0;',
     'DELETE FROM transaction_event_deliveries;',
     'DELETE FROM transaction_events;',
+    deleteOrphanNotificationsSql(),
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
   runMysql(sql)
@@ -238,6 +254,7 @@ function cleanupEventsDb(marker) {
     `UPDATE asset_units SET status='AVAILABLE' WHERE id IN (SELECT reserved_unit_id FROM transactions WHERE purpose LIKE '${marker}%' AND reserved_unit_id IS NOT NULL);`,
     `DELETE FROM transaction_event_deliveries WHERE event_id IN (SELECT id FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%'));`,
     `DELETE FROM transaction_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
+    deleteOrphanNotificationsSql(),
     `DELETE FROM transaction_evidence WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM transaction_messages WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
     `DELETE FROM reputation_events WHERE transaction_id IN (SELECT id FROM transactions WHERE purpose LIKE '${marker}%');`,
@@ -298,6 +315,36 @@ function restoreMembership({ userId, communityId }) {
     'SET FOREIGN_KEY_CHECKS=0;',
     `DELETE FROM memberships WHERE user_id = ${uid} AND community_id = ${cid};`,
     `DELETE FROM users WHERE id = ${uid};`,
+    'SET FOREIGN_KEY_CHECKS=1;',
+  ].join(' ')
+  runMysql(sql)
+  return true
+}
+
+/**
+ * Removes a throwaway community and the users created by the community
+ * lifecycle spec. Those fixtures have no product delete API, so the suite
+ * restores the canonical seed directly after the create/join/leave flow.
+ */
+function restoreCommunityLifecycle({ communityId, userIds }) {
+  const cid = Number(communityId)
+  if (!Number.isInteger(cid) || cid <= 0) throw new Error(`Invalid community id: ${communityId}`)
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    throw new Error('userIds must be a non-empty array')
+  }
+  const ids = userIds.map((value) => Number(value))
+  if (ids.some((id) => !Number.isInteger(id) || id <= 0)) {
+    throw new Error('userIds must contain positive integers')
+  }
+  const idList = ids.join(',')
+  const sql = [
+    'SET FOREIGN_KEY_CHECKS=0;',
+    `DELETE FROM notifications WHERE recipient_id IN (${idList});`,
+    `DELETE FROM notification_preferences WHERE user_id IN (${idList});`,
+    `DELETE FROM webhook_endpoints WHERE user_id IN (${idList});`,
+    `DELETE FROM memberships WHERE community_id = ${cid} OR user_id IN (${idList}) OR verified_by IN (${idList});`,
+    `DELETE FROM communities WHERE id = ${cid};`,
+    `DELETE FROM users WHERE id IN (${idList});`,
     'SET FOREIGN_KEY_CHECKS=1;',
   ].join(' ')
   runMysql(sql)
@@ -368,6 +415,7 @@ module.exports = defineConfig({
         restoreFlags,
         restoreConditionHistory,
         restoreMembership,
+        restoreCommunityLifecycle,
         restoreRules,
         ensureSuspendedManager,
       })

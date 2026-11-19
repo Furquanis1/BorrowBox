@@ -1,85 +1,110 @@
 import React from 'react'
-import Button from '../ui/Button'
+import CategoryArtwork from '../common/CategoryArtwork'
 
-export default function ListingRowList({ listings, myAssetIds, onRequest, onJoinWaitlist }) {
+export default function ListingRowList({
+  listings = [],
+  myAssetIds,
+  onRequest,
+  onJoinWaitlist,
+  onSelect,
+  onAction,
+  onBorrow,
+  readOnly = false,
+}) {
   const ownedAssetsKnown = Array.isArray(myAssetIds)
 
   return (
     <div className="immersive-feed">
       {listings.map((listing) => {
         const isMine = ownedAssetsKnown && myAssetIds.includes(Number(listing.assetId))
-        const canRequest =
-          ownedAssetsKnown && Boolean(onRequest) && !isMine && listing.availableUnits > 0
-        const canJoinWaitlist =
-          ownedAssetsKnown && Boolean(onJoinWaitlist) && !isMine && listing.availableUnits === 0
+        const isAvailable = listing.availableUnits > 0
 
         const imageSrc =
           listing.imageUrl ||
           listing.image ||
           listing.photoUrl ||
           listing.assetImage ||
+          listing.imagePath ||
           listing.asset?.imageUrl ||
           listing.asset?.image ||
+          listing.asset?.photoUrl ||
+          listing.asset?.imagePath ||
           null
-        const condition = listing.condition || listing.itemCondition || 'Pre-loved'
-        const availability =
-          listing.availableUnits > 0
-            ? `${listing.availableUnits} available`
-            : listing.waitingCount > 0
-              ? `${listing.waitingCount} waiting`
-              : 'Waitlist open'
+
+        const title = listing.title || 'Untitled item'
+        const category = listing.categoryName || listing.category || ''
+        const owner =
+          listing.ownerName ||
+          listing.owner?.fullName ||
+          listing.owner?.name ||
+          listing.lenderName ||
+          'Community'
+        const availability = isAvailable
+          ? `${listing.availableUnits} available`
+          : listing.waitingCount > 0
+            ? `${listing.waitingCount} waiting`
+            : 'Waitlist open'
+
+        const requestHandler = onRequest || onBorrow || onAction || onSelect
+        const waitlistHandler = onJoinWaitlist || onAction || onBorrow || onSelect
+        const canRequest = !readOnly && !isMine && isAvailable && Boolean(requestHandler)
+        const canJoinWaitlist =
+          !readOnly && ownedAssetsKnown && Boolean(onJoinWaitlist) && !isMine && !isAvailable
+        const arrowHandler = canJoinWaitlist ? waitlistHandler : requestHandler
 
         return (
-          <article key={listing.id} className="immersive-card">
-            {imageSrc ? (
-              <img
-                className="immersive-card-bg"
-                src={imageSrc}
-                alt={listing.title ? `${listing.title} preview` : 'Item preview'}
-              />
-            ) : (
-              <div className="immersive-card-bg" aria-hidden="true" />
-            )}
+          <article key={listing.id} className="tb-card explore-listing-row">
+            <div className="tb-card-media">
+              {imageSrc ? (
+                <img src={imageSrc} alt={`${title} preview`} />
+              ) : (
+                <CategoryArtwork title={title} category={category} />
+              )}
 
-            <div className="immersive-card-overlay">
-              <div className="immersive-card-content">
-                <h3 className="immersive-card-title">{listing.title}</h3>
+              <span className={`tb-status-pill${isAvailable ? ' is-available' : ''}`}>
+                {isAvailable ? 'Available' : 'Pre-loved'}
+              </span>
 
-                <div className="immersive-card-meta">
-                  <span>
-                    <i className="bi bi-stars" aria-hidden="true" />
-                    {condition}
-                  </span>
-                  <span>
-                    <i className="bi bi-box-seam" aria-hidden="true" />
-                    {availability}
-                  </span>
-                  {listing.waitingCount > 0 && (
-                    <span className="badge badge-info">{listing.waitingCount} waiting</span>
-                  )}
-                </div>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="tb-save-button"
+                  aria-label={`Save ${title}`}
+                  title="Save"
+                >
+                  <i className="bi bi-heart" aria-hidden="true" />
+                </button>
+              )}
+            </div>
 
-                {canRequest && (
-                  <Button
-                    variant="primary"
-                    onClick={() => onRequest(listing)}
-                    className="request-item-button"
-                  >
-                    <i className="bi bi-send" aria-hidden="true" />
-                    Request
-                  </Button>
-                )}
-                {canJoinWaitlist && (
-                  <Button
-                    variant="primary"
-                    onClick={() => onJoinWaitlist(listing)}
-                    className="join-waitlist-button"
-                  >
-                    <i className="bi bi-clock-history" aria-hidden="true" />
-                    Join waitlist
-                  </Button>
-                )}
+            <div className="tb-card-body">
+              <div className="tb-card-copy">
+                <h3 className="tb-card-title">{title}</h3>
+                <p className="tb-card-subtitle">
+                  {owner} <span aria-hidden="true">•</span> {availability}
+                </p>
               </div>
+
+              {(canRequest || canJoinWaitlist) && (
+                <button
+                  type="button"
+                  className={`tb-card-arrow${canJoinWaitlist ? ' join-waitlist-button' : ' request-item-button'}`}
+                  onClick={arrowHandler ? () => arrowHandler(listing) : undefined}
+                  aria-label={`${canJoinWaitlist ? 'Join waitlist for' : 'Open'} ${title}`}
+                  title={canJoinWaitlist ? 'Join waitlist' : 'Open item'}
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                    <path
+                      d="M5 12h13m-5-5 5 5-5 5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              )}
             </div>
           </article>
         )

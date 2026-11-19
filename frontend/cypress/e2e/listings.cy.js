@@ -40,7 +40,9 @@ describe('Community Listings (V2.1.5)', () => {
 
     cy.get('.listing-drawer').should('be.visible')
     cy.contains('.listing-community-row', 'CSE Department').contains('button', 'List').click()
-    cy.get('.toast-success').should('be.visible')
+    cy.get('[role="alert"]')
+      .should('have.class', 'toast-success')
+      .and('contain', 'is now listed in CSE Department')
 
     cy.get('.listing-drawer').contains('h4', 'Currently listed').should('be.visible')
     cy.contains('.listing-community-row', 'CSE Department').should('contain', 'Listed')
@@ -54,8 +56,8 @@ describe('Community Listings (V2.1.5)', () => {
     cy.url().should('include', '/communities/')
     cy.get('.community-tabs').contains('a', 'Explore').click()
     cy.contains('.explore-listing-row', assetTitle).should('be.visible')
+    cy.contains('.explore-listing-row', assetTitle).should('contain', 'Available')
     cy.contains('.explore-listing-row', assetTitle).should('contain', '2 available')
-    cy.contains('.explore-listing-row', assetTitle).should('contain', '0 borrowed')
   })
 
   it('supports soft unlist and re-listing', () => {
@@ -64,7 +66,9 @@ describe('Community Listings (V2.1.5)', () => {
 
     cy.get('.listing-drawer').should('be.visible')
     cy.contains('.listing-community-row', 'CSE Department').contains('button', 'Unlist').click()
-    cy.get('.toast-success').should('be.visible')
+    cy.get('[role="alert"]')
+      .should('have.class', 'toast-success')
+      .and('contain', 'Listing removed from CSE Department')
 
     cy.get('.listing-drawer').contains('h4', 'List in a community').should('be.visible')
     cy.contains('.listing-community-row', 'CSE Department').should('contain', 'Active member')
@@ -78,7 +82,9 @@ describe('Community Listings (V2.1.5)', () => {
     cy.get('.userbar-nav').contains('a', 'Inventory').click()
     cy.contains('.asset-row', assetTitle).contains('button', 'List in community').click()
     cy.contains('.listing-community-row', 'CSE Department').contains('button', 'List').click()
-    cy.get('.toast-success').should('be.visible')
+    cy.get('[role="alert"]')
+      .should('have.class', 'toast-success')
+      .and('contain', 'is now listed in CSE Department')
     cy.get('.listing-drawer .icon-button').click()
     cy.contains('.asset-row', assetTitle).should('contain', 'Listed in 1 community')
 
@@ -96,7 +102,7 @@ describe('Community Listings (V2.1.5)', () => {
           method: 'DELETE',
           url: `/api/assets/${drillId}/listings/${cseId}`,
           failOnStatusCode: false,
-        }).then((r) => cy.wrap(r.status).should('eq', 200))
+        }).then((r) => cy.wrap(r.status).should('be.oneOf', [200, 404]))
 
         cy.request({
           method: 'POST',

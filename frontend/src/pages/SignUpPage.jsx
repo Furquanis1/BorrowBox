@@ -30,6 +30,7 @@ export default function SignUpPage() {
           <i className="bi bi-box-seam auth-logo-icon" aria-hidden="true" />
           BorrowBox
         </div>
+        <div className="auth-kicker">Join a circle of people you trust</div>
         <h2 className="auth-title">Create Your Account</h2>
         <p className="auth-subtitle">Join your community and start sharing</p>
 

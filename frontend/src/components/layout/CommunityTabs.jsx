@@ -3,15 +3,15 @@ import { NavLink, useParams } from 'react-router-dom'
 import { useCommunity } from '../../contexts/CommunityContext'
 
 const BASE_TABS = [
-  { segment: '', label: 'Home', icon: 'bi-house', end: true },
-  { segment: 'explore', label: 'Explore', icon: 'bi-boxes' },
-  { segment: 'members', label: 'Members', icon: 'bi-people' },
-  { segment: 'rules', label: 'Rules', icon: 'bi-shield-check' },
+  { segment: '', label: 'Home', end: true },
+  { segment: 'explore', label: 'Explore' },
+  { segment: 'members', label: 'Members' },
+  { segment: 'rules', label: 'Rules' },
 ]
 
 const MANAGER_TABS = [
-  { segment: 'dashboard', label: 'Dashboard', icon: 'bi-speedometer2' },
-  { segment: 'flags', label: 'Flags', icon: 'bi-flag' },
+  { segment: 'dashboard', label: 'Dashboard' },
+  { segment: 'flags', label: 'Flags' },
 ]
 
 export default function CommunityTabs() {
@@ -20,10 +20,12 @@ export default function CommunityTabs() {
 
   const tabs = isManager(communityId)
     ? [
-        ...MANAGER_TABS.slice(0, 1),
-        ...BASE_TABS.slice(0, 2),
-        ...MANAGER_TABS.slice(1),
-        ...BASE_TABS.slice(2),
+        MANAGER_TABS[0],
+        BASE_TABS[0],
+        BASE_TABS[1],
+        MANAGER_TABS[1],
+        BASE_TABS[2],
+        BASE_TABS[3],
       ]
     : BASE_TABS
 
@@ -38,7 +40,6 @@ export default function CommunityTabs() {
           end={tab.end}
           className={({ isActive }) => `community-tab${isActive ? ' active' : ''}`}
         >
-          <i className={`bi ${tab.icon}`} aria-hidden="true" />
           {tab.label}
         </NavLink>
       ))}

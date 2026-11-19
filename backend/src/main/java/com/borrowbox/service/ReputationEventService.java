@@ -1,5 +1,6 @@
 package com.borrowbox.service;
 
+import com.borrowbox.dto.DisputeResolutionOutcome;
 import com.borrowbox.dto.ReputationEventResponse;
 import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipStatus;
@@ -98,6 +99,33 @@ public class ReputationEventService {
 
         appendIfMissing(txn, borrower, ReputationRole.BORROWER, ReputationEventType.RETURN_DISPUTED,
                 false, false, returnDisputedAt);
+    }
+
+    /**
+     * Appends the manager-resolution ledger rows for both participants.
+     *
+     * <p>This never re-appends the dispute-open event: the borrower's
+     * {@code RETURN_DISPUTED} row from {@link #recordReturnDisputed(Transaction)}
+     * stays as the historical fact that a return was contested. Resolution is a
+     * separate, append-only fact. A decision in one participant's favour marks
+     * that participant successful and the other unsuccessful; REOPEN restores
+     * both to successful because the loan returns to the normal flow.
+     *
+     * <p>{@link #appendIfMissing} makes the write idempotent per
+     * (transaction, user, event type), so a retry cannot double-count.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordDisputeResolution(Transaction txn, DisputeResolutionOutcome outcome,
+                                        LocalDateTime occurredAt) {
+        if (outcome == null || occurredAt == null) {
+            return;
+        }
+        boolean borrowerSuccessful = outcome != DisputeResolutionOutcome.FAVOR_LENDER;
+        boolean lenderSuccessful = outcome != DisputeResolutionOutcome.FAVOR_BORROWER;
+        appendIfMissing(txn, txn.getBorrower(), ReputationRole.BORROWER,
+                ReputationEventType.DISPUTE_RESOLVED, borrowerSuccessful, null, occurredAt);
+        appendIfMissing(txn, txn.getLender(), ReputationRole.LENDER,
+                ReputationEventType.DISPUTE_RESOLVED, lenderSuccessful, null, occurredAt);
     }
 
     /**

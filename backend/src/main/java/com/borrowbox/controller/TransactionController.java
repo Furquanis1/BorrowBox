@@ -1,6 +1,7 @@
 package com.borrowbox.controller;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.DisputeResolutionRequest;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
 import com.borrowbox.dto.TransactionDecisionRequest;
@@ -167,6 +168,19 @@ public class TransactionController {
     @PostMapping("/transactions/{id}/dispute-return")
     public ResponseEntity<TransactionResponse> disputeReturn(@PathVariable Long id) {
         return ResponseEntity.ok(transactionService.disputeReturn(id, currentUser()));
+    }
+
+    @PostMapping("/transactions/{id}/resolve-dispute")
+    public ResponseEntity<TransactionResponse> resolveDispute(
+            @PathVariable Long id,
+            @Valid @RequestBody DisputeResolutionRequest request) {
+        return ResponseEntity.ok(transactionService.resolveDispute(id, request, currentUser()));
+    }
+
+    @GetMapping("/communities/{communityId}/transactions/disputed")
+    public ResponseEntity<List<TransactionResponse>> listDisputedTransactions(
+            @PathVariable Long communityId) {
+        return ResponseEntity.ok(transactionService.listDisputedForManager(communityId, currentUser()));
     }
 
     @PostMapping("/transactions/{id}/messages")

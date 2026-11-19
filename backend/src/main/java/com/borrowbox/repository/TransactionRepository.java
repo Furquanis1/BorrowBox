@@ -87,6 +87,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByCommunityIdAndState(Long communityId, TransactionStatus state);
 
+    /**
+     * Manager-facing dispute queue: both disputed states, newest first.
+     */
+    List<Transaction> findByCommunityIdAndStateInOrderByIdDesc(
+            Long communityId, List<TransactionStatus> states);
+
     long countByCommunityIdAndStateIn(Long communityId, List<TransactionStatus> states);
 
     long countByCommunityIdAndState(Long communityId, TransactionStatus state);

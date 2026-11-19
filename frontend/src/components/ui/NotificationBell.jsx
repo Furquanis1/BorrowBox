@@ -23,6 +23,20 @@ const LOAN_STAGE_TYPES = new Set([
   'LOAN_OVERDUE',
 ])
 
+const MEMBERSHIP_TYPES = new Set([
+  'MEMBERSHIP_REQUEST_PENDING',
+  'MEMBERSHIP_APPROVED',
+  'MEMBERSHIP_REJECTED',
+])
+
+function notificationIcon(type) {
+  if (MEMBERSHIP_TYPES.has(type)) return 'bi-people'
+  if (type?.startsWith('EXTENSION_')) return 'bi-clock-history'
+  if (LOAN_STAGE_TYPES.has(type)) return 'bi-arrow-left-right'
+  if (REQUEST_STAGE_TYPES.has(type)) return 'bi-inbox'
+  return 'bi-bell'
+}
+
 function notificationTarget(notification) {
   const type = notification?.type
   if (!type) return null
@@ -167,15 +181,23 @@ export default function NotificationBell() {
             </div>
           ) : notifications.length === 0 ? (
             <div className="notification-empty">
-              <i className="bi bi-bell" aria-hidden="true" />
-              <p>No notifications yet.</p>
+              <div className="notification-empty-card">
+                <span className="notification-empty-icon" aria-hidden="true">
+                  <i className="bi bi-bell-check" />
+                </span>
+                <strong>All caught up</strong>
+                <p>
+                  Borrow decisions, handovers, returns, dispute outcomes, and community membership
+                  updates will show up here when there is something new to tell you.
+                </p>
+              </div>
             </div>
           ) : (
             <ul className="notification-list">
               {notifications.map((n) => (
                 <li
                   key={n.id}
-                  className={`notification-item ${n.status === 'UNREAD' ? 'unread' : 'read'}`}
+                  className={`notification-item ${n.status === 'UNREAD' ? 'unread' : 'read'}${MEMBERSHIP_TYPES.has(n.type) ? ' membership-notification' : ''}`}
                   onClick={() => {
                     if (n.status === 'UNREAD') handleMarkAsRead(n.id)
                     setIsOpen(false)
@@ -183,6 +205,9 @@ export default function NotificationBell() {
                     if (target) navigate(target)
                   }}
                 >
+                  <span className="notification-item-icon" aria-hidden="true">
+                    <i className={`bi ${notificationIcon(n.type)}`} />
+                  </span>
                   <div className="notification-item-main">
                     <div className="notification-item-title">{n.title}</div>
                     <div className="notification-item-message">{n.message}</div>

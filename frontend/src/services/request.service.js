@@ -19,6 +19,8 @@ export const requestService = {
   reportHandback: (id) => apiClient.post(`/transactions/${id}/report-handback`),
   confirmReturn: (id) => apiClient.post(`/transactions/${id}/confirm-return`),
   disputeReturn: (id) => apiClient.post(`/transactions/${id}/dispute-return`),
+  resolveDispute: (id, data) => apiClient.post(`/transactions/${id}/resolve-dispute`, data),
+  getDisputed: (communityId) => apiClient.get(`/communities/${communityId}/transactions/disputed`),
   uploadEvidence: (id, type, file, conditionNote, conditionRating) => {
     const form = new FormData()
     form.append('type', type)

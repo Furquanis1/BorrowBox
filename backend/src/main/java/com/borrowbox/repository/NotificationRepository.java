@@ -110,4 +110,14 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     Optional<Notification> findByRecipientIdAndTypeAndTransactionId(
             Long recipientId, NotificationType type, Long transactionId);
+
+    /**
+     * Membership notifications carry no transaction/source-event identity and
+     * cannot use the scheduled dedupe key, so they are deduplicated by their
+     * visible content. Reusing a row keeps the notification list readable when
+     * the same applicant event is replayed.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Notification> findFirstByRecipientIdAndTypeAndTitleAndMessageAndSourceEventIdIsNullAndDedupeKeyIsNullOrderByIdAsc(
+            Long recipientId, NotificationType type, String title, String message);
 }

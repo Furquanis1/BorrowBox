@@ -5,158 +5,112 @@ export default function Pagination({
   totalPages = 1,
   onPageChange,
   totalElements = null,
-  pageSize = 12
+  pageSize = 12,
 }) {
-  if (totalPages <= 1 && totalElements === null) {
-    return null
-  }
+  if (totalPages <= 1) return null
+
+  const previousDisabled = currentPage <= 0
+  const nextDisabled = currentPage >= totalPages - 1
 
   const handlePrev = () => {
-    if (currentPage > 0) {
-      onPageChange(currentPage - 1)
-    }
+    if (!previousDisabled) onPageChange(currentPage - 1)
   }
 
   const handleNext = () => {
-    if (currentPage < totalPages - 1) {
-      onPageChange(currentPage + 1)
-    }
+    if (!nextDisabled) onPageChange(currentPage + 1)
   }
 
-  // Generate page numbers array with smart ellipsis for large page counts
   const getPageNumbers = () => {
-    const pages = []
     const maxVisible = 5
+    const pages = []
 
     if (totalPages <= maxVisible) {
-      for (let i = 0; i < totalPages; i++) {
-        pages.push(i)
-      }
-    } else {
-      pages.push(0)
-
-      let start = Math.max(1, currentPage - 1)
-      let end = Math.min(totalPages - 2, currentPage + 1)
-
-      if (currentPage <= 2) {
-        end = 3
-      }
-      if (currentPage >= totalPages - 3) {
-        start = totalPages - 4
-      }
-
-      if (start > 1) {
-        pages.push('ellipsis-start')
-      }
-
-      for (let i = start; i <= end; i++) {
-        pages.push(i)
-      }
-
-      if (end < totalPages - 2) {
-        pages.push('ellipsis-end')
-      }
-
-      pages.push(totalPages - 1)
+      for (let index = 0; index < totalPages; index += 1) pages.push(index)
+      return pages
     }
+
+    pages.push(0)
+    let start = Math.max(1, currentPage - 1)
+    let end = Math.min(totalPages - 2, currentPage + 1)
+
+    if (currentPage <= 2) end = 3
+    if (currentPage >= totalPages - 3) start = totalPages - 4
+
+    if (start > 1) pages.push('ellipsis-start')
+    for (let index = start; index <= end; index += 1) pages.push(index)
+    if (end < totalPages - 2) pages.push('ellipsis-end')
+    pages.push(totalPages - 1)
 
     return pages
   }
 
-  // Calculate range info (e.g. 1-12 of 34)
-  const startItem = totalElements === 0 ? 0 : currentPage * pageSize + 1
-  const endItem = Math.min((currentPage + 1) * pageSize, totalElements || 0)
+  const startItem = currentPage * pageSize + 1
+  const endItem = Math.min((currentPage + 1) * pageSize, totalElements ?? 0)
 
   return (
-    <nav
-      className="pagination-container"
-      aria-label="Pagination Navigation"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '16px',
-        marginTop: '24px',
-        paddingTop: '16px',
-        borderTop: '1px solid #E5E7EB'
-      }}
-    >
-      <div style={{ fontSize: '0.875rem', color: '#526e60' }}>
-        {totalElements !== null ? (
-          totalElements > 0 ? (
-            <span>
-              Showing <strong>{startItem}</strong>–<strong>{endItem}</strong> of <strong>{totalElements}</strong> items
-            </span>
-          ) : (
-            <span>No items</span>
-          )
+    <div className="pagination-container" role="navigation" aria-label="Pagination Navigation">
+      <div className="pagination-summary">
+        {totalElements !== null && totalElements > 0 ? (
+          <span>
+            Showing <strong>{startItem}</strong>–<strong>{endItem}</strong> of{' '}
+            <strong>{totalElements}</strong> items
+          </span>
         ) : (
           <span>
-            Page <strong>{currentPage + 1}</strong> of <strong>{totalPages || 1}</strong>
+            Page <strong>{currentPage + 1}</strong> of <strong>{totalPages}</strong>
           </span>
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="pagination-controls">
         <button
           type="button"
-          className="btn btn-outline btn-sm"
+          className="pagination-button"
           onClick={handlePrev}
-          disabled={currentPage <= 0}
+          disabled={previousDisabled}
           aria-label="Previous page"
-          style={{ cursor: currentPage <= 0 ? 'not-allowed' : 'pointer', opacity: currentPage <= 0 ? 0.5 : 1 }}
         >
-          &laquo; Previous
+          <i className="bi bi-chevron-left" aria-hidden="true" />
+          Previous
         </button>
 
-        {getPageNumbers().map((pageItem, index) => {
-          if (typeof pageItem === 'string') {
-            return (
-              <span
-                key={`${pageItem}-${index}`}
-                aria-hidden="true"
-                style={{ padding: '0 4px', color: '#9CA3AF', fontSize: '0.875rem' }}
-              >
-                &hellip;
-              </span>
-            )
-          }
+        <div className="pagination-pages">
+          {getPageNumbers().map((pageItem, index) => {
+            if (typeof pageItem === 'string') {
+              return (
+                <span key={`${pageItem}-${index}`} className="pagination-ellipsis" aria-hidden="true">
+                  …
+                </span>
+              )
+            }
 
-          const isActive = pageItem === currentPage
-          return (
-            <button
-              key={pageItem}
-              type="button"
-              className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-outline'}`}
-              onClick={() => onPageChange(pageItem)}
-              aria-label={`Page ${pageItem + 1}`}
-              aria-current={isActive ? 'page' : undefined}
-              style={{
-                minWidth: '34px',
-                padding: '4px 8px',
-                fontWeight: isActive ? '600' : '400'
-              }}
-            >
-              {pageItem + 1}
-            </button>
-          )
-        })}
+            const isActive = pageItem === currentPage
+            return (
+              <button
+                key={pageItem}
+                type="button"
+                className={`pagination-page${isActive ? ' active' : ''}`}
+                onClick={() => onPageChange(pageItem)}
+                aria-label={`Page ${pageItem + 1}`}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {pageItem + 1}
+              </button>
+            )
+          })}
+        </div>
 
         <button
           type="button"
-          className="btn btn-outline btn-sm"
+          className="pagination-button"
           onClick={handleNext}
-          disabled={currentPage >= totalPages - 1}
+          disabled={nextDisabled}
           aria-label="Next page"
-          style={{
-            cursor: currentPage >= totalPages - 1 ? 'not-allowed' : 'pointer',
-            opacity: currentPage >= totalPages - 1 ? 0.5 : 1
-          }}
         >
-          Next &raquo;
+          Next
+          <i className="bi bi-chevron-right" aria-hidden="true" />
         </button>
       </div>
-    </nav>
+    </div>
   )
 }

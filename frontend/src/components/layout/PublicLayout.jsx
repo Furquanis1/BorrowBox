@@ -6,7 +6,7 @@ import SkipLink from './SkipLink'
 
 export default function PublicLayout() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <div className="public-layout" style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <SkipLink />
       <Header />
       <main id="main-content" className="public-content" tabIndex={-1}>

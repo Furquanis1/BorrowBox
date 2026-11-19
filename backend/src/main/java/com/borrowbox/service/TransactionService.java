@@ -1,6 +1,9 @@
 package com.borrowbox.service;
 
 import com.borrowbox.dto.CounterOfferRequest;
+import com.borrowbox.dto.DisputeResolutionOutcome;
+import com.borrowbox.dto.DisputeResolutionRequest;
+import com.borrowbox.dto.DisputeUnitCondition;
 import com.borrowbox.dto.EvidenceResponse;
 import com.borrowbox.dto.ExtensionRequest;
 import com.borrowbox.dto.TransactionCreateRequest;
@@ -36,6 +39,7 @@ import com.borrowbox.service.TransactionEventService;
 import com.borrowbox.entity.TransactionEventType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -205,6 +209,14 @@ public class TransactionService {
             TransactionStatus.COUNTER_OFFERED,
             TransactionStatus.APPROVED,
             TransactionStatus.AWAITING_HANDOVER);
+
+    /**
+     * States a community manager is allowed to review and resolve. Both keep
+     * the original dispute evidence visible until a decision is recorded.
+     */
+    public static final List<TransactionStatus> DISPUTED_STATES = List.of(
+            TransactionStatus.HANDOVER_DISPUTED,
+            TransactionStatus.RETURN_DISPUTED);
 
     private final TransactionRepository transactionRepository;
     private final CommunityListingRepository listingRepository;
@@ -966,6 +978,238 @@ public class TransactionService {
     }
 
     /**
+     * Manager-only dispute resolution.
+     *
+     * <p>The manager must be an ACTIVE MANAGER of the transaction's community;
+     * participants, managers of other communities and inactive managers receive
+     * 403. Only HANDOVER_DISPUTED and RETURN_DISPUTED transactions are accepted;
+     * every other state receives 400. Each successful call performs exactly one
+     * resolution: the state check runs under the transaction row lock, so a
+     * second attempt sees the post-resolution state and is rejected.
+     *
+     * <p>The full resolution note is written to the SYSTEM conversation entry
+     * and to the semantic event payload. Notifications go to both participants,
+     * and reputation rows are appended idempotently without re-appending the
+     * dispute-open event.
+     */
+    @Transactional
+    public TransactionResponse resolveDispute(Long transactionId,
+                                              DisputeResolutionRequest request,
+                                              User manager) {
+        requireUser(manager);
+        if (request == null) {
+            throw new BusinessRuleViolationException("Resolution details are required");
+        }
+        DisputeResolutionOutcome outcome = request.outcome();
+        if (outcome == null) {
+            throw new BusinessRuleViolationException("A resolution outcome is required");
+        }
+        String note = request.resolutionNote() == null ? "" : request.resolutionNote().trim();
+        if (note.isBlank()) {
+            throw new BusinessRuleViolationException("A resolution note is required");
+        }
+        if (note.length() > 1000) {
+            throw new BusinessRuleViolationException("A resolution note must be at most 1000 characters");
+        }
+
+        Transaction txn = findForUpdate(transactionId);
+        requireDisputeManager(txn, manager);
+        TransactionStatus priorState = txn.getState();
+        if (!DISPUTED_STATES.contains(priorState)) {
+            throw new BusinessRuleViolationException("Transaction is not in a disputed state");
+        }
+
+        DisputeUnitCondition condition = request.unitCondition() == null
+                ? DisputeUnitCondition.INTACT
+                : request.unitCondition();
+        boolean freeUnit = !Boolean.FALSE.equals(request.freeUnit());
+        LocalDateTime now = LocalDateTime.now();
+
+        if (priorState == TransactionStatus.HANDOVER_DISPUTED) {
+            applyHandoverResolution(txn, outcome);
+        } else {
+            applyReturnResolution(txn, outcome, condition, freeUnit);
+        }
+
+        messageService.addSystemEvent(txn, "Dispute resolved: " + outcome + " - " + note);
+        String payload = resolutionPayload(priorState, outcome, condition, freeUnit, note, manager);
+        TransactionResponse response = toResponse(transactionRepository.save(txn));
+
+        eventService.createEventAndDeliveries(txn, TransactionEventType.DISPUTE_RESOLVED, manager, payload)
+                .ifPresent(event -> {
+                    String message = "A community manager resolved this dispute in favour of "
+                            + favoredParty(outcome) + ". " + note;
+                    notificationService.createForEvent(event, txn.getBorrower(),
+                            NotificationType.DISPUTE_RESOLVED, "Dispute resolved", message);
+                    notificationService.createForEvent(event, txn.getLender(),
+                            NotificationType.DISPUTE_RESOLVED, "Dispute resolved", message);
+                });
+
+        reputationEventService.recordDisputeResolution(txn, outcome, now);
+        return response;
+    }
+
+    /**
+     * Manager-facing dispute queue for one community. Read-only and restricted
+     * to an active manager of that community.
+     */
+    @Transactional(readOnly = true)
+    public List<TransactionResponse> listDisputedForManager(Long communityId, User manager) {
+        requireUser(manager);
+        if (communityId == null) {
+            throw new BusinessRuleViolationException("A community is required");
+        }
+        if (!membershipService.isActiveManager(manager.getId(), communityId)) {
+            throw new AccessDeniedException(
+                    "Only an active manager of this community can view its disputes");
+        }
+        return transactionRepository
+                .findByCommunityIdAndStateInOrderByIdDesc(communityId, DISPUTED_STATES)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private void applyHandoverResolution(Transaction txn, DisputeResolutionOutcome outcome) {
+        switch (outcome) {
+            case FAVOR_LENDER -> {
+                // The borrower was found at fault: the loan continues and the
+                // unit goes back into the borrower's hands as BORROWED.
+                reacquireUnit(txn, AssetUnitStatus.BORROWED);
+                txn.setReservedAt(LocalDateTime.now());
+                txn.setState(TransactionStatus.ACTIVE);
+            }
+            case FAVOR_BORROWER -> {
+                // The lender was found at fault: the loan is cancelled and the
+                // already-released unit stays AVAILABLE for the waitlist.
+                txn.setState(TransactionStatus.CANCELLED);
+                clearReservationDeadline(txn);
+            }
+            case REOPEN -> {
+                // A misunderstanding: return to handover with a fresh RESERVED
+                // unit and a full new reservation window.
+                reacquireUnit(txn, AssetUnitStatus.RESERVED);
+                txn.setReservedAt(LocalDateTime.now());
+                stampReservationDeadline(txn, handoverReservationHours);
+                txn.setState(TransactionStatus.AWAITING_HANDOVER);
+            }
+        }
+    }
+
+    private void applyReturnResolution(Transaction txn, DisputeResolutionOutcome outcome,
+                                       DisputeUnitCondition condition, boolean freeUnit) {
+        switch (outcome) {
+            case FAVOR_LENDER -> {
+                AssetUnit unit = txn.getReservedUnit();
+                if (unit == null) {
+                    throw new BusinessRuleViolationException(
+                            "The disputed unit is not attached to this transaction");
+                }
+                unit.setStatus(resolveLenderUnitStatus(condition, freeUnit));
+                assetUnitRepository.save(unit);
+                txn.setReservedUnit(null);
+                txn.setReservedAt(null);
+                clearReservationDeadline(txn);
+                if (unit.getStatus() == AssetUnitStatus.AVAILABLE) {
+                    waitlistService.promoteForAsset(txn.getAsset().getId());
+                }
+                txn.setState(TransactionStatus.CANCELLED);
+            }
+            case FAVOR_BORROWER -> {
+                // The lender's "not received" claim was rejected: the loan is
+                // completed exactly as a normal confirmed return would be.
+                releaseBorrowedUnit(txn);
+                clearExtensionNegotiation(txn);
+                txn.setState(TransactionStatus.COMPLETED);
+                txn.setCompletedAt(LocalDateTime.now());
+                waitlistService.promoteForAsset(txn.getAsset().getId());
+                reputationEventService.recordLoanCompleted(txn);
+            }
+            case REOPEN -> {
+                // The return dispute was a misunderstanding: the borrower keeps
+                // the unit BORROWED and the loan resumes.
+                txn.setReturnDisputedAt(null);
+                txn.setReturnDisputedBy(null);
+                txn.setState(TransactionStatus.ACTIVE);
+            }
+        }
+    }
+
+    private AssetUnit reacquireUnit(Transaction txn, AssetUnitStatus status) {
+        AssetUnit unit = assetUnitRepository
+                .findFirstByAssetIdAndStatusForUpdate(txn.getAsset().getId())
+                .orElseThrow(() -> new BusinessRuleViolationException(
+                        "No available unit of this asset can be reacquired for the dispute resolution"));
+        unit.setStatus(status);
+        assetUnitRepository.save(unit);
+        txn.setReservedUnit(unit);
+        return unit;
+    }
+
+    private AssetUnitStatus resolveLenderUnitStatus(DisputeUnitCondition condition, boolean freeUnit) {
+        return switch (condition) {
+            case LOST -> AssetUnitStatus.LOST;
+            case DAMAGED -> AssetUnitStatus.DAMAGED;
+            case INTACT -> freeUnit ? AssetUnitStatus.AVAILABLE : AssetUnitStatus.NOT_AVAILABLE;
+        };
+    }
+
+    private void requireDisputeManager(Transaction txn, User actor) {
+        if (!membershipService.isActiveManager(actor.getId(), txn.getCommunity().getId())) {
+            throw new AccessDeniedException(
+                    "Only an active manager of this community can resolve its disputes");
+        }
+    }
+
+    private String resolutionPayload(TransactionStatus priorState,
+                                     DisputeResolutionOutcome outcome,
+                                     DisputeUnitCondition condition,
+                                     boolean freeUnit,
+                                     String note,
+                                     User manager) {
+        return "{"
+                + "\"priorState\":\"" + priorState + "\","
+                + "\"outcome\":\"" + outcome + "\","
+                + "\"unitCondition\":\"" + condition + "\","
+                + "\"freeUnit\":" + freeUnit + ","
+                + "\"resolvedBy\":" + manager.getId() + ","
+                + "\"resolutionNote\":\"" + jsonEscape(note) + "\""
+                + "}";
+    }
+
+    private String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (char c : value.toCharArray()) {
+            switch (c) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
+    private String favoredParty(DisputeResolutionOutcome outcome) {
+        return switch (outcome) {
+            case FAVOR_LENDER -> "the lender";
+            case FAVOR_BORROWER -> "the borrower";
+            case REOPEN -> "reopening the loan";
+        };
+    }
+
+    /**
      * V2.2.6 + V2.5.1: a participant uploads one transaction-scoped evidence
      * photo for one of the four evidence moments while the transaction is in
      * the matching state.
@@ -1043,7 +1287,7 @@ public class TransactionService {
         Transaction txn = transactionRepository.findById(transactionId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Transaction not found with id: " + transactionId));
-        requireParticipant(txn, actor);
+        requireViewAccess(txn, actor);
         return evidenceRepository.findByTransactionIdOrderByCapturedAtAscIdAsc(transactionId).stream()
                 .map(this::toEvidenceResponse)
                 .toList();
@@ -1060,7 +1304,7 @@ public class TransactionService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Evidence not found with id: " + evidenceId));
         Transaction txn = evidence.getTransaction();
-        requireParticipant(txn, actor);
+        requireViewAccess(txn, actor);
         byte[] bytes = evidenceStorageService.load(evidence.getFileRef());
         String contentType = evidenceImageValidator.validate(bytes);
         return new EvidenceContent(bytes, contentType);
@@ -1074,7 +1318,7 @@ public class TransactionService {
         requireUser(actor);
         Transaction txn = transactionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction not found with id: " + id));
-        requireParticipant(txn, actor);
+        requireViewAccess(txn, actor);
         return toResponse(txn);
     }
 
@@ -1268,10 +1512,31 @@ public class TransactionService {
     }
 
     private void requireParticipant(Transaction txn, User actor) {
-        if (!txn.getBorrower().getId().equals(actor.getId())
-                && !txn.getLender().getId().equals(actor.getId())) {
+        if (!isParticipant(txn, actor)) {
             throw new UnauthorizedException("Only participants can view this transaction");
         }
+    }
+
+    /**
+     * Read access for details, evidence and conversation is participant-only
+     * except while the transaction is disputed, when an active community manager
+     * may inspect it. Managers still cannot mutate anything through this path.
+     */
+    private void requireViewAccess(Transaction txn, User actor) {
+        if (isParticipant(txn, actor) || isDisputeManagerReader(txn, actor)) {
+            return;
+        }
+        throw new UnauthorizedException("Only participants can view this transaction");
+    }
+
+    private boolean isParticipant(Transaction txn, User actor) {
+        return txn.getBorrower().getId().equals(actor.getId())
+                || txn.getLender().getId().equals(actor.getId());
+    }
+
+    private boolean isDisputeManagerReader(Transaction txn, User actor) {
+        return DISPUTED_STATES.contains(txn.getState())
+                && membershipService.isActiveManager(actor.getId(), txn.getCommunity().getId());
     }
 
     private void requireActiveMember(Long userId, Long communityId) {

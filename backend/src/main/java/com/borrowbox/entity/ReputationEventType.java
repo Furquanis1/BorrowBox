@@ -21,5 +21,6 @@ package com.borrowbox.entity;
 public enum ReputationEventType {
 
     LOAN_COMPLETED,
-    RETURN_DISPUTED
+    RETURN_DISPUTED,
+    DISPUTE_RESOLVED
 }

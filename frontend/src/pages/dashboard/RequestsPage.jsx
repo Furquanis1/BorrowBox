@@ -8,6 +8,9 @@ import Spinner from '../../components/ui/Spinner'
 import Button from '../../components/ui/Button'
 import CounterOfferDrawer from '../../components/dashboard/CounterOfferDrawer'
 import ConversationDrawer from '../../components/dashboard/ConversationDrawer'
+import Pagination from '../../components/Pagination'
+
+const PAGE_SIZE = 8
 
 // V2.5.2: the four open request states are unchanged. EXPIRED is added so a
 // lapsed reservation stays visible to both parties instead of silently
@@ -55,6 +58,11 @@ const CONVERSATION_LABEL = {
   AWAITING_HANDOVER: 'Discuss pickup',
 }
 
+function formatCardDate(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 function TransactionCard({
   transaction,
   role,
@@ -90,20 +98,28 @@ function TransactionCard({
   return (
     <li className="transaction-card">
       <div className="transaction-card-head">
-        <div className="transaction-card-main">
-          <h3>{transaction.title}</h3>
-          <p className="transaction-card-subline">
-            {isMine
-              ? `${transaction.lenderName} · ${transaction.communityName}`
-              : `${transaction.borrowerName} · ${transaction.communityName}`}
-          </p>
-          <p className="transaction-card-terms">
-            &ldquo;{agreed ? transaction.agreedPurpose : transaction.purpose}&rdquo;
-            {' · '}
-            {agreed
-              ? `${transaction.agreedDurationDays} days`
-              : `${transaction.requestedDurationDays} days requested`}
-          </p>
+        <div className="workspace-card-identity">
+          <div className="transaction-card-main">
+            <h3>{transaction.title}</h3>
+            <p className="transaction-card-subline">
+              {isMine
+                ? `${transaction.lenderName} · ${transaction.communityName}`
+                : `${transaction.borrowerName} · ${transaction.communityName}`}
+            </p>
+            <p className="transaction-card-terms">
+              &ldquo;{agreed ? transaction.agreedPurpose : transaction.purpose}&rdquo;
+              {' · '}
+              {agreed
+                ? `${transaction.agreedDurationDays} days`
+                : `${transaction.requestedDurationDays} days requested`}
+            </p>
+          </div>
+          <div className="workspace-card-meta">
+            <span className="workspace-role-chip">{isMine ? 'Borrower' : 'Lender'}</span>
+            {formatCardDate(transaction.createdAt) && (
+              <span className="workspace-date-chip">{formatCardDate(transaction.createdAt)}</span>
+            )}
+          </div>
         </div>
         <span className={`badge ${STATE_BADGE[state] || 'badge-neutral'}`}>
           {STATE_LABEL[state] || state}
@@ -282,11 +298,16 @@ const EmptyRequests = ({ title, description, icon }) => (
 export default function RequestsPage() {
   const { showToast, triggerRefresh } = useApp()
   const [tab, setTab] = useState('incoming')
+  const [page, setPage] = useState(0)
   const [busy, setBusy] = useState(null)
   const [counterTarget, setCounterTarget] = useState(null)
   const [conversationTarget, setConversationTarget] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const txParam = searchParams.get('tx')
+
+  useEffect(() => {
+    setPage(0)
+  }, [tab])
 
   const fetchIncoming = useCallback(() => requestService.getLendRequests(), [])
   const fetchMine = useCallback(() => requestService.getMine(), [])
@@ -370,6 +391,10 @@ export default function RequestsPage() {
 
   const requestCards = tab === 'incoming' ? incoming : mine
   const role = tab === 'incoming' ? 'lender' : 'mine'
+  const listForTab = tab === 'waiting' ? waiting : requestCards
+  const totalPages = Math.max(1, Math.ceil(listForTab.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedList = listForTab.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   const handleLeave = (entryId) =>
     run(
@@ -452,7 +477,7 @@ export default function RequestsPage() {
           />
         ) : (
           <ul className="transaction-list">
-            {waiting.map((entry) => (
+            {pagedList.map((entry) => (
               <WaitlistCard
                 key={entry.id}
                 entry={entry}
@@ -478,7 +503,7 @@ export default function RequestsPage() {
         )
       ) : (
         <ul className="transaction-list">
-          {requestCards.map((transaction) => (
+          {pagedList.map((transaction) => (
             <TransactionCard
               key={transaction.id}
               transaction={transaction}
@@ -519,6 +544,16 @@ export default function RequestsPage() {
             />
           ))}
         </ul>
+      )}
+
+      {listForTab.length > PAGE_SIZE && (
+        <Pagination
+          currentPage={safePage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          totalElements={listForTab.length}
+          pageSize={PAGE_SIZE}
+        />
       )}
 
       <CounterOfferDrawer

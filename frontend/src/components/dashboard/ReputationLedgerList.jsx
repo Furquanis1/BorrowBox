@@ -1,4 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
+import Pagination from '../Pagination'
+
+const PAGE_SIZE = 8
 
 function formatDate(iso) {
   if (!iso) return ''
@@ -27,9 +30,14 @@ const STYLE = {
 }
 
 export default function ReputationLedgerList({ events }) {
+  const [page, setPage] = useState(0)
   const sorted = (events || [])
     .slice()
     .sort((a, b) => new Date(b.occurredAt || 0) - new Date(a.occurredAt || 0))
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages - 1)
+  const pagedEvents = sorted.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
 
   return (
     <section className="reputation-ledger" aria-label="Reputation ledger" style={STYLE.wrapper}>
@@ -42,7 +50,7 @@ export default function ReputationLedgerList({ events }) {
         <p className="empty-block">No reputation events yet in this scope.</p>
       ) : (
         <ul className="transaction-list">
-          {sorted.map((event) => {
+          {pagedEvents.map((event) => {
             const badge = getBadge(event)
             return (
               <li className="transaction-card" key={event.id}>
@@ -58,6 +66,16 @@ export default function ReputationLedgerList({ events }) {
             )
           })}
         </ul>
+      )}
+
+      {sorted.length > PAGE_SIZE && (
+        <Pagination
+          currentPage={safePage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+          totalElements={sorted.length}
+          pageSize={PAGE_SIZE}
+        />
       )}
     </section>
   )

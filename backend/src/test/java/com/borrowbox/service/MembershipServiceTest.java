@@ -9,6 +9,7 @@ import com.borrowbox.entity.Membership;
 import com.borrowbox.entity.MembershipRole;
 import com.borrowbox.entity.MembershipStatus;
 import com.borrowbox.entity.MembershipVerificationMethod;
+import com.borrowbox.entity.NotificationType;
 import com.borrowbox.entity.CommunityStatus;
 import com.borrowbox.entity.CommunityType;
 import com.borrowbox.entity.User;
@@ -29,7 +30,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,6 +45,9 @@ public class MembershipServiceTest {
 
     @Mock
     private CommunityRepository communityRepository;
+
+    @Mock
+    private NotificationService notificationService;
 
     private User user(Long id) {
         User u = new User("U" + id, "u" + id + "@example.com");
@@ -300,6 +307,64 @@ public class MembershipServiceTest {
 
         assertThat(resp.status()).isEqualTo(MembershipStatus.REJECTED);
         assertThat(resp.verificationMethod()).isNull();
+    }
+
+    @Test
+    void pendingJoinNotifiesEveryActiveManager() {
+        MembershipService service = new MembershipService(
+                membershipRepository, communityRepository, notificationService);
+        User applicant = user(1L);
+        Community c = community(10L, CommunityAdmissionMode.MANAGER_APPROVAL);
+        when(communityRepository.findById(10L)).thenReturn(Optional.of(c));
+        when(membershipRepository.findByUserIdAndCommunityId(1L, 10L)).thenReturn(Optional.empty());
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(membershipRepository.findActiveManagersForUpdate(10L)).thenReturn(List.of(
+                membership(user(11L), 10L, MembershipRole.MANAGER, MembershipStatus.ACTIVE),
+                membership(user(12L), 10L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+
+        service.joinCommunity(applicant, 10L, new CommunityJoinRequest(null, null, null));
+
+        verify(notificationService, times(2)).createMembershipNotification(
+                any(User.class), eq(NotificationType.MEMBERSHIP_REQUEST_PENDING),
+                anyString(), anyString());
+    }
+
+    @Test
+    void managerApprovalNotifiesTheApplicant() {
+        MembershipService service = new MembershipService(
+                membershipRepository, communityRepository, notificationService);
+        User manager = user(5L);
+        User requester = user(6L);
+        Membership pending = membership(requester, 40L, MembershipRole.MEMBER, MembershipStatus.PENDING);
+        pending.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(pending));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(manager, 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.decide(99L, AdmissionDecision.APPROVE, manager);
+
+        verify(notificationService).createMembershipNotification(
+                eq(requester), eq(NotificationType.MEMBERSHIP_APPROVED), anyString(), anyString());
+    }
+
+    @Test
+    void managerRejectionNotifiesTheApplicant() {
+        MembershipService service = new MembershipService(
+                membershipRepository, communityRepository, notificationService);
+        User manager = user(5L);
+        User requester = user(6L);
+        Membership pending = membership(requester, 40L, MembershipRole.MEMBER, MembershipStatus.PENDING);
+        pending.setId(99L);
+        when(membershipRepository.findByIdForUpdate(99L)).thenReturn(Optional.of(pending));
+        when(membershipRepository.findByUserIdAndCommunityId(5L, 40L))
+                .thenReturn(Optional.of(membership(manager, 40L, MembershipRole.MANAGER, MembershipStatus.ACTIVE)));
+        when(membershipRepository.save(any(Membership.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.decide(99L, AdmissionDecision.REJECT, manager);
+
+        verify(notificationService).createMembershipNotification(
+                eq(requester), eq(NotificationType.MEMBERSHIP_REJECTED), anyString(), anyString());
     }
 
     @Test

@@ -214,7 +214,8 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
     cy.contains('.group-item', 'CSE Department').click()
     cy.url().should('include', `/communities/${cseId}`)
     cy.get('.community-tab[aria-current="page"]').should('contain', 'Home')
-    cy.get('.community-home-section-title').should('contain', 'Recently offered')
+    cy.get('.community-home-section-title').should('contain', 'Community Pulse')
+    cy.get('.community-explore-cta').should('contain', 'Explore Borrowable Items')
 
     cy.get('.community-tab').contains('Explore').click()
     cy.url().should('include', `/communities/${cseId}/explore`)
@@ -325,7 +326,7 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
     cy.get('.community-panel').should('not.contain', 'Loans')
     cy.get('.userbar-nav').should('contain', 'Requests')
     cy.get('.userbar-nav').should('contain', 'Loans')
-    cy.get('.userbar').should('not.contain', 'Notifications')
+    cy.get('.desktop-side-rail').should('not.contain', 'Notifications')
     cy.visit('/me/requests')
     cy.url({ timeout: 15000 }).should('include', '/me/requests')
     cy.get('.request-inbox').should('be.visible')
@@ -333,17 +334,17 @@ describe('Workspace Routing & Shell (Phase A + UX correction pass)', () => {
 
   it('desktop shell should show the panel and hide mobile elements', () => {
     cy.viewport(1280, 720)
+    cy.get('.desktop-side-rail').should('be.visible')
     cy.get('.community-panel').should('be.visible')
-    cy.get('.userbar').should('be.visible')
+    cy.get('.rail-brand').should('be.visible')
     cy.get('.bottom-nav').should('not.exist')
-    cy.get('.userbar-brand').should('not.be.visible')
   })
 
-  it('mobile shell should hide the panel and show the userbar', () => {
+  it('mobile shell should hide the panel and show the compact rail', () => {
     cy.viewport('iphone-x')
+    cy.get('.desktop-side-rail').should('be.visible')
     cy.get('.community-panel').should('not.be.visible')
-    cy.get('.userbar').should('be.visible')
-    cy.get('.userbar-brand').should('be.visible')
+    cy.get('.rail-brand').should('be.visible')
     cy.get('.bottom-nav').should('not.exist')
   })
 
