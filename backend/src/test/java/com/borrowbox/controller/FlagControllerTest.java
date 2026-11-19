@@ -12,6 +12,7 @@ import com.borrowbox.service.FlagService;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -68,6 +69,11 @@ public class FlagControllerTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("ahmed@example.com", null,
                         Collections.singletonList(() -> "ROLE_USER")));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

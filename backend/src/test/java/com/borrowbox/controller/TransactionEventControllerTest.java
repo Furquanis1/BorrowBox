@@ -9,6 +9,7 @@ import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.TransactionEventService;
 import com.borrowbox.service.UserService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +56,12 @@ public class TransactionEventControllerTest {
         currentUser = new User("Karim", "karim@example.com");
         currentUser.setId(100L);
     }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
 
     private void authenticateAs(User user) {
         when(userService.findByEmail(user.getEmail())).thenReturn(user);

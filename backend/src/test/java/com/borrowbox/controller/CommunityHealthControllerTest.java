@@ -7,6 +7,7 @@ import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.CommunityDashboardService;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.UserService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -55,6 +56,12 @@ public class CommunityHealthControllerTest {
                 new UsernamePasswordAuthenticationToken("ahmed@example.com", null,
                         Collections.singletonList(() -> "ROLE_USER")));
     }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
 
     private HealthResponse health() {
         return new HealthResponse(900L, 5, 1, 1, 4, 3, 75, 1, 4, 1, 25);

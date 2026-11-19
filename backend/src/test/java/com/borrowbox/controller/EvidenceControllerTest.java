@@ -7,6 +7,7 @@ import com.borrowbox.repository.UserRepository;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.UserService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +73,11 @@ public class EvidenceControllerTest {
                 LocalDateTime.of(2026, 6, 1, 10, 0),
                 "/api/evidence/7/content",
                 null, null);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

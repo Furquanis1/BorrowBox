@@ -8,6 +8,7 @@ import com.borrowbox.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -43,6 +44,11 @@ public class JwtAuthenticationFilterTest {
 
     @Mock
     private FilterChain filterChain;
+
+    @BeforeEach
+    void clearSecurityContextBeforeEach() {
+        SecurityContextHolder.clearContext();
+    }
 
     @AfterEach
     void clearSecurityContext() {

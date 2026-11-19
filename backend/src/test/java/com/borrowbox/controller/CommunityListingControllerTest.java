@@ -9,6 +9,7 @@ import com.borrowbox.service.CommunityListingService;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -74,6 +75,11 @@ public class CommunityListingControllerTest {
                 LocalDateTime.of(2026, 1, 1, 9, 0),
                 "Football", "Match-size football", null, null,
                 2L, 1L, 1L, 0L);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

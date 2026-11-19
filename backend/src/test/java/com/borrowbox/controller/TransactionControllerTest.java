@@ -21,6 +21,7 @@ import com.borrowbox.service.TransactionMessageService;
 import com.borrowbox.service.TransactionService;
 import com.borrowbox.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -103,6 +104,11 @@ public class TransactionControllerTest {
                 null,
                 LocalDateTime.of(2026, 1, 2, 10, 0),
                 LocalDateTime.of(2026, 1, 2, 10, 0));
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.borrowbox.service.CommunityService;
 import com.borrowbox.service.JwtService;
 import com.borrowbox.service.MembershipService;
 import com.borrowbox.service.UserService;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -69,6 +70,12 @@ public class CommunityMembershipControllerTest {
                 new UsernamePasswordAuthenticationToken("ahmed@example.com", null,
                         Collections.singletonList(() -> "ROLE_USER")));
     }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
 
     private MembershipResponse membership(Long id, Long userId, MembershipRole role, MembershipStatus status) {
         return new MembershipResponse(

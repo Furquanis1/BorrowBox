@@ -12,6 +12,7 @@ import com.borrowbox.service.JwtService;
 import com.borrowbox.service.UserService;
 import com.borrowbox.service.WaitlistService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,6 +77,11 @@ public class WaitlistControllerTest {
                 100L, "Football match practice", 3,
                 WaitlistStatus.WAITING, 1,
                 LocalDateTime.of(2026, 1, 2, 10, 0), null);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
